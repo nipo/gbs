@@ -1,0 +1,5 @@
+name: simple_repository
+description: A simple test repository
+
+libraries:
+  - path: ../libraries/simple_lib.gbs.yaml

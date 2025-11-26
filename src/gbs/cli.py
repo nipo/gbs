@@ -4,16 +4,44 @@ Main entry point for the gbs command.
 """
 
 import asyncclick as click
+from pathlib import Path
+
+from gbs.logging import setup_logging, get_logger, get_log_file
 
 
 @click.group()
 @click.version_option()
-async def cli():
+@click.option(
+    "-v", "--verbose",
+    is_flag=True,
+    help="Enable verbose output (INFO level)"
+)
+@click.option(
+    "-d", "--debug",
+    is_flag=True,
+    help="Enable debug output (DEBUG level)"
+)
+@click.option(
+    "--log-dir",
+    type=click.Path(path_type=Path),
+    help="Custom directory for log files (default: .gbs/logs)"
+)
+@click.pass_context
+async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     """GBS: Gateware Build System
 
     A build system for FPGA and ASIC gateware projects.
     """
-    pass
+    # Set up logging
+    setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
+    logger = get_logger()
+
+    # Store in context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["logger"] = logger
+    ctx.obj["log_file"] = get_log_file()
+
+    logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
 
 
 @cli.group()

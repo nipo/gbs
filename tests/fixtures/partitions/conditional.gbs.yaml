@@ -1,0 +1,41 @@
+# Conditional partition - root level with nested groups
+deps:
+  - some_lib.base
+sources:
+  - language: vhdl
+    files:
+      - common.vhd
+
+groups:
+  vendor_selection:
+    - condition: vendor = "xilinx"
+      deps:
+        - xilinx_lib.primitives
+      sources:
+        - language: vhdl
+          files:
+            - xilinx_impl.vhd
+      groups:
+        family_selection:
+          - condition: family = "7series"
+            sources:
+              - language: vhdl
+                files:
+                  - xilinx_7series.vhd
+          - condition: default
+            sources:
+              - language: vhdl
+                files:
+                  - xilinx_generic.vhd
+
+    - condition: vendor = "intel"
+      sources:
+        - language: vhdl
+          files:
+            - intel_impl.vhd
+
+    - condition: default
+      sources:
+        - language: vhdl
+          files:
+            - generic_impl.vhd

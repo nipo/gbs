@@ -1,0 +1,5 @@
+name: simple_library
+description: A simple test library
+
+partitions:
+  - ../partitions/simple

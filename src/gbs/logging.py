@@ -1,0 +1,157 @@
+"""GBS Logging Infrastructure
+
+Provides file-based logging with configurable verbosity.
+All operations are logged to file for post-mortem analysis.
+"""
+
+import logging
+import sys
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
+
+class GBSLogger:
+    """GBS logging system with file and console outputs"""
+
+    def __init__(
+        self,
+        name: str = "gbs",
+        log_dir: Optional[Path] = None,
+        console_level: int = logging.INFO,
+        file_level: int = logging.DEBUG,
+    ):
+        """Initialize GBS logger
+
+        Args:
+            name: Logger name
+            log_dir: Directory for log files (default: .gbs/logs in current directory)
+            console_level: Logging level for console output
+            file_level: Logging level for file output (always more verbose)
+        """
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)  # Capture everything
+        self.logger.propagate = False
+
+        # Clear any existing handlers
+        self.logger.handlers.clear()
+
+        # Set up log directory
+        if log_dir is None:
+            log_dir = Path.cwd() / ".gbs" / "logs"
+        self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create log file with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = self.log_dir / f"gbs_{timestamp}.log"
+        self.log_file = log_file
+
+        # File handler - logs everything
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(file_level)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        file_handler.setFormatter(file_formatter)
+        self.logger.addHandler(file_handler)
+
+        # Console handler - logs according to verbosity setting
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(console_level)
+        console_formatter = logging.Formatter(
+            "%(levelname)s: %(message)s"
+        )
+        console_handler.setFormatter(console_formatter)
+        self.logger.addHandler(console_handler)
+
+        self.logger.info(f"GBS logging initialized. Log file: {log_file}")
+
+    def set_console_level(self, level: int):
+        """Change console logging level
+
+        Args:
+            level: New logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        """
+        for handler in self.logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stderr:
+                handler.setLevel(level)
+
+    def get_logger(self) -> logging.Logger:
+        """Get the underlying logger instance
+
+        Returns:
+            The configured logger
+        """
+        return self.logger
+
+
+# Global logger instance
+_logger_instance: Optional[GBSLogger] = None
+
+
+def setup_logging(
+    verbose: bool = False,
+    debug: bool = False,
+    log_dir: Optional[Path] = None,
+) -> GBSLogger:
+    """Set up global GBS logging
+
+    Args:
+        verbose: Enable verbose console output (INFO level)
+        debug: Enable debug console output (DEBUG level)
+        log_dir: Custom log directory
+
+    Returns:
+        Configured GBSLogger instance
+    """
+    global _logger_instance
+
+    # Determine console level
+    if debug:
+        console_level = logging.DEBUG
+    elif verbose:
+        console_level = logging.INFO
+    else:
+        console_level = logging.WARNING
+
+    _logger_instance = GBSLogger(
+        name="gbs",
+        log_dir=log_dir,
+        console_level=console_level,
+        file_level=logging.DEBUG,
+    )
+
+    return _logger_instance
+
+
+def get_logger(name: str = "gbs") -> logging.Logger:
+    """Get a logger instance
+
+    Args:
+        name: Logger name (will be prefixed with 'gbs.')
+
+    Returns:
+        Logger instance
+    """
+    if _logger_instance is None:
+        # Auto-initialize with defaults if not set up
+        setup_logging()
+
+    if name == "gbs":
+        return _logger_instance.logger
+    else:
+        # Create child logger
+        return logging.getLogger(f"gbs.{name}")
+
+
+def get_log_file() -> Optional[Path]:
+    """Get the current log file path
+
+    Returns:
+        Path to current log file, or None if logging not initialized
+    """
+    if _logger_instance is None:
+        return None
+    return _logger_instance.log_file

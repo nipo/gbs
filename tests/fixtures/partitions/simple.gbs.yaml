@@ -1,0 +1,6 @@
+# Simple partition - root is a FilterCondition with implicit "condition: default"
+sources:
+  - language: vhdl
+    files:
+      - file1.vhd
+      - file2.vhd

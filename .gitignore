@@ -3,3 +3,4 @@ doc/plan
 .claude
 __pycache__
 *.pyc
+.gbs/
