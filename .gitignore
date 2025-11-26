@@ -1,3 +1,5 @@
 CLAUDE.md
 doc/plan
 .claude
+__pycache__
+*.pyc
