@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from gbs.logging import setup_logging, get_logger, get_log_file
-from gbs.loaders import load_repository, load_project, LoadError
+from gbs.loaders import load_repository, load_project, load_project_with_repositories, LoadError
 from gbs.resolver import resolve_project
 
 
@@ -380,11 +380,10 @@ async def fileset(project_file: Path, repo: tuple[Path]):
     logger = get_logger()
 
     try:
-        # Load project
-        project = load_project(project_file)
+        # Load project and its specified repositories
+        project, repositories = load_project_with_repositories(project_file)
 
-        # Load additional repositories
-        repositories = []
+        # Load additional repositories from command line
         for repo_path in repo:
             repositories.append(load_repository(repo_path))
 

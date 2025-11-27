@@ -1,0 +1,26 @@
+name: simple_project
+toolsuite:
+  name: generic
+  backend: gbs.backends.generic
+topcell: top
+
+output_format: filelist
+
+filter_vars:
+  target: simulation
+
+root_library:
+  name: root
+  partitions:
+    - name: top
+      deps:
+        - nsl_data.text
+        - nsl_simulation.assertions
+      sources:
+        - language: vhdl
+          files:
+            - top.vhd
+repositories:
+  - path: /Users/nipo/projects/nsl_clean
+    loader: gbs.plugin.nsl.tree
+

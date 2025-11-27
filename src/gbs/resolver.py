@@ -210,6 +210,12 @@ class DependencyResolver:
                 f"Available libraries: {list(self.libraries.keys())}"
             )
 
+        # Check if partition supports lazy evaluation (e.g., NSL partitions)
+        # Call evaluate_with_context() if available to trigger lazy evaluation
+        if hasattr(partition, 'evaluate_with_context'):
+            logger.debug(f"Triggering lazy evaluation for {ref} with context {self.filter_context}")
+            partition.evaluate_with_context(self.filter_context)
+
         all_sources = []
         all_deps = []
 
