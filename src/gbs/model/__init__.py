@@ -1,0 +1,76 @@
+"""GBS Model Package
+
+This package contains the core model classes for the GBS build system:
+- build: Build system classes (BuildContext, BuildFileSet, Task, Resource, etc.)
+- repository: Repository data models (Repository, Library, Partition, etc.)
+- backend: Backend base classes and registry
+"""
+
+# Re-export everything from build
+from gbs.model.build import (
+    BuildError,
+    PrerequisiteFailed,
+    BuildContext,
+    ContextBuildManager,
+    BuildStep,
+    VirtualResource,
+    Resource,
+    Task,
+    TaskExecutor,
+    ExecutorTask,
+    BuildResource,
+    BuildFileSet,
+)
+
+# Re-export everything from repository
+from gbs.model.repository import (
+    Language,
+    SourceFile,
+    FilterCondition,
+    ConditionalGroup,
+    Partition,
+    Library,
+    Repository,
+    ToolsuiteConfig,
+    Project,
+    # Note: BuildFileSet is also defined in repository but we prefer the one from build
+)
+
+# Re-export everything from backend
+from gbs.model.backend import (
+    Backend,
+    BaseBackend,
+    BackendRegistry,
+    run_backend_iteration,
+)
+
+__all__ = [
+    # build module
+    "BuildError",
+    "PrerequisiteFailed",
+    "BuildContext",
+    "ContextBuildManager",
+    "BuildStep",
+    "VirtualResource",
+    "Resource",
+    "Task",
+    "TaskExecutor",
+    "ExecutorTask",
+    "BuildResource",
+    "BuildFileSet",
+    # repository module
+    "Language",
+    "SourceFile",
+    "FilterCondition",
+    "ConditionalGroup",
+    "Partition",
+    "Library",
+    "Repository",
+    "ToolsuiteConfig",
+    "Project",
+    # backend module
+    "Backend",
+    "BaseBackend",
+    "BackendRegistry",
+    "run_backend_iteration",
+]

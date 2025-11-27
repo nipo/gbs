@@ -1,13 +1,8 @@
-"""Backend System for GBS - Compatibility Shim
+"""GBS Backend Package
 
-This module provides backward compatibility by re-exporting from the new locations:
-- Base classes from gbs.model.backend
-- Concrete backends from gbs.backend.*
-
-All new code should import from the new locations directly.
+This package contains concrete backend implementations for the GBS build system.
+Also re-exports base classes for convenience.
 """
-
-from __future__ import annotations
 
 # Re-export base classes from gbs.model.backend
 from gbs.model.backend import (
@@ -17,7 +12,7 @@ from gbs.model.backend import (
     run_backend_iteration,
 )
 
-# Re-export concrete backends from gbs.backend
+# Re-export all concrete backends
 from gbs.backend.ghdl import GHDLBackend
 from gbs.backend.verilog_to_vhdl import VerilogToVHDLBackend
 from gbs.backend.mem_init import MemInitBackend
