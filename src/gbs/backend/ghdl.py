@@ -108,12 +108,6 @@ class GHDLBackend(BaseBackend):
         # Get libraries in dependency order
         by_library = fileset.by_library_ordered()
 
-        # Debug: check file order before processing
-        for lib_name, lib_files in by_library:
-            if lib_name and lib_name == "nsl_simulation":
-                vhdl_only = [br for br in lib_files if br.file_type == "vhdl"]
-                self.logger.info(f"DEBUG: by_library_ordered for {lib_name}: {[br.path.name for br in vhdl_only]}")
-
         # Track .cf files and analyze tasks for dependencies
         cf_files: dict[str, BuildResource] = {}
         analyze_tasks: dict[str, ExecutorTask] = {}
