@@ -79,7 +79,12 @@ async def project():
     default=100,
     help="Maximum backend iterations (default: 100)"
 )
-async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int):
+@click.option(
+    "--show-graph",
+    is_flag=True,
+    help="Show build dependency graph and exit (do not build)"
+)
+async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project
 
     PROJECT_FILE: Path to project file (default: project.gbs.yaml)
@@ -115,6 +120,8 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
 
         click.echo("Creating build fileset...")
         for lib_name in build_set.libraries:
+            if lib_name == "nsl_simulation":
+                click.echo(f"DEBUG: nsl_simulation partitions order: {build_set.partitions.get(lib_name, [])}")
             for part_name in build_set.partitions.get(lib_name, []):
                 files = build_set.files.get((lib_name, part_name), [])
 
@@ -158,6 +165,53 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
             max_iterations=max_iterations
         )
         click.echo(f"Converged after {iterations} iteration(s)")
+
+        # Show dependency graph if requested
+        if show_graph:
+            click.echo()
+            click.echo("Build dependency graph:")
+            click.echo()
+
+            # Collect all tasks
+            tasks = set()
+            for br in fileset:
+                # Check if resource has any tasks that expect it (producers)
+                if hasattr(br.resource, 'expected_by'):
+                    for dep in br.resource.expected_by:
+                        if hasattr(dep, 'executor'):  # It's a task
+                            tasks.add(dep)
+
+            # Display tasks with their dependencies
+            if not tasks:
+                click.echo("  No build tasks generated")
+            else:
+                for task in sorted(tasks, key=lambda t: t.name):
+                    click.echo(f"  Task: {task.name}")
+                    if task.description:
+                        click.echo(f"    Description: {task.description}")
+
+                    # Show inputs
+                    if hasattr(task, 'inputs') and task.inputs:
+                        click.echo(f"    Inputs ({len(task.inputs)}):")
+                        for inp in task.inputs:
+                            if hasattr(inp, 'path'):
+                                click.echo(f"      - {inp.path}")
+                            else:
+                                click.echo(f"      - {inp}")
+
+                    # Show outputs
+                    if hasattr(task, 'outputs') and task.outputs:
+                        click.echo(f"    Outputs ({len(task.outputs)}):")
+                        for out in task.outputs:
+                            if hasattr(out, 'path'):
+                                click.echo(f"      - {out.path}")
+                            else:
+                                click.echo(f"      - {out}")
+
+                    click.echo()
+
+            click.echo(f"Total tasks: {len(tasks)}")
+            return  # Exit without building
 
         # Execute build
         click.echo()

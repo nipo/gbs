@@ -13,6 +13,8 @@ backends:
   - backend: gbs.backend:GHDLBackend
     config:
       output_dir: build
+      vhdl_std: 93c
+      topcell: top
 
 root_library:
   name: root

@@ -528,8 +528,13 @@ class BuildFileSet:
         return len(self._resources)
 
     def __iter__(self):
-        """Iterate over BuildResources in stable order (sorted by path)"""
-        return iter(sorted(self._resources.values(), key=lambda r: r.path))
+        """Iterate over BuildResources in insertion order
+
+        Note: Insertion order is significant for VHDL compilation where files must
+        be analyzed in dependency order. The BuildFileSet is populated in partition
+        dependency order, which must be preserved.
+        """
+        return iter(self._resources.values())
 
     def __contains__(self, path: Path) -> bool:
         """Check if path is in fileset"""
