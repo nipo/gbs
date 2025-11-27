@@ -260,7 +260,12 @@ async def status():
     is_flag=True,
     help="Show what would be deleted without actually deleting"
 )
-async def clean(project_file: Path, dry_run: bool):
+@click.option(
+    "-f", "--force",
+    is_flag=True,
+    help="Skip confirmation prompt and delete immediately"
+)
+async def clean(project_file: Path, dry_run: bool, force: bool):
     """Clean build artifacts
 
     Removes build directories and generated files specified in backend configurations.
@@ -333,10 +338,11 @@ async def clean(project_file: Path, dry_run: bool):
             click.echo("\n--dry-run: No files were deleted")
             return
 
-        # Confirm deletion
-        if not click.confirm("\nProceed with deletion?"):
-            click.echo("Cancelled")
-            return
+        # Confirm deletion (unless --force is used)
+        if not force:
+            if not click.confirm("\nProceed with deletion?"):
+                click.echo("Cancelled")
+                return
 
         # Delete directories
         deleted_dirs = 0
