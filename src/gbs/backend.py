@@ -520,9 +520,11 @@ class GHDLBackend(BaseBackend):
             )
 
             # Import depends on source files and dependent library .cf files
+            # Since by_library_ordered() returns libraries in dependency order,
+            # we can depend on all previously processed libraries
             import_inputs = [br.resource for br in vhdl_files]
-            for dep_lib in fileset.library_dependency_graph().get(library_name, []):
-                if dep_lib in cf_files:
+            for dep_lib in cf_files.keys():
+                if dep_lib != library_name:  # Don't depend on self
                     import_inputs.append(cf_files[dep_lib].resource)
 
             import_task = ExecutorTask(
@@ -571,9 +573,11 @@ class GHDLBackend(BaseBackend):
             )
 
             # Analyze inputs: source files and dependent library analyze tasks
+            # Since by_library_ordered() returns libraries in dependency order,
+            # we can depend on all previously processed libraries' analyze tasks
             analyze_inputs = [import_task] + [br.resource for br in vhdl_files]
-            for dep_lib in fileset.library_dependency_graph().get(library_name, []):
-                if dep_lib in analyze_tasks:
+            for dep_lib in analyze_tasks.keys():
+                if dep_lib != library_name:  # Don't depend on self
                     # Depend on the analyze task, not just the .cf file
                     analyze_inputs.append(analyze_tasks[dep_lib])
 
