@@ -432,3 +432,407 @@ class ExecutorTask(Task):
                     raise RuntimeError(
                         f"Task {self.name} did not create output file {output.path}"
                     )
+
+
+@dataclass
+class BuildResource:
+    """Represents a source or generated file in the build with metadata
+
+    This is distinct from Resource which is an asyncio Future. BuildResource
+    is a data class that holds file metadata used by backends.
+
+    Attributes:
+        resource: The underlying Resource (asyncio Future for the file)
+        file_type: Type of file (e.g., 'vhdl', 'verilog', 'systemverilog', 'c', 'vhd_elab')
+        library: Library name for HDL files (None for non-HDL)
+        language_version: Language version (e.g., '2008' for VHDL, '2005' for Verilog)
+        is_source: True if source file, False if generated
+        depends_on: Set of BuildResources this file depends on (for dep tracking)
+        generated_by: Backend name that generated this file (None for source files)
+        metadata: Additional backend-specific metadata
+    """
+    resource: Resource
+    file_type: str
+    library: str | None = None
+    language_version: str | None = None
+    is_source: bool = True
+    depends_on: set['BuildResource'] = None
+    generated_by: str | None = None
+    metadata: dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.depends_on is None:
+            self.depends_on = set()
+        if self.metadata is None:
+            self.metadata = {}
+
+    @property
+    def path(self) -> Path:
+        """Convenience property to access the file path"""
+        return self.resource.path
+
+    def __hash__(self):
+        """Hash based on resource path for set membership"""
+        return hash(self.resource.path)
+
+    def __eq__(self, other):
+        """Equality based on resource path"""
+        if not isinstance(other, BuildResource):
+            return False
+        return self.resource.path == other.resource.path
+
+    def __repr__(self):
+        return f"BuildResource({self.path}, {self.file_type}, lib={self.library})"
+
+
+class BuildFileSet:
+    """Mutable collection of BuildResources with dependency tracking
+
+    The BuildFileSet is iteratively transformed by backends. Each backend can:
+    - Add new generated files
+    - Remove processed files
+    - Replace files with transformed versions
+    - Query files by various criteria
+
+    The fileset tracks:
+    - Forward dependencies (what each file depends on)
+    - Reverse dependencies (what depends on each file)
+    - Modification serial (for detecting convergence)
+    - Stable iteration order
+
+    All modifications must go through the provided methods to maintain
+    consistency of dependency tracking.
+    """
+
+    def __init__(self, context: BuildContext):
+        """Initialize an empty fileset
+
+        Args:
+            context: Build context (for creating Resources)
+        """
+        self.context = context
+        self._resources: dict[Path, BuildResource] = {}  # path -> BuildResource
+        self._modification_serial = 0
+        self._dependents: dict[Path, set[BuildResource]] = {}  # path -> set of BuildResources that depend on it
+
+    @property
+    def modification_serial(self) -> int:
+        """Current modification serial number
+
+        Increments each time the fileset is modified. Used to detect convergence.
+        """
+        return self._modification_serial
+
+    def __len__(self) -> int:
+        """Number of resources in fileset"""
+        return len(self._resources)
+
+    def __iter__(self):
+        """Iterate over BuildResources in stable order (sorted by path)"""
+        return iter(sorted(self._resources.values(), key=lambda r: r.path))
+
+    def __contains__(self, path: Path) -> bool:
+        """Check if path is in fileset"""
+        return path.resolve() in self._resources
+
+    def add(self, build_resource: BuildResource) -> None:
+        """Add a BuildResource to the fileset
+
+        Args:
+            build_resource: The BuildResource to add
+
+        Note:
+            - Increments modification serial
+            - Updates dependency tracking
+            - If resource already exists, replaces it
+        """
+        path = build_resource.path.resolve()
+
+        # Remove old resource if exists (to update dependencies properly)
+        if path in self._resources:
+            self.remove(path)
+
+        # Add new resource
+        self._resources[path] = build_resource
+        self._modification_serial += 1
+
+        # Update dependency tracking
+        if path not in self._dependents:
+            self._dependents[path] = set()
+
+        # Register this resource as dependent on its dependencies
+        for dep in build_resource.depends_on:
+            dep_path = dep.path.resolve()
+            if dep_path not in self._dependents:
+                self._dependents[dep_path] = set()
+            self._dependents[dep_path].add(build_resource)
+
+    def remove(self, path: Path) -> set[BuildResource]:
+        """Remove a BuildResource from the fileset
+
+        Args:
+            path: Path of resource to remove
+
+        Returns:
+            Set of BuildResources that depended on the removed resource
+
+        Note:
+            - Increments modification serial
+            - Updates dependency tracking
+            - Returns dependents so caller can handle them
+        """
+        path = path.resolve()
+
+        if path not in self._resources:
+            return set()
+
+        resource = self._resources[path]
+        del self._resources[path]
+        self._modification_serial += 1
+
+        # Get dependents before cleanup
+        dependents = self._dependents.get(path, set()).copy()
+
+        # Clean up dependency tracking
+        # Remove this resource from its dependencies' dependent lists
+        for dep in resource.depends_on:
+            dep_path = dep.path.resolve()
+            if dep_path in self._dependents:
+                self._dependents[dep_path].discard(resource)
+
+        # Remove from dependents dict
+        if path in self._dependents:
+            del self._dependents[path]
+
+        return dependents
+
+    def replace(
+        self,
+        old_path: Path,
+        new_resource: BuildResource,
+        transfer_dependencies: bool = True
+    ) -> set[BuildResource]:
+        """Replace a resource with a new one
+
+        Args:
+            old_path: Path of resource to replace
+            new_resource: New BuildResource
+            transfer_dependencies: If True, transfer dependents from old to new
+
+        Returns:
+            Set of BuildResources that were updated to depend on new_resource
+
+        Note:
+            - Increments modification serial (via remove and add)
+            - If transfer_dependencies=True, updates all dependents to point to new resource
+        """
+        old_path = old_path.resolve()
+
+        # Get the old resource before removing
+        old_resource = self._resources.get(old_path)
+
+        # Get dependents before removing
+        dependents = self.remove(old_path)
+
+        # Transfer dependencies if requested
+        if transfer_dependencies and old_resource:
+            for dependent in dependents:
+                # Remove old dependency
+                dependent.depends_on.discard(old_resource)
+                # Add new dependency
+                dependent.depends_on.add(new_resource)
+
+        # Add new resource
+        self.add(new_resource)
+
+        return dependents if transfer_dependencies else set()
+
+    def filter(self, **criteria) -> list[BuildResource]:
+        """Query resources by criteria
+
+        Args:
+            **criteria: Key-value pairs to match against BuildResource attributes
+                       Special handling:
+                       - library=None matches resources with library=None
+                       - file_type can be a string or list of strings
+                       - is_source can be True/False
+
+        Returns:
+            List of matching BuildResources in stable order
+
+        Examples:
+            fileset.filter(file_type='vhdl', library='work')
+            fileset.filter(is_source=True)
+            fileset.filter(file_type=['vhdl', 'verilog'])
+        """
+        results = []
+
+        for resource in self:
+            match = True
+            for key, value in criteria.items():
+                attr_value = getattr(resource, key, None)
+
+                # Handle list of acceptable values
+                if isinstance(value, (list, tuple, set)):
+                    if attr_value not in value:
+                        match = False
+                        break
+                # Handle exact match
+                elif attr_value != value:
+                    match = False
+                    break
+
+            if match:
+                results.append(resource)
+
+        return results
+
+    def get(self, path: Path) -> BuildResource | None:
+        """Get BuildResource by path
+
+        Args:
+            path: Path to look up
+
+        Returns:
+            BuildResource if found, None otherwise
+        """
+        return self._resources.get(path.resolve())
+
+    def by_library_ordered(self) -> list[tuple[str, list[BuildResource]]]:
+        """Get resources grouped by library in dependency order
+
+        Returns:
+            List of (library_name, resources) tuples ordered by library dependencies.
+            Libraries are in topological order (dependencies before dependents).
+            Resources within each library are in stable order (sorted by path).
+        """
+        # Build library dependency graph
+        lib_deps = self.library_dependency_graph()
+
+        # Topological sort of libraries
+        ordered_libs = self.libraries_in_dependency_order()
+
+        # Group resources by library
+        result = []
+        for lib in ordered_libs:
+            lib_resources = self.filter(library=lib)
+            if lib_resources:
+                result.append((lib, lib_resources))
+
+        # Also include resources with no library
+        no_lib_resources = self.filter(library=None)
+        if no_lib_resources:
+            result.append((None, no_lib_resources))
+
+        return result
+
+    def library_dependency_graph(self) -> dict[str, set[str]]:
+        """Build dependency graph between libraries
+
+        Returns:
+            Dict mapping library_name -> set of libraries it depends on
+
+        Note:
+            Only includes libraries that are actually in the fileset
+        """
+        graph: dict[str, set[str]] = {}
+
+        for resource in self:
+            if resource.library is None:
+                continue
+
+            if resource.library not in graph:
+                graph[resource.library] = set()
+
+            # Add dependencies from this resource
+            for dep in resource.depends_on:
+                if dep.library and dep.library != resource.library:
+                    graph[resource.library].add(dep.library)
+
+        return graph
+
+    def libraries_in_dependency_order(self) -> list[str]:
+        """Get libraries in topological dependency order
+
+        Returns:
+            List of library names ordered so dependencies come before dependents
+
+        Raises:
+            ValueError: If circular dependency detected
+        """
+        graph = self.library_dependency_graph()
+
+        # Kahn's algorithm for topological sort
+        # graph[lib] contains the libraries that lib depends on
+        # We need to reverse this: for each lib, count how many libs depend on it
+        in_degree = {lib: 0 for lib in graph}
+
+        # Count incoming edges: if lib2 depends on lib1, then lib1 has incoming edge from lib2
+        for lib in graph:
+            for dep in graph[lib]:
+                if dep not in in_degree:
+                    in_degree[dep] = 0
+                # lib depends on dep, so dep should come before lib
+                # We increment lib's in-degree (lib has a dependency)
+
+        # Actually, let me recalculate: the graph shows dependencies
+        # graph[A] = {B, C} means A depends on B and C
+        # So B and C must come before A
+        # In-degree of A = number of libraries that depend on A
+
+        # Build reverse graph: who depends on me?
+        reverse_graph = {lib: set() for lib in graph}
+        for lib in graph:
+            for dep in graph[lib]:
+                if dep not in reverse_graph:
+                    reverse_graph[dep] = set()
+                reverse_graph[dep].add(lib)
+
+        # Now in-degree is the count of dependents
+        in_degree = {lib: len(reverse_graph.get(lib, set())) for lib in graph}
+
+        # Find all nodes with no incoming edges (no one depends on them, they can go last)
+        # Wait, that's backwards. Let me think again...
+
+        # graph[lib] = dependencies of lib (what lib needs)
+        # We want: dependencies before dependents
+        # So if lib depends on dep, dep should come first
+        # In Kahn's: in_degree = number of dependencies
+        # Start with nodes that have 0 dependencies
+
+        in_degree = {lib: len(graph[lib]) for lib in graph}
+
+        # Find all nodes with no dependencies
+        queue = [lib for lib in graph if in_degree[lib] == 0]
+        result = []
+
+        while queue:
+            # Sort for stable ordering
+            queue.sort()
+            lib = queue.pop(0)
+            result.append(lib)
+
+            # For each library that depends on lib, decrease its dependency count
+            for dependent_lib in graph:
+                if lib in graph[dependent_lib]:
+                    in_degree[dependent_lib] -= 1
+                    if in_degree[dependent_lib] == 0:
+                        queue.append(dependent_lib)
+
+        # Check for cycles
+        if len(result) != len(graph):
+            remaining = set(graph.keys()) - set(result)
+            raise ValueError(f"Circular dependency detected in libraries: {remaining}")
+
+        return result
+
+    def get_dependents(self, path: Path) -> set[BuildResource]:
+        """Get all resources that depend on the given path
+
+        Args:
+            path: Path to query
+
+        Returns:
+            Set of BuildResources that depend on this path
+        """
+        return self._dependents.get(path.resolve(), set()).copy()
