@@ -1,13 +1,18 @@
 name: simple_project
 toolsuite:
-  name: generic
-  backend: gbs.backends.generic
+  name: ghdl
+  backend: gbs.backend.GHDLBackend
 topcell: top
 
 output_format: filelist
 
 filter_vars:
   target: simulation
+
+backends:
+  - backend: gbs.backend:GHDLBackend
+    config:
+      output_dir: build
 
 root_library:
   name: root

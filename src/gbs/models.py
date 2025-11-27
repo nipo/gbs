@@ -187,6 +187,7 @@ class Project:
         output_format: Desired output format (e.g., "bitstream", "netlist")
         filter_vars: Variables used for filter evaluation
         description: Optional description
+        raw_config: Raw configuration dictionary (for accessing backends etc)
     """
     name: str
     root_library: Library
@@ -195,6 +196,7 @@ class Project:
     output_format: str
     filter_vars: dict[str, str | int] = field(default_factory=dict)
     description: Optional[str] = None
+    raw_config: dict = field(default_factory=dict)
 
     def __str__(self) -> str:
         return f"Project({self.name}, topcell={self.topcell})"

@@ -60,9 +60,132 @@ async def project():
 
 
 @cli.command()
-async def build():
-    """Build a project"""
-    click.echo("Build command - not yet implemented")
+@click.argument("project_file", type=click.Path(exists=True, path_type=Path), default="project.gbs.yaml")
+@click.option(
+    "-r", "--repo",
+    type=click.Path(exists=True, path_type=Path),
+    multiple=True,
+    help="Additional repository to load"
+)
+@click.option(
+    "-o", "--output-dir",
+    type=click.Path(path_type=Path),
+    default=Path("build"),
+    help="Build output directory (default: build)"
+)
+@click.option(
+    "--max-iterations",
+    type=int,
+    default=100,
+    help="Maximum backend iterations (default: 100)"
+)
+async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int):
+    """Build a project
+
+    PROJECT_FILE: Path to project file (default: project.gbs.yaml)
+    """
+    import asyncio
+    from gbs.tasks import BuildContext, BuildFileSet, BuildResource
+    from gbs.backend import run_backend_iteration
+    from gbs.backend_loader import load_backends_from_project
+
+    logger = get_logger()
+
+    try:
+        # Load project and its specified repositories
+        click.echo(f"Loading project: {project_file}")
+        project, repositories = load_project_with_repositories(project_file)
+
+        # Load additional repositories from command line
+        for repo_path in repo:
+            click.echo(f"Loading additional repository: {repo_path}")
+            repositories.append(load_repository(repo_path))
+
+        # Resolve dependencies
+        click.echo("Resolving dependencies...")
+        build_set = resolve_project(project, repositories)
+
+        click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
+
+        # Create build context
+        ctx = BuildContext()
+
+        # Create build fileset and populate it
+        fileset = BuildFileSet(ctx)
+
+        click.echo("Creating build fileset...")
+        for lib_name in build_set.libraries:
+            for part_name in build_set.partitions.get(lib_name, []):
+                files = build_set.files.get((lib_name, part_name), [])
+
+                for source_file in files:
+                    # Map language to file type
+                    file_type = source_file.language.value
+                    if source_file.variant:
+                        file_type = f"{file_type}_{source_file.variant}"
+
+                    # Create BuildResource
+                    br = BuildResource(
+                        resource=ctx.get_resource(source_file.path),
+                        file_type=file_type,
+                        library=lib_name,
+                    )
+                    fileset.add(br)
+
+        # Load backends from project configuration
+        click.echo("Loading backends...")
+        registry = load_backends_from_project(project.raw_config)
+
+        if len(registry) == 0:
+            click.echo("Warning: No backends configured", err=True)
+            click.echo("Add 'backends' section to project configuration")
+            sys.exit(1)
+
+        click.echo(f"Loaded {len(registry)} backend(s):")
+        for backend in registry:
+            click.echo(f"  - {backend.name} (priority={backend.priority})")
+
+        # Create output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Run backend iteration
+        click.echo()
+        click.echo("Running backend iteration...")
+        iterations = await run_backend_iteration(
+            ctx,
+            fileset,
+            registry,
+            max_iterations=max_iterations
+        )
+        click.echo(f"Converged after {iterations} iteration(s)")
+
+        # Execute build
+        click.echo()
+        click.echo("Executing build tasks...")
+        async with ctx.build():
+            # Gather all resources
+            all_resources = [br.resource for br in fileset]
+            if all_resources:
+                await asyncio.gather(*all_resources)
+
+        click.echo()
+        click.echo(f"Build complete: {len(fileset)} files processed")
+
+        # Show summary
+        click.echo()
+        click.echo("Build summary:")
+        for lib_name in fileset.libraries_in_dependency_order():
+            lib_files = fileset.filter(library=lib_name)
+            click.echo(f"  Library {lib_name}: {len(lib_files)} files")
+
+    except LoadError as e:
+        logger.error(f"Failed to load project or repository: {e}")
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        logger.exception("Build failed")
+        click.echo(f"Build failed: {e}", err=True)
+        sys.exit(1)
 
 
 @cli.command()

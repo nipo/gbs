@@ -14,6 +14,7 @@ Key concepts:
 from __future__ import annotations
 from typing import Protocol, Any
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from gbs.tasks import BuildContext, BuildFileSet
 from gbs.logging import get_logger
@@ -348,9 +349,9 @@ class GHDLBackend(BaseBackend):
     Priority: 500 (main compilation)
     """
 
-    def __init__(self, output_dir: Path | None = None):
+    def __init__(self, output_dir: Path | str | None = None):
         super().__init__("ghdl", priority=500)
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir) if output_dir is not None else None
         self._compiled_files: set[Path] = set()
 
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:

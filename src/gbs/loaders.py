@@ -505,7 +505,8 @@ def load_project(path: Path) -> Project:
         topcell=topcell,
         output_format=output_format,
         filter_vars=filter_vars,
-        description=description
+        description=description,
+        raw_config=data
     )
 
     logger.info(f"Loaded project '{name}' with topcell '{topcell}'")
