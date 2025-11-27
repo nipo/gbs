@@ -249,9 +249,127 @@ async def status():
 
 
 @cli.command()
-async def clean():
-    """Clean build artifacts"""
-    click.echo("Clean command - not yet implemented")
+@click.argument(
+    "project_file",
+    type=click.Path(exists=True, path_type=Path),
+    default="project.gbs.yaml",
+    required=False
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be deleted without actually deleting"
+)
+async def clean(project_file: Path, dry_run: bool):
+    """Clean build artifacts
+
+    Removes build directories and generated files specified in backend configurations.
+    By default, looks for project.gbs.yaml in the current directory.
+
+    PROJECT_FILE: Path to project file (default: project.gbs.yaml)
+    """
+    import shutil
+
+    logger = get_logger()
+
+    try:
+        # Load project configuration
+        click.echo(f"Loading project: {project_file}")
+        project = load_project(project_file)
+
+        # Get backends from raw_config
+        backends = project.raw_config.get("backends", [])
+        if not backends:
+            click.echo("No backends configured - nothing to clean")
+            return
+
+        # Collect directories and files to clean
+        dirs_to_clean = set()
+        files_to_clean = set()
+
+        for backend_config in backends:
+            config = backend_config.get("config", {})
+
+            # Check for output_dir in backend config
+            if "output_dir" in config:
+                output_dir = Path(config["output_dir"])
+                if not output_dir.is_absolute():
+                    output_dir = project_file.parent / output_dir
+                dirs_to_clean.add(output_dir)
+
+            # Check for topcell (GHDL generates executables)
+            if "topcell" in config:
+                topcell = config["topcell"]
+                # Executable is in current directory
+                exe_path = project_file.parent / topcell
+                if exe_path.exists():
+                    files_to_clean.add(exe_path)
+
+                # GHDL also creates e~<topcell>.o files
+                elab_file = project_file.parent / f"e~{topcell}.o"
+                if elab_file.exists():
+                    files_to_clean.add(elab_file)
+
+        # Show what will be cleaned
+        if not dirs_to_clean and not files_to_clean:
+            click.echo("No build artifacts found")
+            return
+
+        click.echo("\nBuild artifacts to clean:")
+        for dir_path in sorted(dirs_to_clean):
+            if dir_path.exists():
+                # Count files in directory
+                file_count = sum(1 for _ in dir_path.rglob("*") if _.is_file())
+                click.echo(f"  📁 {dir_path}/ ({file_count} files)")
+            else:
+                click.echo(f"  📁 {dir_path}/ (not found)")
+
+        for file_path in sorted(files_to_clean):
+            size = file_path.stat().st_size if file_path.exists() else 0
+            size_str = f"{size:,} bytes" if size < 1024*1024 else f"{size/(1024*1024):.1f} MB"
+            click.echo(f"  📄 {file_path} ({size_str})")
+
+        if dry_run:
+            click.echo("\n--dry-run: No files were deleted")
+            return
+
+        # Confirm deletion
+        if not click.confirm("\nProceed with deletion?"):
+            click.echo("Cancelled")
+            return
+
+        # Delete directories
+        deleted_dirs = 0
+        deleted_files = 0
+
+        for dir_path in dirs_to_clean:
+            if dir_path.exists():
+                try:
+                    shutil.rmtree(dir_path)
+                    click.echo(f"✓ Deleted {dir_path}/")
+                    deleted_dirs += 1
+                except Exception as e:
+                    click.echo(f"✗ Failed to delete {dir_path}/: {e}", err=True)
+
+        # Delete files
+        for file_path in files_to_clean:
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    click.echo(f"✓ Deleted {file_path}")
+                    deleted_files += 1
+                except Exception as e:
+                    click.echo(f"✗ Failed to delete {file_path}: {e}", err=True)
+
+        click.echo(f"\nCleaned {deleted_dirs} directories and {deleted_files} files")
+
+    except LoadError as e:
+        click.echo(f"Error loading project: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        logger.exception("Clean failed")
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
 
 
 @repo.command()
