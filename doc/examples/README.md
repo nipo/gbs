@@ -365,6 +365,49 @@ Check profile name matches exactly (case-sensitive).
 
 Remember: profiles conflict with explicit `backends:`/`filter_vars:`, but repositories are always merged.
 
+## Backend-Provided Filter Variables
+
+Some backends automatically provide filter variables without needing explicit configuration.
+
+### GHDL Backend
+
+The GHDL backend automatically provides these filter variables:
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `target-usage` | `simulation` | GHDL is a simulation tool, so this is always set |
+| `compiler` | `ghdl` | Identifies GHDL as the compiler |
+| `ghdl-backend` | `mcode`/`gcc`/`llvm`/`jit` | GHDL backend type (detected at runtime) |
+| `vhdl-version` | `1987`/`1993`/`2000`/`2002`/`2008`/`2019` | VHDL standard version (normalized from config) |
+
+**Usage Examples**:
+
+```yaml
+# Backend-specific optimizations
+sources:
+  - language: vhdl
+    filter: {ghdl-backend: llvm}  # Only for LLVM backend
+    files: [optimized_impl.vhd]
+
+  - language: vhdl
+    filter: {ghdl-backend: mcode}  # Only for mcode backend
+    files: [fast_compile_impl.vhd]
+
+# Version-specific code
+sources:
+  - language: vhdl
+    filter: {vhdl-version: "2008"}  # Only when using VHDL-2008
+    files: [modern_features.vhd]
+
+  - language: vhdl
+    filter: {vhdl-version: "1993"}  # Only when using VHDL-93
+    files: [legacy_compat.vhd]
+```
+
+**Notes**:
+- You don't need to set `target-usage: simulation` in your profile when using GHDL - it's automatic
+- `vhdl-version` is normalized from the `vhdl_std` config (e.g., "93c" → "1993", "08" → "2008")
+
 ## See Also
 
 - Main GBS documentation - User guide and tutorials

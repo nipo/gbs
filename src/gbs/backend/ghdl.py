@@ -36,24 +36,91 @@ class GHDLBackend(BaseBackend):
         self.output_dir = Path(output_dir) if output_dir is not None else Path("build")
         self.vhdl_std = vhdl_std
         self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
-        self._ghdl_backend_type: str | None = None
+        self._ghdl_executable: str | None = None  # Cached executable path
+        self._ghdl_backend_type: str | None = None  # Cached backend type
         self._processed_libraries: set[str] = set()
 
+    def _get_ghdl_config(self, context: BuildContext) -> tuple[str, str]:
+        """Get GHDL executable and backend type (cached)
+
+        Args:
+            context: Build context for tool lookup
+
+        Returns:
+            Tuple of (executable_path, backend_type)
+
+        Raises:
+            RuntimeError: If GHDL cannot be configured
+        """
+        # Return cached values if available
+        if self._ghdl_executable is not None and self._ghdl_backend_type is not None:
+            return self._ghdl_executable, self._ghdl_backend_type
+
+        # Look up GHDL tool configuration (optional, falls back to default)
+        tool_config = context.get_tool(self.ghdl_tool, required=False)
+        if tool_config:
+            ghdl_executable = tool_config.get("executable", "ghdl")
+            self.logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
+        else:
+            ghdl_executable = "ghdl"
+            self.logger.debug(f"Using default GHDL executable: {ghdl_executable}")
+
+        # Detect backend type
+        backend_type = self._detect_ghdl_backend(ghdl_executable)
+
+        # Cache both values
+        self._ghdl_executable = ghdl_executable
+        self._ghdl_backend_type = backend_type
+
+        return ghdl_executable, backend_type
+
+    @staticmethod
+    def _normalize_vhdl_version(vhdl_std: str) -> str:
+        """Normalize VHDL standard to four-digit year format
+
+        Args:
+            vhdl_std: GHDL standard string (e.g., "93c", "08", "2008")
+
+        Returns:
+            Four-digit year string (e.g., "1993", "2008")
+        """
+        # Strip any suffix characters (like 'c' for common extensions)
+        std = vhdl_std.rstrip('c')
+
+        # Map two-digit years to four-digit years
+        year_map = {
+            "87": "1987",
+            "93": "1993",
+            "00": "2000",
+            "02": "2002",
+            "08": "2008",
+            "19": "2019",
+        }
+
+        # If already four digits, return as-is
+        if len(std) == 4 and std.isdigit():
+            return std
+
+        # If two digits, look up in map
+        if std in year_map:
+            return year_map[std]
+
+        # Default to 1993 if unknown
+        return "1993"
+
     def _detect_ghdl_backend(self, ghdl_executable: str) -> str:
-        """Detect GHDL backend type (mcode, gcc, or llvm)
+        """Detect GHDL backend type (mcode, gcc, llvm, or jit)
 
         Args:
             ghdl_executable: Path to GHDL executable
 
         Returns:
-            "mcode", "gcc", or "llvm"
+            "mcode", "gcc", "llvm", or "jit"
 
         Raises:
             RuntimeError: If ghdl is not found or version cannot be parsed
         """
-        if self._ghdl_backend_type is not None:
-            return self._ghdl_backend_type
-
+        # Note: Don't check cache here - _get_ghdl_config handles caching
         import subprocess
 
         try:
@@ -76,7 +143,6 @@ class GHDLBackend(BaseBackend):
                     words = line_lower.split()
                     for backend in ['jit', 'mcode', 'gcc', 'llvm']:
                         if backend in words:
-                            self._ghdl_backend_type = backend
                             self.logger.info(f"Detected GHDL backend: {backend}")
                             return backend
 
@@ -92,11 +158,21 @@ class GHDLBackend(BaseBackend):
 
         GHDL is a simulation tool, so it automatically sets target-usage=simulation.
         This allows conditional source filtering based on simulation vs synthesis.
+
+        Also provides ghdl-backend (mcode/gcc/llvm/jit) for backend-specific filtering
+        and vhdl-version (normalized to four-digit year) for version-specific code.
         """
+        # Get cached config (will detect on first call)
+        _, backend_type = self._get_ghdl_config(context)
+
+        # Normalize VHDL version to four-digit year
+        vhdl_version = self._normalize_vhdl_version(self.vhdl_std)
+
         return {
             "target-usage": "simulation",
             "compiler": "ghdl",
-            "supports_vhdl_2008": True,
+            "ghdl-backend": backend_type,  # mcode/gcc/llvm/jit
+            "vhdl-version": vhdl_version,  # 1987/1993/2000/2002/2008/2019
         }
 
     async def process(
@@ -107,17 +183,8 @@ class GHDLBackend(BaseBackend):
         """Compile VHDL design with GHDL"""
         import subprocess
 
-        # Look up GHDL tool configuration (optional, falls back to default)
-        tool_config = context.get_tool(self.ghdl_tool, required=False)
-        if tool_config:
-            ghdl_executable = tool_config.get("executable", "ghdl")
-            self.logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
-        else:
-            ghdl_executable = "ghdl"
-            self.logger.debug(f"Using default GHDL executable: {ghdl_executable}")
-
-        # Detect GHDL backend type
-        backend_type = self._detect_ghdl_backend(ghdl_executable)
+        # Get GHDL configuration (cached after first call)
+        ghdl_executable, backend_type = self._get_ghdl_config(context)
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@ name: simple_project
 topcell: top
 output_format: filelist
 
-# Use the simulation profile defined in ../gbs.yaml
+# Use the simulation profile defined in ../.gbs.yaml
 # This provides: filter_vars, backends, and repository configuration
 profile: simulation
 
