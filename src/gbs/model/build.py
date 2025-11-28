@@ -51,13 +51,14 @@ class BuildContext:
     - All steps
     """
 
-    def __init__(self, max_parallel: int = 4, project_config: Optional[dict[str, Any]] = None, project: Optional[Any] = None):
+    def __init__(self, max_parallel: int = 4, project_config: Optional[dict[str, Any]] = None, project: Optional[Any] = None, gbs_config: Optional[Any] = None):
         """Initialize build context
 
         Args:
             max_parallel: Maximum number of tasks to run in parallel
             project_config: Optional project configuration (deprecated, use project instead)
             project: Optional Project instance
+            gbs_config: Optional GBSConfig instance for tool lookup
         """
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = None
@@ -65,6 +66,7 @@ class BuildContext:
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
         self.project_config = project_config or {}
         self.project = project
+        self.gbs_config = gbs_config
         self.steps = set()
         self.running = set()
         self.logger = get_logger("BuildContext")
@@ -126,6 +128,39 @@ class BuildContext:
         if self.project is None:
             return None
         return self.project.root_library.name
+
+    def get_tool(self, identifier: str, required: bool = True) -> Optional[dict[str, Any]]:
+        """Get tool configuration by identifier
+
+        Args:
+            identifier: Tool identifier in format 'name' or 'name:variant'
+            required: If True, raise error if tool not found
+
+        Returns:
+            Tool config dict, or None if not found and not required
+
+        Raises:
+            BuildError: If required=True and tool not found
+
+        Examples:
+            >>> ctx.get_tool("ghdl:llvm")  # Specific variant
+            {'executable': '/usr/bin/ghdl'}
+            >>> ctx.get_tool("gcc")  # Any variant
+            {'executable': 'gcc'}
+        """
+        if self.gbs_config is None:
+            if required:
+                raise BuildError(f"Tool '{identifier}' requested but no GBS config loaded")
+            return None
+
+        tool = self.gbs_config.get_tool(identifier)
+
+        if tool is None:
+            if required:
+                raise BuildError(f"Tool '{identifier}' not found in configuration")
+            return None
+
+        return tool.config
 
     async def _launch(self) -> None:
         self.logger.debug("Launch")

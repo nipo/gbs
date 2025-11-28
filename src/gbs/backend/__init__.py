@@ -2,6 +2,8 @@
 
 This package contains concrete backend implementations for the GBS build system.
 Also re-exports base classes for convenience.
+
+Built-in backends are registered as plugins via the register() function.
 """
 
 # Re-export base classes from gbs.model.backend
@@ -27,4 +29,41 @@ __all__ = [
     "GHDLBackend",
     "VerilogToVHDLBackend",
     "MemInitBackend",
+    # Plugin interface
+    "register",
 ]
+
+
+def register(plugin_registry):
+    """Register built-in backends as plugins
+
+    This allows built-in backends to be treated the same as external plugins.
+    Also contributes default tool configurations.
+
+    Args:
+        plugin_registry: PluginRegistry instance
+    """
+    from gbs.config import ToolConfig
+
+    # Register backends
+    plugin_registry.register_backend("GHDLBackend", GHDLBackend)
+    plugin_registry.register_backend("VerilogToVHDLBackend", VerilogToVHDLBackend)
+    plugin_registry.register_backend("MemInitBackend", MemInitBackend)
+
+    # Contribute default tools
+    default_tools = [
+        # GHDL from PATH
+        ToolConfig(
+            name="ghdl",
+            variant="system",
+            config={"executable": "ghdl"}
+        ),
+        # GCC from PATH
+        ToolConfig(
+            name="gcc",
+            variant="system",
+            config={"executable": "gcc"}
+        ),
+    ]
+
+    plugin_registry.contribute_tool_defaults(default_tools)
