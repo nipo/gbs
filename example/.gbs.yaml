@@ -1,0 +1,44 @@
+# .gbs.yaml
+# Tree-level GBS configuration for example projects
+#
+# This configuration is shared by all example projects in this directory tree.
+# Each example project references the "simulation" profile defined here.
+
+# Tool Definitions
+tools:
+  # GHDL from PATH (system installation)
+  - name: ghdl
+    variant: system
+    config:
+      executable: ghdl
+
+  # GCC from PATH
+  - name: gcc
+    variant: system
+    config:
+      executable: gcc
+
+# Profiles
+profiles:
+  # Standard simulation profile used by all examples
+  simulation:
+    filter_vars:
+      target: simulation
+
+    backends:
+      - backend: gbs.backend:GHDLBackend
+        config:
+          output_dir: build
+          vhdl_std: 93c
+          ghdl_tool: ghdl  # Use default GHDL
+
+    # Note: Repository is defined at tree level (below) instead of in profile
+    # This allows examples to add project-specific repositories
+    repositories: []
+
+# Common Repositories
+# This NSL library repository is used by all example projects
+# NOTE: Adjust this path to match your local NSL installation
+repositories:
+  - path: /Users/nipo/projects/nsl_clean
+    loader: gbs.plugin.nsl.tree

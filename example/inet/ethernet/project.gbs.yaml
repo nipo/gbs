@@ -2,14 +2,9 @@ name: inet_ethernet
 topcell: tb
 output_format: filelist
 
-filter_vars:
-  target: simulation
-
-backends:
-  - backend: gbs.backend:GHDLBackend
-    config:
-      output_dir: build
-      vhdl_std: 93c
+# Use the simulation profile defined in ../../.gbs.yaml
+# This provides: filter_vars, backends, and repository configuration
+profile: simulation
 
 root_library:
   name: root
@@ -31,8 +26,4 @@ root_library:
             - root.pkg.vhd
             - tb.vhd
             - dut.vhd
-
-repositories:
-  - path: /Users/nipo/projects/nsl_clean
-    loader: gbs.plugin.nsl.tree
 

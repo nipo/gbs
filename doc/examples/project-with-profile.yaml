@@ -1,0 +1,40 @@
+# project.gbs.yaml
+# Example project using a profile
+#
+# This is the simplest way to configure a project: reference a profile
+# defined in your user or tree config.
+
+name: my_fpga_project
+topcell: top
+output_format: filelist
+
+# Use a profile (defined in ~/.config/gbs.yaml or .gbs.yaml)
+# Profile provides: filter_vars, backends, and repositories
+profile: simulation
+
+# Root library (inline definition)
+root_library:
+  name: myproject
+  description: My FPGA project
+
+  partitions:
+    - name: rtl
+      sources:
+        - language: vhdl
+          files:
+            - src/top.vhd
+            - src/uart.vhd
+            - src/fifo.vhd
+
+    - name: testbench
+      deps:
+        - myproject.rtl
+      sources:
+        - language: vhdl
+          files:
+            - tb/top_tb.vhd
+
+# You can still add project-specific repositories
+# These will be MERGED with profile and config repositories
+repositories:
+  - path: vendor/uart_ip
