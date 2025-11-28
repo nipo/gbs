@@ -63,16 +63,19 @@ class GHDLBackend(BaseBackend):
 
             # Look for "code generator" line
             # Format can be: " llvm 19.1.7 code generator" or "code generator: mcode"
+            # Note: "LLVM JIT" should be detected as "jit", not "llvm"
             for line in result.stdout.split('\n'):
                 if 'code generator' in line.lower():
                     line_lower = line.lower()
                     # Check all words in the line for known backends
+                    # Priority order: jit > mcode > gcc > llvm
+                    # (JIT must come before llvm since "LLVM JIT" contains both words)
                     words = line_lower.split()
-                    for word in words:
-                        if word in ['mcode', 'gcc', 'llvm']:
-                            self._ghdl_backend_type = word
-                            self.logger.info(f"Detected GHDL backend: {word}")
-                            return word
+                    for backend in ['jit', 'mcode', 'gcc', 'llvm']:
+                        if backend in words:
+                            self._ghdl_backend_type = backend
+                            self.logger.info(f"Detected GHDL backend: {backend}")
+                            return backend
 
             raise RuntimeError("Could not detect GHDL backend type from --version output")
 
