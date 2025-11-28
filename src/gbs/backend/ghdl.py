@@ -29,16 +29,21 @@ class GHDLBackend(BaseBackend):
     def __init__(
         self,
         output_dir: Path | str | None = None,
-        vhdl_std: str = "93c"
+        vhdl_std: str = "93c",
+        ghdl_tool: str = "ghdl"
     ):
         super().__init__("ghdl", priority=500)
         self.output_dir = Path(output_dir) if output_dir is not None else Path("build")
         self.vhdl_std = vhdl_std
+        self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
         self._ghdl_backend_type: str | None = None
         self._processed_libraries: set[str] = set()
 
-    def _detect_ghdl_backend(self) -> str:
+    def _detect_ghdl_backend(self, ghdl_executable: str) -> str:
         """Detect GHDL backend type (mcode, gcc, or llvm)
+
+        Args:
+            ghdl_executable: Path to GHDL executable
 
         Returns:
             "mcode", "gcc", or "llvm"
@@ -53,7 +58,7 @@ class GHDLBackend(BaseBackend):
 
         try:
             result = subprocess.run(
-                ["ghdl", "--version"],
+                [ghdl_executable, "--version"],
                 capture_output=True,
                 text=True,
                 check=True
@@ -78,9 +83,9 @@ class GHDLBackend(BaseBackend):
             raise RuntimeError("Could not detect GHDL backend type from --version output")
 
         except FileNotFoundError:
-            raise RuntimeError("ghdl not found in PATH")
+            raise RuntimeError(f"GHDL executable not found: {ghdl_executable}")
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"ghdl --version failed: {e}")
+            raise RuntimeError(f"GHDL --version failed: {e}")
 
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
         """Provide filter variables for GHDL"""
@@ -97,8 +102,17 @@ class GHDLBackend(BaseBackend):
         """Compile VHDL design with GHDL"""
         import subprocess
 
+        # Look up GHDL tool configuration (optional, falls back to default)
+        tool_config = context.get_tool(self.ghdl_tool, required=False)
+        if tool_config:
+            ghdl_executable = tool_config.get("executable", "ghdl")
+            self.logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
+        else:
+            ghdl_executable = "ghdl"
+            self.logger.debug(f"Using default GHDL executable: {ghdl_executable}")
+
         # Detect GHDL backend type
-        backend_type = self._detect_ghdl_backend()
+        backend_type = self._detect_ghdl_backend(ghdl_executable)
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -168,10 +182,10 @@ class GHDLBackend(BaseBackend):
 
             # Create import task (ghdl -i)
             # Capture loop variables with default arguments
-            def make_import_executor(wd, std, lib, pflags, srcs, cfp):
+            def make_import_executor(ghdl_exe, wd, std, lib, pflags, srcs, cfp):
                 async def import_executor(ctx, inputs):
                     cmd = [
-                        "ghdl", "-i",
+                        ghdl_exe, "-i",
                         f"--workdir={wd.resolve()}",
                         f"--std={std}",
                         f"--work={lib}",
@@ -187,7 +201,7 @@ class GHDLBackend(BaseBackend):
                 return import_executor
 
             import_executor = make_import_executor(
-                workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path
+                ghdl_executable, workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path
             )
 
             # Import depends on source files and dependent library .cf files
@@ -218,10 +232,10 @@ class GHDLBackend(BaseBackend):
                     object_files.append(obj_path)
 
             # Capture loop variables with default arguments
-            def make_analyze_executor(wd, std, lib, pflags, srcs, cfp, objfiles):
+            def make_analyze_executor(ghdl_exe, wd, std, lib, pflags, srcs, cfp, objfiles):
                 async def analyze_executor(ctx, inputs):
                     cmd = [
-                        "ghdl", "-a",
+                        ghdl_exe, "-a",
                         f"--workdir={wd.resolve()}",
                         f"--std={std}",
                         f"--work={lib}",
@@ -239,7 +253,7 @@ class GHDLBackend(BaseBackend):
                 return analyze_executor
 
             analyze_executor = make_analyze_executor(
-                workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path, object_files[:]
+                ghdl_executable, workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path, object_files[:]
             )
 
             # Analyze inputs: source files and dependent library analyze tasks
@@ -294,7 +308,8 @@ class GHDLBackend(BaseBackend):
                     topcell,
                     root_library,
                     cf_files,
-                    vhdl_version
+                    vhdl_version,
+                    ghdl_executable
                 )
 
     def _create_elaboration_tasks(
@@ -305,9 +320,14 @@ class GHDLBackend(BaseBackend):
         topcell: str,
         root_library: str,
         cf_files: dict[str, BuildResource],
-        vhdl_version: str
+        vhdl_version: str,
+        ghdl_executable: str
     ):
-        """Create elaboration/linking tasks for the top entity"""
+        """Create elaboration/linking tasks for the top entity
+
+        Args:
+            ghdl_executable: Path to GHDL executable
+        """
         import subprocess
 
         root_workdir = self.output_dir / root_library
@@ -325,7 +345,7 @@ class GHDLBackend(BaseBackend):
 
             async def compile_link_executor(ctx, inputs):
                 cmd = [
-                    "ghdl", "-c", "-O2",
+                    ghdl_executable, "-c", "-O2",
                     f"--workdir={root_workdir.resolve()}",
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
@@ -337,7 +357,7 @@ class GHDLBackend(BaseBackend):
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
-                    raise RuntimeError(f"ghdl -c -e failed: {result.stderr}")
+                    raise RuntimeError(f"GHDL -c -e failed: {result.stderr}")
 
                 return [executable_path]
 
@@ -365,7 +385,7 @@ class GHDLBackend(BaseBackend):
             # ghdl -m (make)
             async def make_executor(ctx, inputs):
                 cmd = [
-                    "ghdl", "-m",
+                    ghdl_executable, "-m",
                     f"--workdir={root_workdir.resolve()}",
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
@@ -377,7 +397,7 @@ class GHDLBackend(BaseBackend):
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
-                    raise RuntimeError(f"ghdl -m failed: {result.stderr}")
+                    raise RuntimeError(f"GHDL -m failed: {result.stderr}")
 
                 # Return a marker file
                 marker = root_workdir / f".{topcell}_made"
@@ -398,7 +418,7 @@ class GHDLBackend(BaseBackend):
             # ghdl -e (elaborate)
             async def elab_executor(ctx, inputs):
                 cmd = [
-                    "ghdl", "-e",
+                    ghdl_executable, "-e",
                     f"--workdir={root_workdir.resolve()}",
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
@@ -410,12 +430,12 @@ class GHDLBackend(BaseBackend):
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
-                    raise RuntimeError(f"ghdl -e failed: {result.stderr}")
+                    raise RuntimeError(f"GHDL -e failed: {result.stderr}")
 
                 # Create run script
                 script_path = Path.cwd() / topcell
                 run_cmd = [
-                    "ghdl", "-r",
+                    ghdl_executable, "-r",
                     f"--workdir={root_workdir.resolve()}",
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [

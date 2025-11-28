@@ -10,6 +10,8 @@ import sys
 from gbs.logging import setup_logging, get_logger, get_log_file
 from gbs.loaders import load_repository, load_project, load_project_with_repositories, LoadError
 from gbs.resolver import resolve_project
+from gbs.plugins import get_plugin_registry
+from gbs.config import GBSConfig
 
 
 @click.group()
@@ -39,12 +41,21 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
     logger = get_logger()
 
+    # Load GBS configuration
+    logger.debug("Loading GBS configuration...")
+    plugin_registry = get_plugin_registry()
+    plugin_registry.discover_plugins()
+    default_tools = plugin_registry.get_default_tools()
+    gbs_config = GBSConfig.load(plugin_defaults=default_tools)
+
     # Store in context for subcommands
     ctx.ensure_object(dict)
     ctx.obj["logger"] = logger
     ctx.obj["log_file"] = get_log_file()
+    ctx.obj["gbs_config"] = gbs_config
 
     logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
+    logger.debug(f"Loaded {len(gbs_config.tools)} tools, {len(gbs_config.profiles)} profiles")
 
 
 @cli.group()
@@ -84,7 +95,8 @@ async def project():
     is_flag=True,
     help="Show build dependency graph and exit (do not build)"
 )
-async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
+@click.pass_context
+async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project
 
     PROJECT_FILE: Path to project file (default: project.gbs.yaml)
@@ -97,9 +109,12 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
     logger = get_logger()
 
     try:
+        # Get GBS config from context
+        gbs_config = ctx.obj.get("gbs_config")
+
         # Load project and its specified repositories
         click.echo(f"Loading project: {project_file}")
-        project, repositories = load_project_with_repositories(project_file)
+        project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
 
         # Load additional repositories from command line
         for repo_path in repo:
@@ -113,10 +128,10 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
         click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
 
         # Create build context
-        ctx = BuildContext(project=project)
+        build_ctx = BuildContext(project=project, gbs_config=gbs_config)
 
         # Create build fileset and populate it
-        fileset = BuildFileSet(ctx)
+        fileset = BuildFileSet(build_ctx)
 
         click.echo("Creating build fileset...")
         # First pass: create all BuildResources
@@ -137,7 +152,7 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
 
                     # Create BuildResource
                     br = BuildResource(
-                        resource=ctx.get_resource(source_file.path),
+                        resource=build_ctx.get_resource(source_file.path),
                         file_type=file_type,
                         library=lib_name,
                     )
@@ -176,7 +191,7 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
         click.echo()
         click.echo("Running backend iteration...")
         iterations = await run_backend_iteration(
-            ctx,
+            build_ctx,
             fileset,
             registry,
             max_iterations=max_iterations
@@ -233,7 +248,7 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
         # Execute build
         click.echo()
         click.echo("Executing build tasks...")
-        async with ctx.build():
+        async with build_ctx.build():
             # Gather all resources
             all_resources = [br.resource for br in fileset]
             if all_resources:

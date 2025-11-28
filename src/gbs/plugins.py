@@ -98,17 +98,17 @@ class PluginRegistry:
             logger.warning(f"Failed to register built-in backends: {e}")
 
         try:
-            import importlib.metadata
+            import importlib.metadata as metadata
         except ImportError:
             # Python < 3.8
-            import importlib_metadata as importlib.metadata
+            import importlib_metadata as metadata
 
         # Discover gbs.backends entry points
         try:
-            backend_eps = importlib.metadata.entry_points(group='gbs.backends')
+            backend_eps = metadata.entry_points(group='gbs.backends')
         except TypeError:
             # Python 3.9 compatibility
-            backend_eps = importlib.metadata.entry_points().get('gbs.backends', [])
+            backend_eps = metadata.entry_points().get('gbs.backends', [])
 
         for ep in backend_eps:
             try:
@@ -122,10 +122,10 @@ class PluginRegistry:
 
         # Discover gbs.loaders entry points
         try:
-            loader_eps = importlib.metadata.entry_points(group='gbs.loaders')
+            loader_eps = metadata.entry_points(group='gbs.loaders')
         except TypeError:
             # Python 3.9 compatibility
-            loader_eps = importlib.metadata.entry_points().get('gbs.loaders', [])
+            loader_eps = metadata.entry_points().get('gbs.loaders', [])
 
         for ep in loader_eps:
             try:

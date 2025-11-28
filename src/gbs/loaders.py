@@ -403,11 +403,12 @@ def load_repository(path: Path, discover_libraries: bool = True) -> Repository:
     return repository
 
 
-def load_project(path: Path) -> Project:
+def load_project(path: Path, gbs_config=None) -> Project:
     """Load a project definition from a YAML file
 
     Args:
         path: Path to project YAML file
+        gbs_config: Optional GBSConfig for profile expansion
 
     Returns:
         Project object
@@ -417,6 +418,49 @@ def load_project(path: Path) -> Project:
     """
     logger.debug(f"Loading project from {path}")
     data = load_yaml_file(path)
+
+    # Handle profile expansion
+    if "profile" in data:
+        if gbs_config is None:
+            raise LoadError(
+                f"Project specifies profile '{data['profile']}' but no GBSConfig provided"
+            )
+
+        profile_name = data["profile"]
+
+        # Check for conflicting explicit configuration
+        conflicts = []
+        if "backends" in data:
+            conflicts.append("backends")
+        if "repositories" in data:
+            conflicts.append("repositories")
+        if "filter_vars" in data:
+            conflicts.append("filter_vars")
+
+        if conflicts:
+            raise LoadError(
+                f"Project cannot specify both 'profile' and {', '.join(conflicts)}. "
+                f"Either use a profile OR specify configuration explicitly."
+            )
+
+        # Look up profile
+        if profile_name not in gbs_config.profiles:
+            available = ', '.join(gbs_config.profiles.keys()) if gbs_config.profiles else '(none)'
+            raise LoadError(
+                f"Profile '{profile_name}' not found in configuration. "
+                f"Available profiles: {available}"
+            )
+
+        profile = gbs_config.profiles[profile_name]
+
+        # Expand profile into project data
+        logger.info(f"Expanding profile '{profile_name}' into project")
+        data["filter_vars"] = profile.filter_vars
+        data["backends"] = profile.backends
+        # Note: profile repositories will be merged separately
+
+        # Store profile repositories for later merging
+        data["_profile_repositories"] = profile.repositories
 
     # Required fields
     required_fields = ["name", "topcell", "output_format", "root_library"]
@@ -500,40 +544,35 @@ def load_project(path: Path) -> Project:
     return project
 
 
-def load_repositories_from_project(project_data: dict[str, Any], project_base_path: Path) -> list[Repository]:
-    """Load repositories specified in a project file
+def _load_single_repository(repo_spec: dict[str, Any], project_base_path: Path) -> Repository | None:
+    """Load a single repository from a specification
 
     Args:
-        project_data: Parsed project YAML data
-        project_base_path: Base path for resolving relative repository paths
+        repo_spec: Repository specification dict
+        project_base_path: Base path for resolving relative paths
 
     Returns:
-        List of loaded Repository objects
+        Repository object, or None if loading failed
 
     Raises:
-        LoadError: If any repository cannot be loaded
+        LoadError: If repository specification is invalid
     """
-    repositories = []
+    if not isinstance(repo_spec, dict):
+        raise LoadError(f"Repository specification must be a dict, got {type(repo_spec)}")
 
-    if "repositories" not in project_data:
-        return repositories
+    if "path" not in repo_spec:
+        raise LoadError("Repository specification must include 'path'")
 
-    for repo_spec in project_data["repositories"]:
-        if not isinstance(repo_spec, dict):
-            raise LoadError(f"Repository specification must be a dict, got {type(repo_spec)}")
+    repo_path = Path(repo_spec["path"])
 
-        if "path" not in repo_spec:
-            raise LoadError("Repository specification must include 'path'")
+    # Resolve relative paths
+    if not repo_path.is_absolute():
+        repo_path = project_base_path / repo_path
 
-        repo_path = Path(repo_spec["path"])
+    # Get loader (default to YAML loader)
+    loader_name = repo_spec.get("loader", None)
 
-        # Resolve relative paths
-        if not repo_path.is_absolute():
-            repo_path = project_base_path / repo_path
-
-        # Get loader (default to YAML loader)
-        loader_name = repo_spec.get("loader", None)
-
+    try:
         if loader_name:
             # Use custom loader
             loader = get_repository_loader(loader_name)
@@ -544,20 +583,71 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
             logger.info(f"Loading repository from {repo_path} using default YAML loader")
             repository = load_repository(repo_path)
 
-        repositories.append(repository)
+        return repository
+    except LoadError as e:
+        logger.warning(f"Failed to load repository from {repo_path}: {e}")
+        return None
 
-    logger.info(f"Loaded {len(repositories)} repositories from project spec")
+
+def load_repositories_from_project(project_data: dict[str, Any], project_base_path: Path, gbs_config=None) -> list[Repository]:
+    """Load repositories specified in a project file
+
+    Merges repositories from multiple sources:
+    1. Config-level repositories (from GBSConfig)
+    2. Profile repositories (if profile was used)
+    3. Project-level repositories (from project file)
+
+    Args:
+        project_data: Parsed project YAML data
+        project_base_path: Base path for resolving relative repository paths
+        gbs_config: Optional GBSConfig for merging config repositories
+
+    Returns:
+        List of loaded Repository objects
+
+    Raises:
+        LoadError: If any repository cannot be loaded
+    """
+    repositories = []
+
+    # 1. Load config-level repositories first
+    if gbs_config is not None and gbs_config.repositories:
+        logger.debug(f"Loading {len(gbs_config.repositories)} config-level repositories")
+        for repo_spec in gbs_config.repositories:
+            repo = _load_single_repository(repo_spec, project_base_path)
+            if repo:
+                repositories.append(repo)
+
+    # 2. Load profile repositories (if profile was expanded)
+    if "_profile_repositories" in project_data:
+        profile_repos = project_data["_profile_repositories"]
+        logger.debug(f"Loading {len(profile_repos)} profile repositories")
+        for repo_spec in profile_repos:
+            repo = _load_single_repository(repo_spec, project_base_path)
+            if repo:
+                repositories.append(repo)
+
+    # 3. Load project-level repositories
+    if "repositories" in project_data:
+        logger.debug(f"Loading project-level repositories")
+        for repo_spec in project_data["repositories"]:
+            repo = _load_single_repository(repo_spec, project_base_path)
+            if repo:
+                repositories.append(repo)
+
+    logger.info(f"Loaded {len(repositories)} repositories total (config + profile + project)")
     return repositories
 
 
-def load_project_with_repositories(path: Path) -> tuple[Project, list[Repository]]:
+def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Project, list[Repository]]:
     """Load a project and its specified repositories
 
     Convenience function that loads a project and any repositories specified
-    in the project file.
+    in the project file, config, and profiles.
 
     Args:
         path: Path to project YAML file
+        gbs_config: Optional GBSConfig for profile expansion and repository merging
 
     Returns:
         Tuple of (Project, list of Repository)
@@ -565,11 +655,13 @@ def load_project_with_repositories(path: Path) -> tuple[Project, list[Repository
     Raises:
         LoadError: If project or repositories cannot be loaded
     """
-    # Load project
-    project = load_project(path)
+    # Load project (handles profile expansion if present)
+    project = load_project(path, gbs_config=gbs_config)
 
     # Load YAML to get repository specs
     data = load_yaml_file(path)
-    repositories = load_repositories_from_project(data, path.parent)
+
+    # Load and merge repositories (config + profile + project)
+    repositories = load_repositories_from_project(data, path.parent, gbs_config=gbs_config)
 
     return project, repositories
