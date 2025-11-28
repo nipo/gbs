@@ -51,18 +51,20 @@ class BuildContext:
     - All steps
     """
 
-    def __init__(self, max_parallel: int = 4, project_config: Optional[dict[str, Any]] = None):
+    def __init__(self, max_parallel: int = 4, project_config: Optional[dict[str, Any]] = None, project: Optional[Any] = None):
         """Initialize build context
 
         Args:
             max_parallel: Maximum number of tasks to run in parallel
-            project_config: Optional project configuration
+            project_config: Optional project configuration (deprecated, use project instead)
+            project: Optional Project instance
         """
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._resources: dict[Path, 'Resource'] = {}
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
         self.project_config = project_config or {}
+        self.project = project
         self.steps = set()
         self.running = set()
         self.logger = get_logger("BuildContext")
@@ -104,6 +106,26 @@ class BuildContext:
 
     def step_register(self, step: "BuildStep") -> None:
         self.steps.add(step)
+
+    def get_topcell(self) -> Optional[str]:
+        """Get the project topcell name
+
+        Returns:
+            Topcell name or None if no project is set
+        """
+        if self.project is None:
+            return None
+        return self.project.topcell
+
+    def get_topcell_library(self) -> Optional[str]:
+        """Get the library name containing the topcell
+
+        Returns:
+            Root library name or None if no project is set
+        """
+        if self.project is None:
+            return None
+        return self.project.root_library.name
 
     async def _launch(self) -> None:
         self.logger.debug("Launch")

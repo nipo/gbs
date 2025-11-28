@@ -17,7 +17,6 @@ from gbs.models import (
     Partition,
     Library,
     Repository,
-    ToolsuiteConfig,
     Project,
 )
 from gbs.logging import get_logger
@@ -420,7 +419,7 @@ def load_project(path: Path) -> Project:
     data = load_yaml_file(path)
 
     # Required fields
-    required_fields = ["name", "toolsuite", "topcell", "output_format", "root_library"]
+    required_fields = ["name", "topcell", "output_format", "root_library"]
     for field in required_fields:
         if field not in data:
             raise LoadError(f"Project file {path} missing required field '{field}'")
@@ -429,17 +428,6 @@ def load_project(path: Path) -> Project:
     description = data.get("description")
     topcell = data["topcell"]
     output_format = data["output_format"]
-
-    # Load toolsuite configuration
-    toolsuite_data = data["toolsuite"]
-    if "name" not in toolsuite_data or "backend" not in toolsuite_data:
-        raise LoadError("Toolsuite must specify 'name' and 'backend'")
-
-    toolsuite = ToolsuiteConfig(
-        name=toolsuite_data["name"],
-        backend=toolsuite_data["backend"],
-        config=toolsuite_data.get("config", {})
-    )
 
     # Filter variables
     filter_vars = data.get("filter_vars", {})
@@ -501,7 +489,6 @@ def load_project(path: Path) -> Project:
     project = Project(
         name=name,
         root_library=root_library,
-        toolsuite=toolsuite,
         topcell=topcell,
         output_format=output_format,
         filter_vars=filter_vars,

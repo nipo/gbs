@@ -31,7 +31,6 @@ from gbs.model.repository import (
     Partition,
     Library,
     Repository,
-    ToolsuiteConfig,
     Project,
     # Note: BuildFileSet is also defined in repository but we prefer the one from build
 )
@@ -66,7 +65,6 @@ __all__ = [
     "Partition",
     "Library",
     "Repository",
-    "ToolsuiteConfig",
     "Project",
     # backend module
     "Backend",

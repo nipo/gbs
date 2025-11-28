@@ -12,7 +12,6 @@ from gbs.models import (
     Library,
     Repository,
     Project,
-    ToolsuiteConfig,
     BuildFileSet,
 )
 
@@ -111,27 +110,13 @@ def test_repository():
     assert repo.get_library("nonexistent") is None
 
 
-def test_toolsuite_config():
-    """Test ToolsuiteConfig"""
-    config = ToolsuiteConfig(
-        name="vivado",
-        backend="gbs.backends.vivado",
-        config={"version": "2023.1"}
-    )
-    assert config.name == "vivado"
-    assert config.backend == "gbs.backends.vivado"
-    assert config.config["version"] == "2023.1"
-
-
 def test_project():
     """Test Project definition"""
     root_lib = Library(name="project_lib")
-    toolsuite = ToolsuiteConfig(name="vivado", backend="gbs.backends.vivado")
 
     project = Project(
         name="test_project",
         root_library=root_lib,
-        toolsuite=toolsuite,
         topcell="top",
         output_format="bitstream",
         filter_vars={"vendor": "xilinx", "family": "7series"}
@@ -139,6 +124,7 @@ def test_project():
 
     assert project.name == "test_project"
     assert project.topcell == "top"
+    assert project.output_format == "bitstream"
     assert project.filter_vars["vendor"] == "xilinx"
     assert "test_project" in str(project)
 

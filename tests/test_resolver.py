@@ -16,7 +16,6 @@ from gbs.models import (
     Partition,
     Repository,
     Project,
-    ToolsuiteConfig,
     FilterCondition,
     ConditionalGroup,
     SourceFile,
@@ -121,7 +120,6 @@ class TestDependencyResolver:
         project = Project(
             name="test_project",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test",
             filter_vars={}
@@ -243,7 +241,6 @@ class TestDependencyResolver:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )
@@ -322,7 +319,6 @@ class TestDependencyResolver:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )
@@ -353,7 +349,6 @@ class TestDependencyResolver:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )
@@ -431,7 +426,6 @@ class TestDependencyResolver:
         project_xilinx = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test",
             filter_vars={"vendor": "xilinx"}
@@ -450,7 +444,6 @@ class TestDependencyResolver:
         project_intel = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test",
             filter_vars={"vendor": "intel"}
@@ -472,7 +465,6 @@ class TestDependencyResolver:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )
@@ -532,7 +524,6 @@ class TestDependencyResolver:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )
@@ -566,7 +557,6 @@ class TestResolveProjectFunction:
         project = Project(
             name="test",
             root_library=root_lib,
-            toolsuite=ToolsuiteConfig("test", "test.backend"),
             topcell="top",
             output_format="test"
         )

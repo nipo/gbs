@@ -160,30 +160,15 @@ class Repository:
 
 
 @dataclass
-class ToolsuiteConfig:
-    """Configuration for a build toolsuite
-
-    Attributes:
-        name: Toolsuite name (e.g., "vivado", "quartus")
-        backend: Backend package to use (e.g., "gbs.backends.vivado")
-        config: Toolsuite-specific configuration dictionary
-    """
-    name: str
-    backend: str
-    config: dict = field(default_factory=dict)
-
-
-@dataclass
 class Project:
     """A gateware project definition
 
-    Projects define the root library, target toolsuite, and build configuration.
+    Projects define the root library and build configuration.
 
     Attributes:
         name: Project name
         root_library: The project's root library
-        toolsuite: Toolsuite configuration
-        topcell: Entry point entity/module name
+        topcell: Top-level entity/module name
         output_format: Desired output format (e.g., "bitstream", "netlist")
         filter_vars: Variables used for filter evaluation
         description: Optional description
@@ -191,7 +176,6 @@ class Project:
     """
     name: str
     root_library: Library
-    toolsuite: ToolsuiteConfig
     topcell: str
     output_format: str
     filter_vars: dict[str, str | int] = field(default_factory=dict)

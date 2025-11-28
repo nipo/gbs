@@ -29,13 +29,11 @@ class GHDLBackend(BaseBackend):
     def __init__(
         self,
         output_dir: Path | str | None = None,
-        vhdl_std: str = "93c",
-        topcell: str | None = None
+        vhdl_std: str = "93c"
     ):
         super().__init__("ghdl", priority=500)
         self.output_dir = Path(output_dir) if output_dir is not None else Path("build")
         self.vhdl_std = vhdl_std
-        self.topcell = topcell
         self._ghdl_backend_type: str | None = None
         self._processed_libraries: set[str] = set()
 
@@ -283,15 +281,17 @@ class GHDLBackend(BaseBackend):
             self._processed_libraries.add(library_name)
 
         # Step 3 & 4: Elaborate/link
-        if self.topcell and cf_files:
-            # Find the root library (last one in dependency order)
-            root_library = by_library[-1][0] if by_library else None
+        topcell = context.get_topcell()
+        if topcell and cf_files:
+            # Get the root library from context
+            root_library = context.get_topcell_library()
 
             if root_library:
                 self._create_elaboration_tasks(
                     context,
                     fileset,
                     backend_type,
+                    topcell,
                     root_library,
                     cf_files,
                     vhdl_version
@@ -302,6 +302,7 @@ class GHDLBackend(BaseBackend):
         context: BuildContext,
         fileset: BuildFileSet,
         backend_type: str,
+        topcell: str,
         root_library: str,
         cf_files: dict[str, BuildResource],
         vhdl_version: str
@@ -319,7 +320,7 @@ class GHDLBackend(BaseBackend):
 
         if backend_type in ["gcc", "llvm"]:
             # Compiled backend: ghdl -c -e
-            executable_path = Path.cwd() / self.topcell
+            executable_path = Path.cwd() / topcell
             executable_resource = context.get_resource(executable_path)
 
             async def compile_link_executor(ctx, inputs):
@@ -329,7 +330,7 @@ class GHDLBackend(BaseBackend):
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
                     f"--work={root_library}",
-                    "-e", self.topcell
+                    "-e", topcell
                 ]
 
                 self.logger.info(f"Linking: {' '.join(cmd)}")
@@ -342,11 +343,11 @@ class GHDLBackend(BaseBackend):
 
             link_task = ExecutorTask(
                 context,
-                f"ghdl_link_{self.topcell}",
+                f"ghdl_link_{topcell}",
                 inputs=[cf_files[lib].resource for lib in cf_files],
                 outputs=[executable_resource],
                 executor=compile_link_executor,
-                description=f"GHDL link {self.topcell}"
+                description=f"GHDL link {topcell}"
             )
 
             sim_br = BuildResource(
@@ -358,7 +359,7 @@ class GHDLBackend(BaseBackend):
             )
             fileset.add(sim_br)
 
-        else:  # mcode
+        else:  # mcode/jit
             # Mcode backend: ghdl -m, ghdl -e, then create run script
 
             # ghdl -m (make)
@@ -369,7 +370,7 @@ class GHDLBackend(BaseBackend):
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
                     f"--work={root_library}",
-                    self.topcell
+                    topcell
                 ]
 
                 self.logger.info(f"Make: {' '.join(cmd)}")
@@ -379,19 +380,19 @@ class GHDLBackend(BaseBackend):
                     raise RuntimeError(f"ghdl -m failed: {result.stderr}")
 
                 # Return a marker file
-                marker = root_workdir / f".{self.topcell}_made"
+                marker = root_workdir / f".{topcell}_made"
                 marker.touch()
                 return [marker]
 
-            make_marker = context.get_resource(root_workdir / f".{self.topcell}_made")
+            make_marker = context.get_resource(root_workdir / f".{topcell}_made")
 
             make_task = ExecutorTask(
                 context,
-                f"ghdl_make_{self.topcell}",
+                f"ghdl_make_{topcell}",
                 inputs=[cf_files[lib].resource for lib in cf_files],
                 outputs=[make_marker],
                 executor=make_executor,
-                description=f"GHDL make {self.topcell}"
+                description=f"GHDL make {topcell}"
             )
 
             # ghdl -e (elaborate)
@@ -402,7 +403,7 @@ class GHDLBackend(BaseBackend):
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
                     f"--work={root_library}",
-                    self.topcell
+                    topcell
                 ]
 
                 self.logger.info(f"Elaborate: {' '.join(cmd)}")
@@ -412,14 +413,14 @@ class GHDLBackend(BaseBackend):
                     raise RuntimeError(f"ghdl -e failed: {result.stderr}")
 
                 # Create run script
-                script_path = Path.cwd() / self.topcell
+                script_path = Path.cwd() / topcell
                 run_cmd = [
                     "ghdl", "-r",
                     f"--workdir={root_workdir.resolve()}",
                     f"--std={self.vhdl_std}",
                 ] + p_flags + [
                     f"--work={root_library}",
-                    self.topcell,
+                    topcell,
                     '"$@"'
                 ]
 
@@ -431,15 +432,15 @@ class GHDLBackend(BaseBackend):
 
                 return [script_path]
 
-            script_resource = context.get_resource(Path.cwd() / self.topcell)
+            script_resource = context.get_resource(Path.cwd() / topcell)
 
             elab_task = ExecutorTask(
                 context,
-                f"ghdl_elab_{self.topcell}",
+                f"ghdl_elab_{topcell}",
                 inputs=[make_marker],
                 outputs=[script_resource],
                 executor=elab_executor,
-                description=f"GHDL elaborate {self.topcell}"
+                description=f"GHDL elaborate {topcell}"
             )
 
             sim_br = BuildResource(

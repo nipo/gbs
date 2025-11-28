@@ -1,9 +1,5 @@
 name: inet_ethernet
-toolsuite:
-  name: ghdl
-  backend: gbs.backend.GHDLBackend
 topcell: tb
-
 output_format: filelist
 
 filter_vars:
@@ -14,7 +10,6 @@ backends:
     config:
       output_dir: build
       vhdl_std: 93c
-      topcell: tb
 
 root_library:
   name: root

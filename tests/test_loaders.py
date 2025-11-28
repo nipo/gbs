@@ -177,11 +177,6 @@ class TestProjectLoader:
         assert project.topcell == "top"
         assert project.output_format == "bitstream"
 
-        # Check toolsuite
-        assert project.toolsuite.name == "vivado"
-        assert project.toolsuite.backend == "gbs.backends.vivado"
-        assert project.toolsuite.config["version"] == "2023.1"
-
         # Check filter vars
         assert project.filter_vars["vendor"] == "xilinx"
         assert project.filter_vars["family"] == "7series"
@@ -215,22 +210,6 @@ class TestProjectLoader:
         project_file.write_text("name: incomplete_project\n")
 
         with pytest.raises(LoadError, match="missing required field"):
-            load_project(project_file)
-
-    def test_load_project_invalid_toolsuite(self, tmp_path):
-        """Test error when toolsuite is incomplete"""
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text(
-            "name: test\n"
-            "toolsuite:\n"
-            "  name: vivado\n"  # Missing backend
-            "topcell: top\n"
-            "output_format: bitstream\n"
-            "root_library:\n"
-            "  name: root\n"
-        )
-
-        with pytest.raises(LoadError, match="must specify 'name' and 'backend'"):
             load_project(project_file)
 
 

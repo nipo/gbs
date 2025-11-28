@@ -113,7 +113,7 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
         click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
 
         # Create build context
-        ctx = BuildContext()
+        ctx = BuildContext(project=project)
 
         # Create build fileset and populate it
         fileset = BuildFileSet(ctx)
@@ -563,7 +563,7 @@ async def query(path: Path, partition: str, filter: tuple[str]):
         repository = load_repository(path)
 
         # Create a minimal project to use the resolver
-        from gbs.models import Project, ToolsuiteConfig, Library, Partition, FilterCondition, ConditionalGroup
+        from gbs.models import Project, Library, Partition, FilterCondition, ConditionalGroup
         from gbs.resolver import DependencyResolver, PartitionRef
 
         # Parse partition reference
@@ -578,7 +578,6 @@ async def query(path: Path, partition: str, filter: tuple[str]):
         project = Project(
             name="__query__",
             root_library=empty_lib,
-            toolsuite=ToolsuiteConfig("none", "none"),
             topcell="none",
             output_format="none",
             filter_vars=filter_vars
@@ -649,17 +648,7 @@ async def show(project_file: Path):
         click.echo()
 
         click.echo("Configuration:")
-        click.echo(f"  Topcell: {project.topcell}")
         click.echo(f"  Output format: {project.output_format}")
-        click.echo()
-
-        click.echo("Toolsuite:")
-        click.echo(f"  Name: {project.toolsuite.name}")
-        click.echo(f"  Backend: {project.toolsuite.backend}")
-        if project.toolsuite.config:
-            click.echo(f"  Configuration:")
-            for key, value in sorted(project.toolsuite.config.items()):
-                click.echo(f"    {key}: {value}")
         click.echo()
 
         if project.filter_vars:
@@ -710,7 +699,6 @@ async def fileset(project_file: Path, repo: tuple[Path]):
 
         # Display results
         click.echo(f"Project: {project.name}")
-        click.echo(f"Topcell: {project.topcell}")
         click.echo()
 
         click.echo(f"Build file set ({len(build_set.get_all_files())} files):")

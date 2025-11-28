@@ -1,12 +1,6 @@
 name: simple_project
 description: A simple test project
 
-toolsuite:
-  name: vivado
-  backend: gbs.backends.vivado
-  config:
-    version: "2023.1"
-
 topcell: top
 output_format: bitstream
 

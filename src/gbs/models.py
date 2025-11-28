@@ -15,7 +15,6 @@ from gbs.model.repository import (
     Partition,
     Library,
     Repository,
-    ToolsuiteConfig,
     Project,
     BuildFileSet,
 )
@@ -28,7 +27,6 @@ __all__ = [
     "Partition",
     "Library",
     "Repository",
-    "ToolsuiteConfig",
     "Project",
     "BuildFileSet",
 ]
