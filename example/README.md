@@ -17,8 +17,6 @@ The `.gbs.yaml` file in this directory provides:
 ```yaml
 profiles:
   simulation:
-    filter_vars:
-      target: simulation
     backends:
       - backend: gbs.backend:GHDLBackend
         config:
@@ -90,7 +88,7 @@ By using a shared `.gbs.yaml` configuration:
 Each project repeated:
 ```yaml
 filter_vars:
-  target: simulation
+  some-config: some-value
 backends:
   - backend: gbs.backend:GHDLBackend
     config:

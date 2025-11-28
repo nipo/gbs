@@ -88,8 +88,13 @@ class GHDLBackend(BaseBackend):
             raise RuntimeError(f"GHDL --version failed: {e}")
 
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for GHDL"""
+        """Provide filter variables for GHDL
+
+        GHDL is a simulation tool, so it automatically sets target-usage=simulation.
+        This allows conditional source filtering based on simulation vs synthesis.
+        """
         return {
+            "target-usage": "simulation",
             "compiler": "ghdl",
             "supports_vhdl_2008": True,
         }

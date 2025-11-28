@@ -33,6 +33,7 @@ profiles:
     filter_vars:
       sim: 1
       vendor: generic
+      # Note: target=simulation is automatically set by GHDL backend
     backends:
       - backend: gbs.backend:GHDLBackend
         config:

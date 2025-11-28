@@ -29,6 +29,7 @@ profiles:
       sim: 1
       vendor: xilinx
       fpga_family: zynq
+      # Note: target=simulation is automatically set by GHDL backend
     backends:
       - backend: gbs.backend:GHDLBackend
         config:
@@ -43,6 +44,7 @@ profiles:
       sim: 1
       hil: 1
       vendor: xilinx
+      # Note: target=simulation is automatically set by GHDL backend
     backends:
       - backend: gbs.backend:GHDLBackend
         config:

@@ -22,8 +22,8 @@ tools:
 profiles:
   # Standard simulation profile used by all examples
   simulation:
-    filter_vars:
-      target: simulation
+    # No filter_vars needed - GHDL backend automatically sets target=simulation
+    filter_vars: {}
 
     backends:
       - backend: gbs.backend:GHDLBackend

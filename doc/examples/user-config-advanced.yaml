@@ -56,6 +56,7 @@ profiles:
       sim: 1
       vendor: generic
       optimization: 0
+      # Note: target=simulation is automatically set by GHDL backend
     backends:
       - backend: gbs.backend:GHDLBackend
         config:
@@ -71,6 +72,7 @@ profiles:
       sim: 1
       vendor: generic
       optimization: 2
+      # Note: target=simulation is automatically set by GHDL backend
     backends:
       - backend: gbs.backend:GHDLBackend
         config:
@@ -115,7 +117,7 @@ profiles:
     filter_vars:
       sim: 0
       vendor: generic
-      target: asic
+      target-usage: asic
     backends:
       - backend: gbs.backend:GHDLBackend
         config:
