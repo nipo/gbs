@@ -735,10 +735,11 @@ class BuildFileSet:
         """Build dependency graph between libraries
 
         Returns:
-            Dict mapping library_name -> set of libraries it depends on
+            Dict mapping library_name -> set of libraries it depends on (direct only)
 
         Note:
-            Only includes libraries that are actually in the fileset
+            Only includes libraries that are actually in the fileset.
+            For transitive dependencies, use library_dependency_graph_transitive().
         """
         graph: dict[str, set[str]] = {}
 
@@ -753,6 +754,38 @@ class BuildFileSet:
             for dep in resource.depends_on:
                 if dep.library and dep.library != resource.library:
                     graph[resource.library].add(dep.library)
+
+        return graph
+
+    def library_dependency_graph_transitive(self) -> dict[str, set[str]]:
+        """Build transitive dependency graph between libraries
+
+        Returns:
+            Dict mapping library_name -> set of ALL libraries it depends on (directly or transitively)
+
+        Note:
+            This computes the transitive closure of library_dependency_graph().
+            Useful for GHDL which needs all transitive dependencies in -P flags.
+        """
+        # Start with direct dependencies
+        graph = self.library_dependency_graph()
+
+        # Compute transitive closure using Floyd-Warshall-like algorithm
+        # For each library, add dependencies of its dependencies
+        changed = True
+        while changed:
+            changed = False
+            for lib in list(graph.keys()):
+                # Get current dependencies
+                current_deps = graph[lib].copy()
+
+                # Add transitive dependencies
+                for dep in current_deps:
+                    if dep in graph:
+                        for trans_dep in graph[dep]:
+                            if trans_dep not in graph[lib] and trans_dep != lib:
+                                graph[lib].add(trans_dep)
+                                changed = True
 
         return graph
 

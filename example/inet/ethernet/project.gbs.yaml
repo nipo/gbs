@@ -1,0 +1,43 @@
+name: inet_ethernet
+toolsuite:
+  name: ghdl
+  backend: gbs.backend.GHDLBackend
+topcell: tb
+
+output_format: filelist
+
+filter_vars:
+  target: simulation
+
+backends:
+  - backend: gbs.backend:GHDLBackend
+    config:
+      output_dir: build
+      vhdl_std: 93c
+      topcell: tb
+
+root_library:
+  name: root
+  partitions:
+    - name: main
+      deps:
+       - nsl_inet.ethernet
+       - nsl_mii.link_monitor
+       - nsl_mii.rgmii
+       - nsl_mii.testing
+       - nsl_data.text
+       - nsl_data.bytestream
+       - nsl_bnoc.testing
+       - nsl_simulation.driver
+       - nsl_simulation.assertions
+      sources:
+        - language: vhdl
+          files:
+            - root.pkg.vhd
+            - tb.vhd
+            - dut.vhd
+
+repositories:
+  - path: /Users/nipo/projects/nsl_clean
+    loader: gbs.plugin.nsl.tree
+

@@ -108,6 +108,10 @@ class GHDLBackend(BaseBackend):
         # Get libraries in dependency order
         by_library = fileset.by_library_ordered()
 
+        # Get library dependency graph for correct inter-library dependencies
+        # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
+        lib_deps_graph = fileset.library_dependency_graph_transitive()
+
         # Track .cf files and analyze tasks for dependencies
         cf_files: dict[str, BuildResource] = {}
         analyze_tasks: dict[str, ExecutorTask] = {}
@@ -153,14 +157,13 @@ class GHDLBackend(BaseBackend):
             source_paths = [str(br.path.resolve()) for br in vhdl_files]
 
             # Build -P flags for dependent libraries
-            # Since by_library_ordered() returns libs in dependency order,
-            # we can reference all previously processed libraries
+            # Use library dependency graph to get only the actual dependencies
             p_flags = []
-            for dep_lib in cf_files.keys():
-                if dep_lib != library_name:  # Don't add self
-                    dep_workdir = self.output_dir / dep_lib
-                    p_flags.append(f"-P{dep_workdir.resolve()}")
-            self.logger.debug(f"Library {library_name} p_flags: {p_flags}")
+            lib_deps = lib_deps_graph.get(library_name, set())
+            for dep_lib in lib_deps:
+                dep_workdir = self.output_dir / dep_lib
+                p_flags.append(f"-P{dep_workdir.resolve()}")
+            self.logger.debug(f"Library {library_name} depends on {lib_deps}, p_flags: {p_flags}")
 
             # Create import task (ghdl -i)
             # Capture loop variables with default arguments
@@ -187,11 +190,10 @@ class GHDLBackend(BaseBackend):
             )
 
             # Import depends on source files and dependent library .cf files
-            # Since by_library_ordered() returns libraries in dependency order,
-            # we can depend on all previously processed libraries
+            # Use library dependency graph to get only the actual dependencies
             import_inputs = [br.resource for br in vhdl_files]
-            for dep_lib in cf_files.keys():
-                if dep_lib != library_name:  # Don't depend on self
+            for dep_lib in lib_deps:
+                if dep_lib in cf_files:
                     import_inputs.append(cf_files[dep_lib].resource)
 
             import_task = ExecutorTask(
@@ -240,11 +242,10 @@ class GHDLBackend(BaseBackend):
             )
 
             # Analyze inputs: source files and dependent library analyze tasks
-            # Since by_library_ordered() returns libraries in dependency order,
-            # we can depend on all previously processed libraries' analyze tasks
+            # Use library dependency graph to get only the actual dependencies
             analyze_inputs = [import_task] + [br.resource for br in vhdl_files]
-            for dep_lib in analyze_tasks.keys():
-                if dep_lib != library_name:  # Don't depend on self
+            for dep_lib in lib_deps:
+                if dep_lib in analyze_tasks:
                     # Depend on the analyze task, not just the .cf file
                     analyze_inputs.append(analyze_tasks[dep_lib])
 

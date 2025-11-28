@@ -213,17 +213,26 @@ class BuildFileSet:
         libraries: Ordered list of libraries (in dependency order)
         partitions: Dictionary mapping library name to ordered partition list
         files: Dictionary mapping (library, partition) to source files
+        partition_deps: Dictionary mapping (library, partition) to set of (lib, part) dependencies
     """
     libraries: list[str] = field(default_factory=list)
     partitions: dict[str, list[str]] = field(default_factory=dict)
     files: dict[tuple[str, str], list[SourceFile]] = field(default_factory=dict)
+    partition_deps: dict[tuple[str, str], set[tuple[str, str]]] = field(default_factory=dict)
 
     def __str__(self) -> str:
         total_files = sum(len(f) for f in self.files.values())
         return f"BuildFileSet({len(self.libraries)} libraries, {total_files} files)"
 
-    def add_partition(self, library: str, partition: str, files: list[SourceFile]):
-        """Add a partition with its files to the build set"""
+    def add_partition(self, library: str, partition: str, files: list[SourceFile], deps: list[tuple[str, str]] = None):
+        """Add a partition with its files to the build set
+
+        Args:
+            library: Library name
+            partition: Partition name
+            files: Source files in the partition
+            deps: List of (library, partition) tuples this partition depends on
+        """
         if library not in self.partitions:
             self.libraries.append(library)
             self.partitions[library] = []
@@ -232,6 +241,12 @@ class BuildFileSet:
             self.partitions[library].append(partition)
 
         self.files[(library, partition)] = files
+
+        # Store partition dependencies
+        if deps is not None:
+            self.partition_deps[(library, partition)] = set(deps)
+        else:
+            self.partition_deps[(library, partition)] = set()
 
     def get_all_files(self) -> list[SourceFile]:
         """Get all source files in build order"""

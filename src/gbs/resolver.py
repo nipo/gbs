@@ -380,10 +380,13 @@ class DependencyResolver:
 
         for ref in sorted_refs:
             resolved = graph[ref]
+            # Convert PartitionRef deps to (library, partition) tuples
+            deps = [(dep.library, dep.partition) for dep in resolved.deps]
             build_set.add_partition(
                 library=ref.library,
                 partition=ref.partition,
-                files=resolved.sources
+                files=resolved.sources,
+                deps=deps
             )
 
         logger.info(

@@ -1,0 +1,6 @@
+build
+*.p
+*.o
+*.cf
+top
+tb

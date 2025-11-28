@@ -119,11 +119,15 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
         fileset = BuildFileSet(ctx)
 
         click.echo("Creating build fileset...")
+        # First pass: create all BuildResources
+        partition_to_resources: dict[tuple[str, str], list[BuildResource]] = {}
         for lib_name in build_set.libraries:
             if lib_name == "nsl_simulation":
                 click.echo(f"DEBUG: nsl_simulation partitions order: {build_set.partitions.get(lib_name, [])}")
             for part_name in build_set.partitions.get(lib_name, []):
                 files = build_set.files.get((lib_name, part_name), [])
+                partition_key = (lib_name, part_name)
+                partition_to_resources[partition_key] = []
 
                 for source_file in files:
                     # Map language to file type
@@ -137,7 +141,20 @@ async def build(project_file: Path, repo: tuple[Path], output_dir: Path, max_ite
                         file_type=file_type,
                         library=lib_name,
                     )
+                    partition_to_resources[partition_key].append(br)
                     fileset.add(br)
+
+        # Second pass: populate BuildResource.depends_on based on partition dependencies
+        for partition_key, resources in partition_to_resources.items():
+            lib_name, part_name = partition_key
+            partition_deps = build_set.partition_deps.get(partition_key, set())
+
+            # For each resource in this partition, add dependencies on all resources from dependent partitions
+            for br in resources:
+                for dep_lib, dep_part in partition_deps:
+                    dep_partition_key = (dep_lib, dep_part)
+                    dep_resources = partition_to_resources.get(dep_partition_key, [])
+                    br.depends_on.update(dep_resources)
 
         # Load backends from project configuration
         click.echo("Loading backends...")

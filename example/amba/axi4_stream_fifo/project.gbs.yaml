@@ -1,0 +1,41 @@
+name: simple_project
+toolsuite:
+  name: ghdl
+  backend: gbs.backend.GHDLBackend
+topcell: top
+
+output_format: filelist
+
+filter_vars:
+  target: simulation
+
+backends:
+  - backend: gbs.backend:GHDLBackend
+    config:
+      output_dir: build
+      vhdl_std: 93c
+      topcell: top
+
+root_library:
+  name: root
+  partitions:
+    - name: top
+      deps:
+        - nsl_data.bytestream
+        - nsl_data.endian
+        - nsl_data.crc
+        - nsl_data.prbs
+        - nsl_data.text
+        - nsl_simulation.assertions
+        - nsl_simulation.driver
+        - nsl_simulation.logging
+        - nsl_amba.axi4_stream
+        - nsl_amba.stream_fifo
+      sources:
+        - language: vhdl
+          files:
+            - top.vhd
+repositories:
+  - path: /Users/nipo/projects/nsl_clean
+    loader: gbs.plugin.nsl.tree
+
