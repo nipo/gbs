@@ -429,11 +429,10 @@ def load_project(path: Path, gbs_config=None) -> Project:
         profile_name = data["profile"]
 
         # Check for conflicting explicit configuration
+        # Note: repositories can be specified alongside profile (they get merged)
         conflicts = []
         if "backends" in data:
             conflicts.append("backends")
-        if "repositories" in data:
-            conflicts.append("repositories")
         if "filter_vars" in data:
             conflicts.append("filter_vars")
 
@@ -658,10 +657,8 @@ def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Project
     # Load project (handles profile expansion if present)
     project = load_project(path, gbs_config=gbs_config)
 
-    # Load YAML to get repository specs
-    data = load_yaml_file(path)
-
-    # Load and merge repositories (config + profile + project)
-    repositories = load_repositories_from_project(data, path.parent, gbs_config=gbs_config)
+    # Use the project's raw_config (which includes profile expansion)
+    # instead of reloading the YAML file
+    repositories = load_repositories_from_project(project.raw_config, path.parent, gbs_config=gbs_config)
 
     return project, repositories
