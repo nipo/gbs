@@ -326,6 +326,7 @@ class Resource(BuildStep):
         """
         super().__init__(context, path.name)
         self.path = path
+        self.metadata = {}  # Backend-specific metadata (file_type, library, etc.)
 
     def exists(self) -> bool:
         return self.path.exists()
