@@ -219,6 +219,7 @@ class GowinBackend(BaseBackend):
         self.gowin_tool = gowin_tool
         self.output_base_name = output_base_name
         self._session: GowinSession | None = None
+        self._init_done = False  # Track if project init has been scheduled
         self._synthesis_done = False  # Track if synthesis has been scheduled
         self._pnr_done = False  # Track if PnR has been scheduled
         self._device_info: dict[str, str] | None = None  # Cached device characteristics
@@ -344,8 +345,8 @@ class GowinBackend(BaseBackend):
     ) -> None:
         """Process HDL sources or run PnR (multi-iteration)
 
-        Iteration 1: Create synthesis task if HDL sources present
-        Iteration 2+: Create PnR task if netlist + constraints present
+        Iteration 1: Create init + synthesis tasks if HDL sources present
+        Iteration 2+: Create init + PnR tasks if netlist + constraints present
         """
 
         # Get device from project config
@@ -363,31 +364,48 @@ class GowinBackend(BaseBackend):
         netlist_file = self.output_dir / "impl" / "gwsynthesis" / f"{output_base_name}.vg"
         netlist_resource = context.get_resource(netlist_file)
 
+        # Virtual resource that indicates project has been initialized in gw_sh session
+        # This is volatile - the session state doesn't persist across builds
+        init_marker_resource = context.get_virtual_resource("gowin_project_init")
+
         # Check what stage we're in
         has_hdl = bool(fileset.filter(file_type="vhdl") or fileset.filter(file_type="verilog"))
         has_netlist = bool(fileset.filter(file_type="gowin-netlist"))
 
         if has_hdl and not self._synthesis_done:
-            # ===== ITERATION 1: SYNTHESIS =====
+            # ===== ITERATION 1: PROJECT INIT + SYNTHESIS =====
+            if not self._init_done:
+                self.logger.debug("Scheduling project init task")
+                await self._create_project_init_task(context, fileset, device, output_base_name, init_marker_resource)
+                self._init_done = True
+
             self.logger.debug("Scheduling synthesis task")
-            await self._create_synthesis_task(context, fileset, device, output_base_name, netlist_resource)
+            await self._create_synthesis_task(context, fileset, device, output_base_name, netlist_resource, init_marker_resource)
             self._synthesis_done = True
 
         elif has_netlist and not self._pnr_done:
-            # ===== ITERATION 2+: PNR =====
+            # ===== ITERATION 2+: PROJECT INIT + PNR =====
+            if not self._init_done:
+                self.logger.debug("Scheduling project init task")
+                await self._create_project_init_task(context, fileset, device, output_base_name, init_marker_resource)
+                self._init_done = True
+
             self.logger.debug("Scheduling PnR task")
-            await self._create_pnr_task(context, fileset, device, output_base_name, netlist_resource)
+            await self._create_pnr_task(context, fileset, device, output_base_name, netlist_resource, init_marker_resource)
             self._pnr_done = True
 
-    async def _create_synthesis_task(
+    async def _create_project_init_task(
         self,
         context: BuildContext,
         fileset: BuildFileSet,
         device: str,
         output_base_name: str,
-        netlist_resource: BuildResource
+        init_marker_resource  # VirtualResource
     ) -> None:
-        """Create synthesis task: HDL → netlist"""
+        """Create project initialization task: configure gw_sh project
+
+        The init marker is a VirtualResource since gw_sh session state is volatile.
+        """
 
         session = self._get_session(context)
 
@@ -395,7 +413,7 @@ class GowinBackend(BaseBackend):
         vhdl_sources = list(fileset.filter(file_type="vhdl"))
         verilog_sources = list(fileset.filter(file_type="verilog"))
 
-        # Get constraint sources (will be created later, but declare them now)
+        # Get constraint files
         cst_sources = list(fileset.filter(file_type="gowin-cst"))
         sdc_sources = list(fileset.filter(file_type="gowin-sdc"))
 
@@ -408,11 +426,11 @@ class GowinBackend(BaseBackend):
         gowin_path = Path(gowin_config["path"])
         part_group, part_number = self._parse_device_csv(gowin_path, device)
 
-        # Define synthesis executor
-        async def synthesis_executor(ctx, inputs):
-            """Run synthesis via gw_sh"""
+        # Define init executor
+        async def init_executor(ctx, inputs):
+            """Initialize Gowin project in gw_sh"""
             try:
-                self.logger.info(f"Running Gowin synthesis for {device}")
+                self.logger.info(f"Initializing Gowin project for {device}")
 
                 # Configure device
                 self.logger.debug(f"Configuring device: {part_group} {part_number}")
@@ -430,10 +448,8 @@ class GowinBackend(BaseBackend):
                 async for line in session.send_command(f"set_option -output_base_name {output_base_name}"):
                     pass
 
-                # Add HDL files in dependency order (use sources from closure, not fileset)
-                # The fileset may contain generated files (like the netlist) that shouldn't be inputs
+                # Add HDL files in dependency order
                 all_sources = vhdl_sources + verilog_sources
-
                 self.logger.debug(f"Adding {len(all_sources)} HDL source files...")
                 for source in all_sources:
                     lib_name = source.library
@@ -455,7 +471,49 @@ class GowinBackend(BaseBackend):
                         async for line in session.send_command(f"add_file {{{cst_file}}}"):
                             pass  # Ignore output - file might not exist yet
 
-                # Run synthesis
+                self.logger.info(f"Project initialization complete")
+                # Return virtual resource (no physical file created)
+                return [init_marker_resource]
+
+            except Exception as e:
+                self.logger.error(f"Project init failed with exception: {e}", exc_info=True)
+                raise
+
+        # Create init task
+        input_resources = [context.get_resource(s.path) for s in vhdl_sources + verilog_sources]
+
+        init_task = ExecutorTask(
+            context,
+            "gowin_project_init",
+            inputs=input_resources,
+            outputs=[init_marker_resource],
+            executor=init_executor,
+            description=f"Gowin project init: {device}"
+        )
+
+    async def _create_synthesis_task(
+        self,
+        context: BuildContext,
+        fileset: BuildFileSet,
+        device: str,
+        output_base_name: str,
+        netlist_resource: BuildResource,
+        init_marker_resource  # VirtualResource
+    ) -> None:
+        """Create synthesis task: run synthesis (requires init)
+
+        Depends on init_marker_resource (VirtualResource) to ensure project is configured.
+        """
+
+        session = self._get_session(context)
+
+        # Define synthesis executor
+        async def synthesis_executor(ctx, inputs):
+            """Run synthesis via gw_sh (project already initialized)"""
+            try:
+                self.logger.info(f"Running Gowin synthesis for {device}")
+
+                # Project already configured by init task - just run synthesis
                 self.logger.info("Starting synthesis...")
                 async for line in session.send_command("run syn"):
                     pass
@@ -467,13 +525,11 @@ class GowinBackend(BaseBackend):
                 self.logger.error(f"Synthesis failed with exception: {e}", exc_info=True)
                 raise
 
-        # Create synthesis task
-        input_resources = [context.get_resource(s.path) for s in vhdl_sources + verilog_sources]
-
+        # Create synthesis task - depends on init marker
         synth_task = ExecutorTask(
             context,
             "gowin_synthesis",
-            inputs=input_resources,
+            inputs=[init_marker_resource],  # Depends on project init
             outputs=[netlist_resource],
             executor=synthesis_executor,
             description=f"Gowin synthesis: {device}"
@@ -496,9 +552,13 @@ class GowinBackend(BaseBackend):
         fileset: BuildFileSet,
         device: str,
         output_base_name: str,
-        netlist_resource: BuildResource
+        netlist_resource: BuildResource,
+        init_marker_resource  # VirtualResource
     ) -> None:
-        """Create PnR task: netlist + constraints → bitstream"""
+        """Create PnR task: netlist + constraints → bitstream (requires init)
+
+        Depends on init_marker_resource (VirtualResource) to ensure project is configured.
+        """
 
         session = self._get_session(context)
 
@@ -546,11 +606,11 @@ class GowinBackend(BaseBackend):
 
         # Define PnR executor
         async def pnr_executor(ctx, inputs):
-            """Run place & route via gw_sh (session continues from synthesis)"""
+            """Run place & route via gw_sh (project already initialized)"""
             self.logger.info("Running Gowin PnR")
 
-            # Note: HDL files and constraints already added during synthesis
-            # gw_sh maintains state across commands
+            # Note: HDL files and constraints already added during init task
+            # Just run PnR
 
             # Run PnR (also generates bitstream)
             self.logger.info("Starting place & route...")
@@ -572,11 +632,11 @@ class GowinBackend(BaseBackend):
             description="Aggregate Gowin constraints"
         )
 
-        # Create PnR task (depends on netlist + constraints)
+        # Create PnR task (depends on init + netlist + constraints)
         pnr_task = ExecutorTask(
             context,
             "gowin_pnr",
-            inputs=[netlist_resource, pin_cst_resource, timing_sdc_resource],
+            inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
             outputs=[bitstream_resource],
             executor=pnr_executor,
             description=f"Gowin PnR: {device}"
