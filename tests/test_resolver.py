@@ -121,7 +121,6 @@ class TestDependencyResolver:
             name="test_project",
             root_library=root_lib,
             topcell="top",
-            output_format="test",
             filter_vars={}
         )
 
@@ -242,7 +241,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         resolver = DependencyResolver(project, [repo])
@@ -320,7 +318,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         resolver = DependencyResolver(project, [repo])
@@ -350,7 +347,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         resolver = DependencyResolver(project, [])
@@ -427,7 +423,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test",
             filter_vars={"vendor": "xilinx"}
         )
 
@@ -445,7 +440,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test",
             filter_vars={"vendor": "intel"}
         )
 
@@ -466,7 +460,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         resolver = DependencyResolver(project, [])
@@ -525,7 +518,6 @@ class TestDependencyResolver:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         # Should use first occurrence (repo1)
@@ -558,7 +550,6 @@ class TestResolveProjectFunction:
             name="test",
             root_library=root_lib,
             topcell="top",
-            output_format="test"
         )
 
         build_set = resolve_project(project, [])

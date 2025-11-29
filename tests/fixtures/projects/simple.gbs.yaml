@@ -2,24 +2,19 @@ name: simple_project
 description: A simple test project
 
 topcell: top
-output_format: bitstream
 
 filter_vars:
   vendor: xilinx
   family: 7series
 
-root_library:
-  name: project_root
-  description: Project root library
-
-  partitions:
-    - name: top
-      deps:
-        - simple_library.simple
-      sources:
-        - language: vhdl
-          files:
-            - top.vhd
-        - language: other
-          files:
-            - constraints.xdc
+root:
+  name: top
+  deps:
+    - simple_library.simple
+  sources:
+    - language: vhdl
+      files:
+        - top.vhd
+    - language: other
+      files:
+        - constraints.xdc

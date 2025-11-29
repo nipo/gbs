@@ -175,21 +175,15 @@ class TestProjectLoader:
         assert project.name == "simple_project"
         assert project.description == "A simple test project"
         assert project.topcell == "top"
-        assert project.output_format == "bitstream"
 
         # Check filter vars
         assert project.filter_vars["vendor"] == "xilinx"
         assert project.filter_vars["family"] == "7series"
 
-        # Check root library
-        assert project.root_library.name == "project_root"
-        assert len(project.root_library.partitions) == 1
-        assert "top" in project.root_library.partitions
-
-        # Check top partition
-        top_partition = project.root_library.partitions["top"]
-        assert len(top_partition.groups) == 1
-        root_group = top_partition.groups[0]
+        # Check root partition
+        assert project.root_partition.name == "top"
+        assert len(project.root_partition.groups) == 1
+        root_group = project.root_partition.groups[0]
         assert root_group.name == "root"
 
         # Check root condition

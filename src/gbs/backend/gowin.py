@@ -357,7 +357,9 @@ class GowinBackend(BaseBackend):
         target = context.project.raw_config.get("target", {})
         device = target.get("part")
         if not device:
-            raise ValueError("Device part number required for Gowin synthesis (add 'target.part:' to project)")
+            # No target device configured - skip Gowin backend (simulation-only project)
+            self.logger.debug("No target device configured, skipping Gowin backend")
+            return
 
         # Get output base name
         output_base_name = self.output_base_name or context.project.topcell

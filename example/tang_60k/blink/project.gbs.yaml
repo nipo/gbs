@@ -1,6 +1,5 @@
 name: blink
 topcell: boundary
-output_format: lol
 
 profile: gowin
 

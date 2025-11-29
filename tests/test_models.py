@@ -112,19 +112,17 @@ def test_repository():
 
 def test_project():
     """Test Project definition"""
-    root_lib = Library(name="project_lib")
+    root_partition = Partition(name="test_partition", groups=[])
 
     project = Project(
         name="test_project",
-        root_library=root_lib,
+        root_partition=root_partition,
         topcell="top",
-        output_format="bitstream",
         filter_vars={"vendor": "xilinx", "family": "7series"}
     )
 
     assert project.name == "test_project"
     assert project.topcell == "top"
-    assert project.output_format == "bitstream"
     assert project.filter_vars["vendor"] == "xilinx"
     assert "test_project" in str(project)
 

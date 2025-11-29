@@ -1,29 +1,26 @@
 name: inet_ethernet
 topcell: tb
-output_format: filelist
 
 # Use the simulation profile defined in ../../.gbs.yaml
 # This provides: filter_vars, backends, and repository configuration
 profile: simulation
 
-root_library:
-  name: root
-  partitions:
-    - name: main
-      deps:
-       - nsl_inet.ethernet
-       - nsl_mii.link_monitor
-       - nsl_mii.rgmii
-       - nsl_mii.testing
-       - nsl_data.text
-       - nsl_data.bytestream
-       - nsl_bnoc.testing
-       - nsl_simulation.driver
-       - nsl_simulation.assertions
-      sources:
-        - language: vhdl
-          files:
-            - root.pkg.vhd
-            - tb.vhd
-            - dut.vhd
+root:
+  name: main
+  deps:
+   - nsl_inet.ethernet
+   - nsl_mii.link_monitor
+   - nsl_mii.rgmii
+   - nsl_mii.testing
+   - nsl_data.text
+   - nsl_data.bytestream
+   - nsl_bnoc.testing
+   - nsl_simulation.driver
+   - nsl_simulation.assertions
+  sources:
+    - language: vhdl
+      files:
+        - root.pkg.vhd
+        - tb.vhd
+        - dut.vhd
 

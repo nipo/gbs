@@ -459,7 +459,7 @@ def load_project(path: Path, gbs_config=None) -> Project:
         data["_profile_repositories"] = profile.repositories
 
     # Required fields
-    required_fields = ["name", "topcell", "output_format", "root", "target"]
+    required_fields = ["name", "topcell", "root"]
     for field in required_fields:
         if field not in data:
             raise LoadError(f"Project file {path} missing required field '{field}'")
@@ -467,17 +467,17 @@ def load_project(path: Path, gbs_config=None) -> Project:
     name = data["name"]
     description = data.get("description")
     topcell = data["topcell"]
-    output_format = data["output_format"]
 
     # Filter variables
     filter_vars = data.get("filter_vars", {})
 
-    # Validate target configuration
-    target = data["target"]
-    if not isinstance(target, dict):
-        raise LoadError("'target' must be a dictionary")
-    if "part" not in target:
-        raise LoadError("'target' must specify 'part' (device part number)")
+    # Validate target configuration (optional, required for synthesis backends)
+    target = data.get("target")
+    if target is not None:
+        if not isinstance(target, dict):
+            raise LoadError("'target' must be a dictionary")
+        if "part" not in target:
+            raise LoadError("'target' must specify 'part' (device part number)")
 
     # Load root partition (inline definition)
     # The root partition is always placed in the "work" library
@@ -525,7 +525,6 @@ def load_project(path: Path, gbs_config=None) -> Project:
         name=name,
         root_partition=root_partition,
         topcell=topcell,
-        output_format=output_format,
         filter_vars=filter_vars,
         description=description,
         raw_config=data

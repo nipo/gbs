@@ -589,12 +589,11 @@ async def query(path: Path, partition: str, filter: tuple[str]):
             sys.exit(1)
 
         # Create empty project with filter context
-        empty_lib = Library(name="__query__")
+        empty_partition = Partition(name="__query__", groups=[])
         project = Project(
             name="__query__",
-            root_library=empty_lib,
+            root_partition=empty_partition,
             topcell="none",
-            output_format="none",
             filter_vars=filter_vars
         )
 
@@ -660,10 +659,6 @@ async def show(project_file: Path):
         click.echo(f"Project: {project.name}")
         if project.description:
             click.echo(f"Description: {project.description}")
-        click.echo()
-
-        click.echo("Configuration:")
-        click.echo(f"  Output format: {project.output_format}")
         click.echo()
 
         if project.filter_vars:

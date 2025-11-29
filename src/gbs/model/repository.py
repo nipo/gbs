@@ -160,7 +160,6 @@ class Project:
         name: Project name
         root_partition: The project's root partition (in "work" library)
         topcell: Top-level entity/module name
-        output_format: Desired output format (e.g., "bitstream", "netlist")
         filter_vars: Variables used for filter evaluation
         description: Optional description
         raw_config: Raw configuration dictionary (for accessing backends etc)
@@ -168,7 +167,6 @@ class Project:
     name: str
     root_partition: Partition
     topcell: str
-    output_format: str
     filter_vars: dict[str, str | int] = field(default_factory=dict)
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)

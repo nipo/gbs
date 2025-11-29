@@ -271,7 +271,6 @@ class TestProfileExpansion:
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 
 root_library:
@@ -303,7 +302,6 @@ root_library:
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: nonexistent
 
 root_library:
@@ -324,7 +322,6 @@ root_library:
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 filter_vars:
   custom: 1
@@ -347,7 +344,6 @@ root_library:
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 backends:
   - backend: gbs.backend:GHDLBackend
@@ -370,7 +366,6 @@ root_library:
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 
 root_library:
@@ -400,7 +395,6 @@ libraries: []
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 
 root_library:
   name: root
@@ -434,7 +428,6 @@ libraries: []
         project_file.write_text("""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 
 root_library:
@@ -477,7 +470,6 @@ root_library:
         project_file.write_text(f"""
 name: test_project
 topcell: top
-output_format: filelist
 profile: sim
 
 root_library:
