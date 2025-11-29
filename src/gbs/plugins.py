@@ -29,6 +29,7 @@ class PluginRegistry:
         self._backend_plugins: dict[str, type] = {}
         self._loader_plugins: dict[str, type] = {}
         self._default_tools: list['ToolConfig'] = []
+        self._auto_backend_providers: list[callable] = []
         self._discovered = False
 
     def register_backend(self, name: str, backend_class: type):
@@ -59,6 +60,43 @@ class PluginRegistry:
         """
         logger.debug(f"Plugin contributing {len(tools)} default tool configs")
         self._default_tools.extend(tools)
+
+    def register_auto_backend_provider(self, provider_func: callable):
+        """Register a function that provides auto-included backends
+
+        The function will be called during backend loading with the BackendRegistry
+        as an argument, allowing it to inspect what backends are loaded and
+        conditionally add additional backends.
+
+        Args:
+            provider_func: Function(registry: BackendRegistry) -> list[Backend]
+                          Should return list of backend instances to auto-include
+        """
+        logger.debug(f"Registering auto-backend provider: {provider_func.__name__}")
+        self._auto_backend_providers.append(provider_func)
+
+    def get_auto_backends(self, registry) -> list:
+        """Get all auto-include backends based on current registry state
+
+        Args:
+            registry: Current BackendRegistry with explicitly configured backends
+
+        Returns:
+            List of backend instances that should be auto-included
+        """
+        self.discover_plugins()
+        auto_backends = []
+
+        for provider in self._auto_backend_providers:
+            try:
+                backends = provider(registry)
+                if backends:
+                    auto_backends.extend(backends)
+                    logger.debug(f"Auto-backend provider {provider.__name__} contributed {len(backends)} backends")
+            except Exception as e:
+                logger.warning(f"Auto-backend provider {provider.__name__} failed: {e}")
+
+        return auto_backends
 
     def get_default_tools(self) -> list['ToolConfig']:
         """Get all default tools contributed by plugins

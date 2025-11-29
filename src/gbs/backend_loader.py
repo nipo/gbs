@@ -289,4 +289,19 @@ def load_backends_from_project(project_config: dict[str, Any]) -> BackendRegistr
 
     # Load from project config
     backend_configs = project_config.get('backends', [])
-    return loader.load_from_config(backend_configs)
+    registry = loader.load_from_config(backend_configs)
+
+    # Auto-include backends from plugins
+    from gbs.plugins import get_plugin_registry
+    plugin_registry = get_plugin_registry()
+    auto_backends = plugin_registry.get_auto_backends(registry)
+
+    for backend in auto_backends:
+        try:
+            registry.register(backend)
+            loader.logger.info(f"Auto-included backend: {backend.name} (priority={backend.priority})")
+        except ValueError as e:
+            # Backend already registered
+            loader.logger.debug(f"Skipping auto-backend (already registered): {backend.name}")
+
+    return registry
