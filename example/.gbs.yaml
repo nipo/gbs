@@ -18,6 +18,13 @@ tools:
     config:
       executable: gcc
 
+  # Gowin EDA config
+  - name: gowin
+    variant: V1.9.11.03
+    config:
+      # This path is where "IDE" and "Programmer" directories are
+      path: /opt/Gowin/GowinIDE.app/Contents/Resources/Gowin_EDA
+
 # Profiles
 profiles:
   # Standard simulation profile used by all examples
@@ -35,6 +42,12 @@ profiles:
     # Note: Repository is defined at tree level (below) instead of in profile
     # This allows examples to add project-specific repositories
     repositories: []
+
+  gowin:
+    backends:
+      - backend: gbs.backend:GowinBackend
+        config:
+          gowin_tool: gowin:V1.9.11.03
 
 # Common Repositories
 # This NSL library repository is used by all example projects

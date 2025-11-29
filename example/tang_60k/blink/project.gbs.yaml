@@ -1,0 +1,23 @@
+name: blink
+topcell: boundary
+output_format: lol
+
+profile: gowin
+
+target:
+  part: GW5AT-LV60PG484AC1/I0
+  use_as_gpio:
+    - done
+    - jtag
+
+root:
+  name: top
+  sources:
+    - language: vhdl
+      files:
+        - clock.pkg.vhd
+        - clock_internal_gowin.vhd
+        - boundary.vhd
+    - language: gowin-cst
+      files:
+        - done_led.cst

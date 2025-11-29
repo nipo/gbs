@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import logging
+import random
 import re
 from typing import Any
 from pathlib import Path
@@ -349,13 +350,14 @@ class GowinBackend(BaseBackend):
         Iteration 2+: Create init + PnR tasks if netlist + constraints present
         """
 
-        # Get device from project config
+        # Get target from project config
         if not context.project:
             raise ValueError("No project configured")
 
-        device = context.project.raw_config.get("device")
+        target = context.project.raw_config.get("target", {})
+        device = target.get("part")
         if not device:
-            raise ValueError("Device part number required for Gowin synthesis (add 'device:' to project root)")
+            raise ValueError("Device part number required for Gowin synthesis (add 'target.part:' to project)")
 
         # Get output base name
         output_base_name = self.output_base_name or context.project.topcell
@@ -376,7 +378,7 @@ class GowinBackend(BaseBackend):
             # ===== ITERATION 1: PROJECT INIT + SYNTHESIS =====
             if not self._init_done:
                 self.logger.debug("Scheduling project init task")
-                await self._create_project_init_task(context, fileset, device, output_base_name, init_marker_resource)
+                await self._create_project_init_task(context, fileset, target, output_base_name, init_marker_resource)
                 self._init_done = True
 
             self.logger.debug("Scheduling synthesis task")
@@ -387,7 +389,7 @@ class GowinBackend(BaseBackend):
             # ===== ITERATION 2+: PROJECT INIT + PNR =====
             if not self._init_done:
                 self.logger.debug("Scheduling project init task")
-                await self._create_project_init_task(context, fileset, device, output_base_name, init_marker_resource)
+                await self._create_project_init_task(context, fileset, target, output_base_name, init_marker_resource)
                 self._init_done = True
 
             self.logger.debug("Scheduling PnR task")
@@ -398,16 +400,20 @@ class GowinBackend(BaseBackend):
         self,
         context: BuildContext,
         fileset: BuildFileSet,
-        device: str,
+        target: dict,  # Target configuration (part, use_as_gpio, etc.)
         output_base_name: str,
         init_marker_resource  # VirtualResource
     ) -> None:
         """Create project initialization task: configure gw_sh project
 
+        Args:
+            target: Target configuration dict with 'part' and optional vendor-specific keys
+
         The init marker is a VirtualResource since gw_sh session state is volatile.
         """
 
         session = self._get_session(context)
+        device = target["part"]
 
         # Get HDL sources in dependency order
         vhdl_sources = list(fileset.filter(file_type="vhdl"))
@@ -448,6 +454,16 @@ class GowinBackend(BaseBackend):
                 async for line in session.send_command(f"set_option -output_base_name {output_base_name}"):
                     pass
 
+                # Process vendor-specific options
+                # use_as_gpio: list of pin names to configure as GPIO
+                use_as_gpio = target.get("use_as_gpio", [])
+                if use_as_gpio:
+                    self.logger.debug(f"Configuring GPIO pins: {use_as_gpio}")
+                    for pin_name in use_as_gpio:
+                        self.logger.debug(f"  Setting {pin_name} as GPIO")
+                        async for line in session.send_command(f"set_option -use_{pin_name}_as_gpio 1"):
+                            pass
+
                 # Add HDL files in dependency order
                 all_sources = vhdl_sources + verilog_sources
                 self.logger.debug(f"Adding {len(all_sources)} HDL source files...")
@@ -468,8 +484,35 @@ class GowinBackend(BaseBackend):
                 # Add constraint files (even if they don't exist yet)
                 for cst_file in [pin_cst_file, timing_sdc_file]:
                     if cst_file.exists() or True:  # Always add placeholder
-                        async for line in session.send_command(f"add_file {{{cst_file}}}"):
+                        async for line in session.send_command(f"add_file {{{cst_file.relative_to(self.output_dir)}}}"):
                             pass  # Ignore output - file might not exist yet
+
+                # Set project options (defaults + user overrides)
+                default_options = {
+                    "looplimit": 0,
+                    "print_all_synthesis_warning": 1,
+                    "gen_text_timing_rpt": 1,
+                    "rpt_auto_place_io_info": 1,
+                    "bit_compress": 1,
+                    "retiming": 1,
+                    "gen_vhdl_sim_netlist": 1,
+                }
+
+                # Merge user options (target.options) with defaults
+                user_options = target.get("options", {})
+                options = {**default_options, **user_options}
+
+                self.logger.debug(f"Setting {len(options)} project options...")
+                for key, value in options.items():
+                    self.logger.debug(f"  set_option -{key} {value}")
+                    async for line in session.send_command(f"set_option -{key} {value}"):
+                        pass
+
+                # Inject random 32-bit user code (build ID)
+                user_code = random.randbytes(4)
+                self.logger.info(f"Injecting user_code: {user_code.hex()}")
+                async for line in session.send_command(f"set_option -user_code {{{user_code.hex()}}}"):
+                    pass
 
                 self.logger.info(f"Project initialization complete")
                 # Return virtual resource (no physical file created)
