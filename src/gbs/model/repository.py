@@ -6,16 +6,6 @@ Data structures representing the GBS build system components.
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from enum import Enum
-
-
-class Language(str, Enum):
-    """Supported HDL languages"""
-    VHDL = "vhdl"
-    VERILOG = "verilog"
-    SYSTEMVERILOG = "systemverilog"
-    CHISEL = "chisel"
-    OTHER = "other"
 
 
 @dataclass
@@ -24,17 +14,17 @@ class SourceFile:
 
     Attributes:
         path: Path to the source file (relative to partition root)
-        language: Programming language of the file
+        language: File type/language string (e.g., "vhdl", "verilog", "gowin-cst", etc.)
         variant: Optional language variant (e.g., "2008" for VHDL-2008)
     """
     path: Path
-    language: Language
+    language: str
     variant: Optional[str] = None
 
     def __str__(self) -> str:
         if self.variant:
-            return f"{self.path} ({self.language.value}-{self.variant})"
-        return f"{self.path} ({self.language.value})"
+            return f"{self.path} ({self.language}-{self.variant})"
+        return f"{self.path} ({self.language})"
 
 
 @dataclass

@@ -145,8 +145,8 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
                 partition_to_resources[partition_key] = []
 
                 for source_file in files:
-                    # Map language to file type
-                    file_type = source_file.language.value
+                    # Map language to file type (language is now a plain string)
+                    file_type = source_file.language
                     if source_file.variant:
                         file_type = f"{file_type}_{source_file.variant}"
 

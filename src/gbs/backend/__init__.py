@@ -18,6 +18,7 @@ from gbs.model.backend import (
 from gbs.backend.ghdl import GHDLBackend
 from gbs.backend.verilog_to_vhdl import VerilogToVHDLBackend
 from gbs.backend.mem_init import MemInitBackend
+from gbs.backend.gowin import GowinBackend
 
 __all__ = [
     # Base classes
@@ -29,6 +30,7 @@ __all__ = [
     "GHDLBackend",
     "VerilogToVHDLBackend",
     "MemInitBackend",
+    "GowinBackend",
     # Plugin interface
     "register",
 ]
@@ -49,6 +51,7 @@ def register(plugin_registry):
     plugin_registry.register_backend("GHDLBackend", GHDLBackend)
     plugin_registry.register_backend("VerilogToVHDLBackend", VerilogToVHDLBackend)
     plugin_registry.register_backend("MemInitBackend", MemInitBackend)
+    plugin_registry.register_backend("GowinBackend", GowinBackend)
 
     # Contribute default tools
     default_tools = [

@@ -11,7 +11,6 @@ from typing import Any, Callable, Protocol
 
 from gbs.models import (
     SourceFile,
-    Language,
     FilterCondition,
     ConditionalGroup,
     Partition,
@@ -154,10 +153,8 @@ def load_sources(sources_data: list[dict[str, Any]], base_path: Path) -> list[So
         if "files" not in source_spec:
             raise LoadError("Source specification missing 'files' field")
 
-        try:
-            language = Language(source_spec["language"])
-        except ValueError:
-            raise LoadError(f"Unknown language: {source_spec['language']}")
+        # Language is just a string identifier (e.g., "vhdl", "verilog", "gowin-cst")
+        language = source_spec["language"]
 
         variant = source_spec.get("variant")
 

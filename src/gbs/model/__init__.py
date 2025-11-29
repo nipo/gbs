@@ -24,7 +24,6 @@ from gbs.model.build import (
 
 # Re-export everything from repository
 from gbs.model.repository import (
-    Language,
     SourceFile,
     FilterCondition,
     ConditionalGroup,
@@ -58,7 +57,6 @@ __all__ = [
     "BuildResource",
     "BuildFileSet",
     # repository module
-    "Language",
     "SourceFile",
     "FilterCondition",
     "ConditionalGroup",

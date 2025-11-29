@@ -8,7 +8,6 @@ from __future__ import annotations
 
 # Re-export everything from gbs.model.repository
 from gbs.model.repository import (
-    Language,
     SourceFile,
     FilterCondition,
     ConditionalGroup,
@@ -20,7 +19,6 @@ from gbs.model.repository import (
 )
 
 __all__ = [
-    "Language",
     "SourceFile",
     "FilterCondition",
     "ConditionalGroup",
