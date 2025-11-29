@@ -78,14 +78,14 @@ class GowinSession:
                     result = result[:-1]
                 return result
 
-    async def send_command(self, tcl_command: str) -> str:
-        """Send TCL command and wait for completion (serialized)
+    async def send_command(self, tcl_command: str):
+        """Send TCL command and yield response lines as they arrive (serialized)
 
         Args:
             tcl_command: TCL command to execute
 
-        Returns:
-            Command output (without prompt)
+        Yields:
+            Response lines (without prompt or trailing newlines)
         """
         async with self.lock:
             await self._ensure_started()
@@ -94,9 +94,36 @@ class GowinSession:
             self.process.stdin.write(f"{tcl_command}\n".encode('utf-8'))
             await self.process.stdin.drain()
 
-            # Wait for next prompt
-            response = await self._read_until_prompt()
-            return response
+            # Read and yield lines until prompt
+            buffer = ""
+            while True:
+                chunk = await self.process.stdout.read(1)
+                if not chunk:
+                    raise RuntimeError("gw_sh process terminated unexpectedly")
+
+                char = chunk.decode('utf-8', errors='replace')
+                buffer += char
+
+                # Check for '% ' prompt (percent followed by space)
+                if buffer.endswith('% '):
+                    # Remove prompt from buffer
+                    buffer = buffer[:-2]
+                    # Strip trailing newline if present
+                    if buffer.endswith('\n'):
+                        buffer = buffer[:-1]
+                    # Yield any remaining lines
+                    if buffer:
+                        for line in buffer.split('\n'):
+                            if line:  # Skip empty lines
+                                yield line
+                    return
+
+                # Yield complete lines as we receive them
+                if char == '\n':
+                    line = buffer[:-1]  # Remove the newline
+                    if line:  # Skip empty lines
+                        yield line
+                    buffer = ""
 
     async def close(self):
         """Shutdown gw_sh cleanly"""
@@ -367,20 +394,29 @@ class GowinBackend(BaseBackend):
 
                 # Configure device
                 self.logger.debug(f"Sending: set_device -name {part_group} {part_number}")
-                response = await session.send_command(f"set_device -name {part_group} {part_number}")
-                self.logger.debug(f"Response: {response[:200]}")
+                lines = []
+                async for line in session.send_command(f"set_device -name {part_group} {part_number}"):
+                    lines.append(line)
+                response = '\n'.join(lines)
+                self.logger.debug(f"Response: {response[:200] if response else '(empty)'}")
                 self._parse_command_output(response, "set_device")
 
                 # Set top module
                 topcell = context.project.topcell
                 self.logger.debug(f"Sending: set_option -top_module {topcell}")
-                response = await session.send_command(f"set_option -top_module {topcell}")
+                lines = []
+                async for line in session.send_command(f"set_option -top_module {topcell}"):
+                    lines.append(line)
+                response = '\n'.join(lines)
                 self.logger.debug(f"Response: {response[:100] if response else '(empty)'}")
                 self._parse_command_output(response, "set_option -top_module")
 
                 # Set output base name (for predictable output paths)
                 self.logger.debug(f"Sending: set_option -output_base_name {output_base_name}")
-                response = await session.send_command(f"set_option -output_base_name {output_base_name}")
+                lines = []
+                async for line in session.send_command(f"set_option -output_base_name {output_base_name}"):
+                    lines.append(line)
+                response = '\n'.join(lines)
                 self.logger.debug(f"Response: {response[:100] if response else '(empty)'}")
                 self._parse_command_output(response, "set_option -output_base_name")
 
@@ -396,22 +432,32 @@ class GowinBackend(BaseBackend):
 
                     # Add file
                     self.logger.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
-                    response = await session.send_command(f"add_file -type {file_type} {{{file_path}}}")
+                    lines = []
+                    async for line in session.send_command(f"add_file -type {file_type} {{{file_path}}}"):
+                        lines.append(line)
+                    response = '\n'.join(lines)
                     self._parse_command_output(response, f"add_file {file_path.name}")
 
                     # Set library property
-                    response = await session.send_command(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}")
+                    lines = []
+                    async for line in session.send_command(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}"):
+                        lines.append(line)
+                    response = '\n'.join(lines)
                     self._parse_command_output(response, f"set_file_prop {file_path.name}")
 
                 # Add constraint files (even if they don't exist yet)
                 for cst_file in [pin_cst_file, timing_sdc_file]:
                     if cst_file.exists() or True:  # Always add placeholder
-                        response = await session.send_command(f"add_file {{{cst_file}}}")
-                        # Don't parse output - file might not exist yet
+                        async for line in session.send_command(f"add_file {{{cst_file}}}"):
+                            pass  # Ignore output - file might not exist yet
 
-                # Run synthesis
+                # Run synthesis - log output as it arrives
                 self.logger.info("Starting synthesis...")
-                response = await session.send_command("run syn")
+                lines = []
+                async for line in session.send_command("run syn"):
+                    self.logger.debug(f"  {line}")
+                    lines.append(line)
+                response = '\n'.join(lines)
                 self._parse_command_output(response, "synthesis")
 
                 self.logger.info(f"Synthesis complete: {netlist_resource.path}")
@@ -506,9 +552,13 @@ class GowinBackend(BaseBackend):
             # Note: HDL files and constraints already added during synthesis
             # gw_sh maintains state across commands
 
-            # Run PnR (also generates bitstream)
+            # Run PnR (also generates bitstream) - log output as it arrives
             self.logger.info("Starting place & route...")
-            response = await session.send_command("run pnr")
+            lines = []
+            async for line in session.send_command("run pnr"):
+                self.logger.debug(f"  {line}")
+                lines.append(line)
+            response = '\n'.join(lines)
             self._parse_command_output(response, "place & route")
 
             self.logger.info(f"Bitstream generated: {bitstream_file}")
