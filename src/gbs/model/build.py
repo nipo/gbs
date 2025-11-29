@@ -127,7 +127,7 @@ class BuildContext:
         """
         if self.project is None:
             return None
-        return self.project.root_library.name
+        return self.project.root_library_name
 
     def get_tool(self, identifier: str, required: bool = True) -> Optional[dict[str, Any]]:
         """Get tool configuration by identifier

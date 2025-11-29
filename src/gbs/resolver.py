@@ -101,8 +101,11 @@ class DependencyResolver:
         # Build library index: library_name -> Library
         self.libraries: dict[str, Library] = {}
 
-        # Add project root library
-        self.libraries[project.root_library.name] = project.root_library
+        # Create root library with the single root partition
+        # The root library is always named "work" (required by synthesis tools)
+        root_library = Library(name=project.root_library_name)
+        root_library.add_partition(project.root_partition)
+        self.libraries[project.root_library_name] = root_library
 
         # Index all repository libraries
         for repo in repositories:
@@ -360,14 +363,10 @@ class DependencyResolver:
         """
         logger.info(f"Resolving dependencies for project '{self.project.name}'")
 
-        # Start from project root partitions
+        # Start from project root partition (in "work" library)
         start_refs = [
-            PartitionRef(self.project.root_library.name, partition_name)
-            for partition_name in self.project.root_library.partitions.keys()
+            PartitionRef(self.project.root_library_name, self.project.root_partition.name)
         ]
-
-        if not start_refs:
-            raise ResolutionError("Project has no root partitions")
 
         # Build dependency graph
         graph = self.build_dependency_graph(start_refs)

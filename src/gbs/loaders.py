@@ -459,7 +459,7 @@ def load_project(path: Path, gbs_config=None) -> Project:
         data["_profile_repositories"] = profile.repositories
 
     # Required fields
-    required_fields = ["name", "topcell", "output_format", "root_library"]
+    required_fields = ["name", "topcell", "output_format", "root"]
     for field in required_fields:
         if field not in data:
             raise LoadError(f"Project file {path} missing required field '{field}'")
@@ -472,63 +472,51 @@ def load_project(path: Path, gbs_config=None) -> Project:
     # Filter variables
     filter_vars = data.get("filter_vars", {})
 
-    # Load root library (inline definition)
-    root_lib_data = data["root_library"]
-    if "name" not in root_lib_data:
-        raise LoadError("Root library must specify 'name'")
+    # Load root partition (inline definition)
+    # The root partition is always placed in the "work" library
+    root_data = data["root"]
+    if "name" not in root_data:
+        raise LoadError("Root partition must specify 'name'")
 
-    root_library = Library(
-        name=root_lib_data["name"],
-        description=root_lib_data.get("description")
+    partition_name = root_data["name"]
+    base_path = path.parent
+
+    # Parse sources at root level
+    sources_data = root_data.get("sources", [])
+    sources = load_sources(sources_data, base_path)
+
+    # Parse deps at root level
+    deps = root_data.get("deps", [])
+
+    # Load nested groups (if any)
+    nested_groups = []
+    groups_data = root_data.get("groups", {})
+    for group_name, group_conditions in groups_data.items():
+        if not isinstance(group_conditions, list):
+            raise LoadError(
+                f"Group '{group_name}' in root partition "
+                f"must be a list of conditions"
+            )
+        nested_group = load_conditional_group(group_name, group_conditions, base_path)
+        nested_groups.append(nested_group)
+
+    # Create root FilterCondition (implicit "default" condition)
+    root_condition = FilterCondition(
+        expression="default",
+        deps=deps,
+        sources=sources,
+        groups=nested_groups
     )
 
-    # Load root library partitions (inline)
-    base_path = path.parent
-    if "partitions" in root_lib_data:
-        for partition_data in root_lib_data["partitions"]:
-            if "name" not in partition_data:
-                raise LoadError("Partition must specify 'name'")
+    # Wrap in a ConditionalGroup named "root"
+    root_group = ConditionalGroup(name="root", conditions=[root_condition])
 
-            partition_name = partition_data["name"]
-
-            # Parse inline partition as FilterCondition (same as external partition files)
-            # Parse sources at root level
-            sources_data = partition_data.get("sources", [])
-            sources = load_sources(sources_data, base_path)
-
-            # Parse deps at root level
-            deps = partition_data.get("deps", [])
-
-            # Load nested groups (if any)
-            nested_groups = []
-            groups_data = partition_data.get("groups", {})
-            for group_name, group_conditions in groups_data.items():
-                if not isinstance(group_conditions, list):
-                    raise LoadError(
-                        f"Group '{group_name}' in partition '{partition_name}' "
-                        f"must be a list of conditions"
-                    )
-                nested_group = load_conditional_group(group_name, group_conditions, base_path)
-                nested_groups.append(nested_group)
-
-            # Create root FilterCondition (implicit "default" condition)
-            root_condition = FilterCondition(
-                expression="default",
-                deps=deps,
-                sources=sources,
-                groups=nested_groups
-            )
-
-            # Wrap in a ConditionalGroup named "root"
-            root_group = ConditionalGroup(name="root", conditions=[root_condition])
-
-            # Create partition with the root group
-            partition = Partition(name=partition_name, groups=[root_group])
-            root_library.add_partition(partition)
+    # Create the root partition
+    root_partition = Partition(name=partition_name, groups=[root_group])
 
     project = Project(
         name=name,
-        root_library=root_library,
+        root_partition=root_partition,
         topcell=topcell,
         output_format=output_format,
         filter_vars=filter_vars,

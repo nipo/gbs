@@ -153,11 +153,12 @@ class Repository:
 class Project:
     """A gateware project definition
 
-    Projects define the root library and build configuration.
+    Projects define a single root partition and build configuration.
+    The root partition is always placed in the "work" library (required by synthesis tools).
 
     Attributes:
         name: Project name
-        root_library: The project's root library
+        root_partition: The project's root partition (in "work" library)
         topcell: Top-level entity/module name
         output_format: Desired output format (e.g., "bitstream", "netlist")
         filter_vars: Variables used for filter evaluation
@@ -165,12 +166,17 @@ class Project:
         raw_config: Raw configuration dictionary (for accessing backends etc)
     """
     name: str
-    root_library: Library
+    root_partition: Partition
     topcell: str
     output_format: str
     filter_vars: dict[str, str | int] = field(default_factory=dict)
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)
+
+    @property
+    def root_library_name(self) -> str:
+        """The root library is always 'work' for synthesis tools"""
+        return "work"
 
     def __str__(self) -> str:
         return f"Project({self.name}, topcell={self.topcell})"

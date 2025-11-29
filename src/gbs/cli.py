@@ -672,13 +672,9 @@ async def show(project_file: Path):
                 click.echo(f"  {var} = {value}")
             click.echo()
 
-        click.echo("Root library:")
-        click.echo(f"  Name: {project.root_library.name}")
-        if project.root_library.description:
-            click.echo(f"  Description: {project.root_library.description}")
-        click.echo(f"  Partitions: {len(project.root_library.partitions)}")
-        for part_name in sorted(project.root_library.partitions.keys()):
-            click.echo(f"    - {part_name}")
+        click.echo("Root partition:")
+        click.echo(f"  Library: {project.root_library_name}")
+        click.echo(f"  Partition: {project.root_partition.name}")
 
     except LoadError as e:
         logger.error(f"Failed to load project: {e}")
