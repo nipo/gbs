@@ -5,6 +5,7 @@ All operations are logged to file for post-mortem analysis.
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -46,6 +47,18 @@ class GBSLogger:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = self.log_dir / f"gbs_{timestamp}.log"
         self.log_file = log_file
+
+        # Create/update symlink to latest log file
+        latest_link = self.log_dir / "latest.log"
+        try:
+            # Remove existing symlink if present
+            if latest_link.exists() or latest_link.is_symlink():
+                latest_link.unlink()
+            # Create new symlink (relative path for portability)
+            os.symlink(log_file.name, latest_link)
+        except Exception:
+            # Non-fatal: if symlink creation fails, continue anyway
+            pass
 
         # File handler - logs everything
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
