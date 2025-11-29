@@ -16,6 +16,7 @@ by inspecting the netlist.
 from __future__ import annotations
 import asyncio
 import csv
+import logging
 import re
 from typing import Any
 from pathlib import Path
@@ -31,9 +32,10 @@ class GowinSession:
     All commands are serialized via asyncio.Lock since gw_sh is non-concurrent.
     """
 
-    def __init__(self, gw_sh_executable: Path, work_dir: Path):
+    def __init__(self, gw_sh_executable: Path, work_dir: Path, logger: logging.Logger):
         self.gw_sh_executable = gw_sh_executable
         self.work_dir = work_dir
+        self.logger = logger
         self.process: asyncio.subprocess.Process | None = None
         self.lock = asyncio.Lock()
 
@@ -81,14 +83,59 @@ class GowinSession:
     async def send_command(self, tcl_command: str):
         """Send TCL command and yield response lines as they arrive (serialized)
 
+        Lines are automatically logged at appropriate levels:
+        - Lines matching "LEVEL (EXnnnn) : message" are logged at that level
+        - Other lines are logged at DEBUG level
+
         Args:
             tcl_command: TCL command to execute
 
         Yields:
             Response lines (without prompt or trailing newlines)
         """
+        # Regex patterns for parsing Gowin output
+        msg_pattern = re.compile(r'^(?P<level>[A-Z]+) +\(?(?P<ex>[0-9]+)\)? ?: (?P<message>.*)$')
+        file_pattern = re.compile(r'^(?P<explaination>[^\(]+)\("(?P<filename>[^"]+)":(?P<line>[0-9]+)\)$')
+
+        # Map Gowin levels to Python logging levels
+        level_map = {
+            'NOTE': logging.INFO,
+            'WARN': logging.WARNING,
+            'ERROR': logging.ERROR,
+        }
+
+        def log_line(line: str):
+            """Parse and log a line at the appropriate level"""
+            if not line:
+                return
+
+            # Try to match Gowin message format
+            match = msg_pattern.match(line)
+            if match:
+                level_str = match.group('level')
+                ex_code = match.group('ex')
+                message = match.group('message')
+
+                # Get Python logging level
+                log_level = level_map.get(level_str, logging.DEBUG)
+
+                # Check if message contains file/line info
+                file_match = file_pattern.match(message)
+                if file_match:
+                    explanation = file_match.group('explaination')
+                    filename = file_match.group('filename')
+                    line_num = file_match.group('line')
+                    self.logger.log(log_level, f"{filename}:{line_num}: {ex_code}, {explanation}")
+                else:
+                    self.logger.log(log_level, f"{ex_code}: {message}")
+            else:
+                # Unstructured output - log at DEBUG
+                self.logger.debug(line)
+
         async with self.lock:
             await self._ensure_started()
+
+            self.logger.debug(f"% {tcl_command}")
 
             # Send command with newline
             self.process.stdin.write(f"{tcl_command}\n".encode('utf-8'))
@@ -111,9 +158,10 @@ class GowinSession:
                     # Strip trailing newline if present
                     if buffer.endswith('\n'):
                         buffer = buffer[:-1]
-                    # Yield any remaining lines
+                    # Process and yield any remaining lines
                     if buffer:
                         for line in buffer.split('\n'):
+                            log_line(line)
                             if line:  # Skip empty lines
                                 yield line
                     return
@@ -121,6 +169,7 @@ class GowinSession:
                 # Yield complete lines as we receive them
                 if char == '\n':
                     line = buffer[:-1]  # Remove the newline
+                    log_line(line)
                     if line:  # Skip empty lines
                         yield line
                     buffer = ""
@@ -184,7 +233,7 @@ class GowinBackend(BaseBackend):
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
-            self._session = GowinSession(gw_sh, self.output_dir)
+            self._session = GowinSession(gw_sh, self.output_dir, self.logger)
 
         return self._session
 
@@ -288,33 +337,6 @@ class GowinBackend(BaseBackend):
             self.logger.error(f"Error parsing device CSV: {e}")
             return ("FPGA", device)  # Fallback
 
-    def _parse_command_output(self, output: str, command_name: str) -> None:
-        """Parse gw_sh command output for errors and progress
-
-        Args:
-            output: Command output text
-            command_name: Name of command (for logging)
-        """
-        # Check for errors
-        error_patterns = [
-            r"ERROR:",
-            r"Error:",
-            r"FATAL:",
-        ]
-
-        for pattern in error_patterns:
-            if re.search(pattern, output, re.IGNORECASE):
-                # Extract error message
-                error_lines = [line for line in output.split('\n') if pattern.lower() in line.lower()]
-                error_msg = '\n'.join(error_lines)
-                raise RuntimeError(f"{command_name} failed:\n{error_msg}")
-
-        # Extract progress messages (synthesis/PnR report 10% increments)
-        progress_pattern = r'(\d+)%'
-        for match in re.finditer(progress_pattern, output):
-            progress = match.group(1)
-            self.logger.info(f"{command_name}: {progress}% complete")
-
     async def process(
         self,
         context: BuildContext,
@@ -393,32 +415,20 @@ class GowinBackend(BaseBackend):
                 self.logger.info(f"Running Gowin synthesis for {device}")
 
                 # Configure device
-                self.logger.debug(f"Sending: set_device -name {part_group} {part_number}")
-                lines = []
+                self.logger.debug(f"Configuring device: {part_group} {part_number}")
                 async for line in session.send_command(f"set_device -name {part_group} {part_number}"):
-                    lines.append(line)
-                response = '\n'.join(lines)
-                self.logger.debug(f"Response: {response[:200] if response else '(empty)'}")
-                self._parse_command_output(response, "set_device")
+                    pass
 
                 # Set top module
                 topcell = context.project.topcell
-                self.logger.debug(f"Sending: set_option -top_module {topcell}")
-                lines = []
+                self.logger.debug(f"Setting top module: {topcell}")
                 async for line in session.send_command(f"set_option -top_module {topcell}"):
-                    lines.append(line)
-                response = '\n'.join(lines)
-                self.logger.debug(f"Response: {response[:100] if response else '(empty)'}")
-                self._parse_command_output(response, "set_option -top_module")
+                    pass
 
                 # Set output base name (for predictable output paths)
-                self.logger.debug(f"Sending: set_option -output_base_name {output_base_name}")
-                lines = []
+                self.logger.debug(f"Setting output base name: {output_base_name}")
                 async for line in session.send_command(f"set_option -output_base_name {output_base_name}"):
-                    lines.append(line)
-                response = '\n'.join(lines)
-                self.logger.debug(f"Response: {response[:100] if response else '(empty)'}")
-                self._parse_command_output(response, "set_option -output_base_name")
+                    pass
 
                 # Add HDL files in dependency order (use sources from closure, not fileset)
                 # The fileset may contain generated files (like the netlist) that shouldn't be inputs
@@ -432,18 +442,12 @@ class GowinBackend(BaseBackend):
 
                     # Add file
                     self.logger.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
-                    lines = []
                     async for line in session.send_command(f"add_file -type {file_type} {{{file_path}}}"):
-                        lines.append(line)
-                    response = '\n'.join(lines)
-                    self._parse_command_output(response, f"add_file {file_path.name}")
+                        pass
 
                     # Set library property
-                    lines = []
                     async for line in session.send_command(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}"):
-                        lines.append(line)
-                    response = '\n'.join(lines)
-                    self._parse_command_output(response, f"set_file_prop {file_path.name}")
+                        pass
 
                 # Add constraint files (even if they don't exist yet)
                 for cst_file in [pin_cst_file, timing_sdc_file]:
@@ -451,14 +455,10 @@ class GowinBackend(BaseBackend):
                         async for line in session.send_command(f"add_file {{{cst_file}}}"):
                             pass  # Ignore output - file might not exist yet
 
-                # Run synthesis - log output as it arrives
+                # Run synthesis
                 self.logger.info("Starting synthesis...")
-                lines = []
                 async for line in session.send_command("run syn"):
-                    self.logger.debug(f"  {line}")
-                    lines.append(line)
-                response = '\n'.join(lines)
-                self._parse_command_output(response, "synthesis")
+                    pass
 
                 self.logger.info(f"Synthesis complete: {netlist_resource.path}")
                 return [netlist_resource.path]
@@ -552,14 +552,10 @@ class GowinBackend(BaseBackend):
             # Note: HDL files and constraints already added during synthesis
             # gw_sh maintains state across commands
 
-            # Run PnR (also generates bitstream) - log output as it arrives
+            # Run PnR (also generates bitstream)
             self.logger.info("Starting place & route...")
-            lines = []
             async for line in session.send_command("run pnr"):
-                self.logger.debug(f"  {line}")
-                lines.append(line)
-            response = '\n'.join(lines)
-            self._parse_command_output(response, "place & route")
+                pass
 
             self.logger.info(f"Bitstream generated: {bitstream_file}")
             return [bitstream_file]
