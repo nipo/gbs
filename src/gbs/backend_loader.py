@@ -163,9 +163,16 @@ class BackendLoader:
                         discovered[ep.name] = backend_class
                         self.logger.debug(f"Discovered backend via entry point: {ep.name}")
                     else:
-                        self.logger.warning(
-                            f"Entry point '{ep.name}' does not implement Backend protocol"
-                        )
+                        # Check if it's a plugin module with register() function
+                        # (meant for PluginRegistry, not BackendLoader)
+                        if hasattr(backend_class, 'register') and callable(getattr(backend_class, 'register')):
+                            self.logger.debug(
+                                f"Skipping entry point '{ep.name}' (plugin module with register() function)"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Entry point '{ep.name}' does not implement Backend protocol"
+                            )
                 except Exception as e:
                     self.logger.warning(f"Failed to load entry point '{ep.name}': {e}")
 
