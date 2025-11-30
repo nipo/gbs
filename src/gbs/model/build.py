@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Awaitable, Optional
 import asyncio
 from dataclasses import dataclass
+import time
 
 from gbs.logging import get_logger
 
@@ -71,6 +72,10 @@ class BuildContext:
         self.running = set()
         self.logger = get_logger("BuildContext")
         self.logger.debug("created")
+
+        # Progress tracking
+        self._progress_condition: Optional[asyncio.Condition] = None
+        self._progress_version = 0
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -162,6 +167,37 @@ class BuildContext:
 
         return tool.config
 
+    @property
+    def progress_condition(self) -> asyncio.Condition:
+        """Get progress condition, creating it lazily if needed"""
+        if self._progress_condition is None:
+            self._progress_condition = asyncio.Condition()
+        return self._progress_condition
+
+    async def notify_progress_update(self):
+        """Notify all watchers that some task's progress changed
+
+        Called by tasks when they update their own progress.
+        Wakes all UI coroutines waiting for updates.
+        """
+        async with self.progress_condition:
+            self._progress_version += 1
+            self.progress_condition.notify_all()
+
+    async def wait_for_progress_update(self) -> int:
+        """Wait for any task to update its progress
+
+        Returns:
+            Current version number (increments on each update)
+        """
+        async with self.progress_condition:
+            await self.progress_condition.wait()
+            return self._progress_version
+
+    def get_progress_version(self) -> int:
+        """Get current progress version (non-blocking)"""
+        return self._progress_version
+
     async def _launch(self) -> None:
         self.logger.debug("Launch")
         for s in self.steps:
@@ -219,7 +255,14 @@ class BuildStep(asyncio.Future):
         self.logger = get_logger(self._log_name)
         self.logger.debug("created")
         self.task = None
-        
+
+        # Progress tracking
+        self.progress: float = 0.0  # 0.0 to 1.0
+        self.progress_message: Optional[str] = None
+        self.progress_started: Optional[float] = None
+        self.progress_updated: Optional[float] = None
+        self.completed: bool = False
+
         self.context.step_register(self)
 
     def dependency_add(self, dep: BuildStep) -> None:
@@ -232,6 +275,40 @@ class BuildStep(asyncio.Future):
     def __repr__(self) -> str:
         return self._log_name
 
+    def get_percentage(self) -> int:
+        """Get progress as percentage (0-100)"""
+        return int(self.progress * 100)
+
+    async def update_progress(self, progress: float, message: Optional[str] = None):
+        """Update this step's progress
+
+        Updates the step's own state and notifies BuildContext
+        to wake any UI watchers.
+
+        Args:
+            progress: Progress value 0.0 to 1.0 (or 0-100, auto-normalized)
+            message: Optional status message
+        """
+        # Auto-normalize if given as percentage
+        if progress > 1.0:
+            progress = progress / 100.0
+
+        progress = max(0.0, min(1.0, progress))
+
+        # Update own state
+        if self.progress_started is None:
+            self.progress_started = time.time()
+
+        self.progress = progress
+        self.progress_message = message
+        self.progress_updated = time.time()
+
+        if progress >= 1.0:
+            self.completed = True
+
+        # Notify watchers
+        await self.context.notify_progress_update()
+
     def launch(self) -> asyncio.Task:
         if self.task:
             return self.task
@@ -240,6 +317,9 @@ class BuildStep(asyncio.Future):
         return self.task
 
     async def __worker(self):
+        # Initialize progress
+        await self.update_progress(0.0, "Starting")
+
         # Wait for all dependencies if any
         deps_failed = None
         pending = self.depends_on
@@ -255,9 +335,10 @@ class BuildStep(asyncio.Future):
 
         if deps_failed is not None:
             self.logger.debug("Some deps failed: %s", deps_failed)
+            await self.update_progress(1.0, "Failed (dependency)")
             self.__mark_done(deps_failed)
             return
-                    
+
         self.logger.debug("Starting work")
         try:
             await self._work()
@@ -265,9 +346,14 @@ class BuildStep(asyncio.Future):
             self.logger.debug("Work excepted: %s", e)
             #import traceback
             #traceback.print_exc()
+            await self.update_progress(1.0, "Failed")
             self.__mark_done(e)
+            return
 
         self.logger.debug("Work done")
+        # Auto-complete if not already at 100%
+        if self.progress < 1.0:
+            await self.update_progress(1.0, "Complete")
         self.__mark_done()
 
     async def _work(self):

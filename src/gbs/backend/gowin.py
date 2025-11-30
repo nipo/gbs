@@ -313,7 +313,8 @@ class GowinProjectInitTask(Task):
 
             # Add HDL files in dependency order (iterate over self.inputs with metadata)
             self.logger.debug(f"Adding {len(self.inputs)} HDL source files...")
-            for resource in self.inputs:
+            total = len(self.inputs)
+            for i, resource in enumerate(self.inputs):
                 # Get metadata attached to this resource
                 lib_name = resource.metadata.get('library')
                 file_type = resource.metadata.get('file_type')
@@ -327,6 +328,8 @@ class GowinProjectInitTask(Task):
                 # Set library property
                 async for line in self.session.send_command(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}"):
                     pass
+
+                await self.update_progress(i / total)
 
             # Add constraint files (even if they don't exist yet)
             for cst_file in [pin_cst_file, timing_sdc_file]:
@@ -390,6 +393,8 @@ class GowinSynthesisTask(Task):
         )
         self.session = session
 
+    progress_re = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
+        
     async def work(self) -> None:
         """Run synthesis via gw_sh (project already initialized)"""
         try:
@@ -403,7 +408,9 @@ class GowinSynthesisTask(Task):
             # Project already configured by init task - just run synthesis
             self.logger.info("Starting synthesis...")
             async for line in self.session.send_command("run syn"):
-                pass
+                m = self.progress_re.match(line)
+                if m:
+                    await self.update_progress(int(m.group("pct")) / 100, m.group("message"))
 
             self.logger.info(f"Synthesis complete: {netlist_path}")
 
@@ -477,6 +484,8 @@ class GowinPnRTask(Task):
         )
         self.session = session
 
+    progress_re = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
+
     async def work(self) -> None:
         """Run place & route via gw_sh (project already initialized)"""
         # Compute values from context
@@ -492,7 +501,9 @@ class GowinPnRTask(Task):
         # Run PnR (also generates bitstream)
         self.logger.info("Starting place & route...")
         async for line in self.session.send_command("run pnr"):
-            pass
+            m = self.progress_re.match(line)
+            if m:
+                await self.update_progress(int(m.group("pct")) / 100, m.group("message"))
 
         self.logger.info(f"Bitstream generated: {bitstream_file}")
 
@@ -831,6 +842,8 @@ class GowinBackend(BaseBackend):
                     'file_type': source.file_type,
                 }
                 self._pin_cst_task.inputs.append(resource)
+                # Set up dependency so task waits for this resource
+                self._pin_cst_task.dependency_add(resource)
 
         # Find new .sdc files
         for source in sdc_sources:
@@ -841,4 +854,6 @@ class GowinBackend(BaseBackend):
                     'file_type': source.file_type,
                 }
                 self._timing_sdc_task.inputs.append(resource)
+                # Set up dependency so task waits for this resource
+                self._timing_sdc_task.dependency_add(resource)
 

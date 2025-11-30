@@ -252,7 +252,16 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
             # Gather all resources
             all_resources = [br.resource for br in fileset]
             if all_resources:
-                await asyncio.gather(*all_resources)
+                # Use progress monitoring if available and stdout is TTY
+                from gbs.progress import run_with_progress, HAS_TQDM
+                import sys
+
+                if HAS_TQDM and sys.stdout.isatty():
+                    # Run with progress bars
+                    await run_with_progress(build_ctx, all_resources)
+                else:
+                    # Run without progress bars
+                    await asyncio.gather(*all_resources)
 
         click.echo()
         click.echo(f"Build complete: {len(fileset)} files processed")
