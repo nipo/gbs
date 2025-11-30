@@ -10,6 +10,7 @@ from ..logging import setup_logging, get_logger, get_log_file
 from ..loaders import load_repository, load_project, load_project_with_repositories, LoadError
 from ..plugins import get_plugin_registry
 from ..config import GBSConfig
+from .group import ReMatchGroup
 
 def load_project_for_command(ctx, project_file: Path, additional_repos: tuple[Path] = ()):
     """Load project with GBS config for CLI commands
@@ -84,7 +85,7 @@ def get_project_file(ctx) -> Path:
     return project_file
 
 
-@click.group()
+@click.group(cls = ReMatchGroup)
 @click.version_option()
 @click.option(
     "-v", "--verbose",

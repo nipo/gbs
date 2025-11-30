@@ -11,8 +11,9 @@ from ..logging import get_logger
 from ..loaders import load_project, load_project_with_repositories, load_repository, LoadError
 from ..resolver import resolve_project
 from ..cli import load_project_for_command, get_project_file
+from .group import ReMatchGroup
 
-@click.group(invoke_without_command=False)
+@click.group(invoke_without_command=False, cls = ReMatchGroup)
 @click.option(
     "-f", "--file",
     "project_file",

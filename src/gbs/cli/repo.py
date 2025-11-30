@@ -9,8 +9,9 @@ import sys
 
 from ..logging import get_logger
 from ..loaders import load_repository, LoadError
+from .group import ReMatchGroup
 
-@click.group()
+@click.group(cls = ReMatchGroup)
 async def repo():
     """Repository introspection commands"""
     pass
