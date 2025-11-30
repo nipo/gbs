@@ -251,6 +251,10 @@ class TestBackendLoaderIntegration:
 
         # Create context and fileset
         ctx = BuildContext()
+        ctx.project = type('obj', (object,), {
+            'topcell': 'module',
+            'root_library_name': 'work'
+        })()
         fileset = BuildFileSet(ctx)
 
         # Add verilog file
@@ -267,7 +271,7 @@ class TestBackendLoaderIntegration:
         # Should have transpiled and compiled
         assert iterations == 2
         assert len(fileset.filter(file_type="vhdl")) == 1
-        assert len(fileset.filter(file_type="vhdl_elab")) == 1
+        assert len(fileset.filter(file_type="ghdl-simulator")) == 1
 
     def test_load_multiple_same_backend_different_config(self, tmp_path):
         """Test loading same backend class with different configurations

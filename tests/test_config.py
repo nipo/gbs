@@ -273,9 +273,8 @@ name: test_project
 topcell: top
 profile: sim
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         # Create config with profile
@@ -304,9 +303,8 @@ name: test_project
 topcell: top
 profile: nonexistent
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         config = GBSConfig(profiles={
@@ -326,9 +324,8 @@ profile: sim
 filter_vars:
   custom: 1
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         config = GBSConfig(profiles={
@@ -348,9 +345,8 @@ profile: sim
 backends:
   - backend: gbs.backend:GHDLBackend
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         config = GBSConfig(profiles={
@@ -368,9 +364,8 @@ name: test_project
 topcell: top
 profile: sim
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         with pytest.raises(LoadError, match="no GBSConfig provided"):
@@ -396,9 +391,8 @@ libraries: []
 name: test_project
 topcell: top
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         # Create config with repositories
@@ -430,9 +424,8 @@ name: test_project
 topcell: top
 profile: sim
 
-root_library:
+root:
   name: root
-  partitions: []
 """)
 
         # Create config with profile containing repositories
@@ -472,9 +465,8 @@ name: test_project
 topcell: top
 profile: sim
 
-root_library:
+root:
   name: root
-  partitions: []
 
 repositories:
   - path: {repo3}

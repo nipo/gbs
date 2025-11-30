@@ -5,7 +5,6 @@ import pytest
 
 from gbs.models import (
     SourceFile,
-    Language,
     FilterCondition,
     ConditionalGroup,
     Partition,
@@ -18,14 +17,14 @@ from gbs.models import (
 
 def test_source_file():
     """Test SourceFile creation and string representation"""
-    sf = SourceFile(Path("test.vhd"), Language.VHDL)
+    sf = SourceFile(Path("test.vhd"), "vhdl")
     assert sf.path == Path("test.vhd")
-    assert sf.language == Language.VHDL
+    assert sf.language == "vhdl"
     assert sf.variant is None
     assert "test.vhd" in str(sf)
     assert "vhdl" in str(sf)
 
-    sf_variant = SourceFile(Path("test.vhd"), Language.VHDL, variant="2008")
+    sf_variant = SourceFile(Path("test.vhd"), "vhdl", variant="2008")
     assert sf_variant.variant == "2008"
     assert "2008" in str(sf_variant)
 
@@ -135,8 +134,8 @@ def test_build_file_set():
 
     # Add files to a partition
     files1 = [
-        SourceFile(Path("file1.vhd"), Language.VHDL),
-        SourceFile(Path("file2.vhd"), Language.VHDL),
+        SourceFile(Path("file1.vhd"), "vhdl"),
+        SourceFile(Path("file2.vhd"), "vhdl"),
     ]
     bfs.add_partition("lib1", "part1", files1)
 
@@ -145,10 +144,10 @@ def test_build_file_set():
     assert len(bfs.get_all_files()) == 2
 
     # Add more partitions
-    files2 = [SourceFile(Path("file3.vhd"), Language.VHDL)]
+    files2 = [SourceFile(Path("file3.vhd"), "vhdl")]
     bfs.add_partition("lib1", "part2", files2)
 
-    files3 = [SourceFile(Path("file4.v"), Language.VERILOG)]
+    files3 = [SourceFile(Path("file4.v"), "verilog")]
     bfs.add_partition("lib2", "part1", files3)
 
     assert len(bfs.libraries) == 2
@@ -168,7 +167,7 @@ def test_recursive_conditional_groups():
     parent_condition = FilterCondition(
         expression="vendor = \"xilinx\"",
         deps=["xilinx_lib.primitives"],
-        sources=[SourceFile(Path("xilinx.vhd"), Language.VHDL)],
+        sources=[SourceFile(Path("xilinx.vhd"), "vhdl")],
         groups=[nested_group]
     )
 

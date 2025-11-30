@@ -19,7 +19,6 @@ from gbs.models import (
     FilterCondition,
     ConditionalGroup,
     SourceFile,
-    Language,
 )
 
 
@@ -74,7 +73,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("lib2_file.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("lib2_file.vhd"), "vhdl")],
                     deps=[]
                 )]
             )]
@@ -89,7 +88,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("lib1_file.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("lib1_file.vhd"), "vhdl")],
                     deps=["lib2.part2"]
                 )]
             )]
@@ -109,17 +108,15 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("top.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("top.vhd"), "vhdl")],
                     deps=["lib1.part1"]
                 )]
             )]
         )
-        root_lib = Library(name="project")
-        root_lib.add_partition(root_part)
 
         project = Project(
             name="test_project",
-            root_library=root_lib,
+            root_partition=root_part,
             topcell="top",
             filter_vars={}
         )
@@ -139,14 +136,14 @@ class TestDependencyResolver:
         # Check order (dependencies first)
         assert "lib2" in build_set.libraries
         assert "lib1" in build_set.libraries
-        assert "project" in build_set.libraries
+        assert "work" in build_set.libraries
 
         # lib2 should come before lib1
         lib2_idx = build_set.libraries.index("lib2")
         lib1_idx = build_set.libraries.index("lib1")
-        project_idx = build_set.libraries.index("project")
+        work_idx = build_set.libraries.index("work")
 
-        assert lib2_idx < lib1_idx < project_idx
+        assert lib2_idx < lib1_idx < work_idx
 
         # Check all files present
         all_files = build_set.get_all_files()
@@ -165,7 +162,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("D.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("D.vhd"), "vhdl")]
                 )]
             )]
         )
@@ -179,7 +176,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("C.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("C.vhd"), "vhdl")],
                     deps=["libD.partD"]
                 )]
             )]
@@ -194,7 +191,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("B.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("B.vhd"), "vhdl")],
                     deps=["libD.partD"]
                 )]
             )]
@@ -209,7 +206,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("A.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("A.vhd"), "vhdl")],
                     deps=["libB.partB", "libC.partC"]
                 )]
             )]
@@ -234,12 +231,10 @@ class TestDependencyResolver:
                 )]
             )]
         )
-        root_lib = Library(name="project")
-        root_lib.add_partition(root_part)
 
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=root_part,
             topcell="top",
         )
 
@@ -311,12 +306,9 @@ class TestDependencyResolver:
         repo.add_library(libB)
         repo.add_library(libC)
 
-        root_lib = Library(name="project")
-        root_lib.add_partition(partA)
-
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=partA,
             topcell="top",
         )
 
@@ -340,12 +332,9 @@ class TestDependencyResolver:
         lib = Library(name="lib")
         lib.add_partition(part)
 
-        root_lib = Library(name="project")
-        root_lib.add_partition(part)
-
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=part,
             topcell="top",
         )
 
@@ -363,7 +352,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("xilinx.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("xilinx.vhd"), "vhdl")]
                 )]
             )]
         )
@@ -376,7 +365,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("intel.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("intel.vhd"), "vhdl")]
                 )]
             )]
         )
@@ -390,7 +379,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("top.vhd"), Language.VHDL)],
+                    sources=[SourceFile(Path("top.vhd"), "vhdl")],
                     groups=[ConditionalGroup(
                         name="vendor",
                         conditions=[
@@ -415,13 +404,10 @@ class TestDependencyResolver:
         repo = Repository(name="test", root=Path("/test"))
         repo.add_library(lib)
 
-        root_lib = Library(name="project")
-        root_lib.add_partition(conditional_part)
-
         # Test with vendor=xilinx
         project_xilinx = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=conditional_part,
             topcell="top",
             filter_vars={"vendor": "xilinx"}
         )
@@ -438,7 +424,7 @@ class TestDependencyResolver:
         # Test with vendor=intel
         project_intel = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=conditional_part,
             topcell="top",
             filter_vars={"vendor": "intel"}
         )
@@ -452,20 +438,28 @@ class TestDependencyResolver:
         assert "intel.vhd" in file_names
         assert "xilinx.vhd" not in file_names
 
-    def test_no_root_partitions_error(self):
-        """Test error when project has no root partitions"""
-        root_lib = Library(name="project")  # Empty library
+    def test_empty_root_partition(self):
+        """Test that empty root partition (no sources) works"""
+        # Create empty partition with no sources or dependencies
+        empty_part = Partition(
+            name="empty",
+            groups=[ConditionalGroup(
+                name="root",
+                conditions=[FilterCondition(expression="default")]
+            )]
+        )
 
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=empty_part,
             topcell="top",
         )
 
         resolver = DependencyResolver(project, [])
+        build_set = resolver.resolve()
 
-        with pytest.raises(ResolutionError, match="no root partitions"):
-            resolver.resolve()
+        # Should resolve successfully with empty file list
+        assert len(build_set.get_all_files()) == 0
 
     def test_library_name_conflict(self):
         """Test behavior when library appears in multiple repos (uses first)"""
@@ -476,7 +470,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("from_repo1.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("from_repo1.vhd"), "vhdl")]
                 )]
             )]
         )
@@ -491,7 +485,7 @@ class TestDependencyResolver:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("from_repo2.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("from_repo2.vhd"), "vhdl")]
                 )]
             )]
         )
@@ -511,12 +505,10 @@ class TestDependencyResolver:
                 )]
             )]
         )
-        root_lib = Library(name="project")
-        root_lib.add_partition(root_part)
 
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=root_part,
             topcell="top",
         )
 
@@ -539,16 +531,13 @@ class TestResolveProjectFunction:
                 name="root",
                 conditions=[FilterCondition(
                     expression="default",
-                    sources=[SourceFile(Path("file.vhd"), Language.VHDL)]
+                    sources=[SourceFile(Path("file.vhd"), "vhdl")]
                 )]
             )]
         )
-        root_lib = Library(name="project")
-        root_lib.add_partition(part)
-
         project = Project(
             name="test",
-            root_library=root_lib,
+            root_partition=part,
             topcell="top",
         )
 

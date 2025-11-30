@@ -10,7 +10,6 @@ from gbs.loaders import (
     load_project,
     LoadError,
 )
-from gbs.models import Language
 
 
 # Test fixtures directory
@@ -39,7 +38,7 @@ class TestPartitionLoader:
         assert root_cond.expression == "default"
         assert root_cond.is_default()
         assert len(root_cond.sources) == 2
-        assert root_cond.sources[0].language == Language.VHDL
+        assert root_cond.sources[0].language == "vhdl"
         assert root_cond.sources[0].path.name == "file1.vhd"
 
     def test_load_conditional_partition(self):
@@ -193,8 +192,8 @@ class TestProjectLoader:
 
         # Check sources
         assert len(root_cond.sources) == 2
-        vhdl_sources = [s for s in root_cond.sources if s.language == Language.VHDL]
-        other_sources = [s for s in root_cond.sources if s.language == Language.OTHER]
+        vhdl_sources = [s for s in root_cond.sources if s.language == "vhdl"]
+        other_sources = [s for s in root_cond.sources if s.language == "other"]
         assert len(vhdl_sources) == 1
         assert len(other_sources) == 1
 
@@ -224,7 +223,7 @@ class TestSourceLoading:
         partition = load_partition(partition_file)
         root_cond = partition.groups[0].conditions[0]
         source = root_cond.sources[0]
-        assert source.language == Language.VHDL
+        assert source.language == "vhdl"
         assert source.variant == "2008"
 
     def test_load_sources_different_languages(self, tmp_path):
@@ -247,22 +246,25 @@ class TestSourceLoading:
         root_cond = partition.groups[0].conditions[0]
         sources = root_cond.sources
         assert len(sources) == 3
-        assert sources[0].language == Language.VHDL
-        assert sources[1].language == Language.VERILOG
-        assert sources[2].language == Language.SYSTEMVERILOG
+        assert sources[0].language == "vhdl"
+        assert sources[1].language == "verilog"
+        assert sources[2].language == "systemverilog"
 
-    def test_load_sources_invalid_language(self, tmp_path):
-        """Test error with invalid language"""
+    def test_load_sources_any_language_accepted(self, tmp_path):
+        """Test that any language string is accepted (free-form)"""
         partition_file = tmp_path / "partition.gbs.yaml"
         partition_file.write_text(
             "sources:\n"
-            "  - language: invalid_language\n"
+            "  - language: custom_hdl\n"
             "    files:\n"
             "      - code.txt\n"
         )
 
-        with pytest.raises(LoadError, match="Unknown language"):
-            load_partition(partition_file)
+        # Should load without error since language is free-form
+        partition = load_partition(partition_file)
+        root_cond = partition.groups[0].conditions[0]
+        assert len(root_cond.sources) == 1
+        assert root_cond.sources[0].language == "custom_hdl"
 
 
 class TestErrorHandling:
