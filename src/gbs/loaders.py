@@ -9,7 +9,7 @@ import importlib
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from gbs.models import (
+from .models import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,
@@ -18,7 +18,7 @@ from gbs.models import (
     Repository,
     Project,
 )
-from gbs.logging import get_logger
+from .logging import get_logger
 
 
 logger = get_logger(__name__)

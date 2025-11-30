@@ -7,11 +7,10 @@ import asyncclick as click
 from pathlib import Path
 import sys
 
-from gbs.logging import get_logger
-from gbs.loaders import load_project, load_project_with_repositories, load_repository, LoadError
-from gbs.resolver import resolve_project
-from gbs.cli import load_project_for_command, get_project_file
-
+from ..logging import get_logger
+from ..loaders import load_project, load_project_with_repositories, load_repository, LoadError
+from ..resolver import resolve_project
+from ..cli import load_project_for_command, get_project_file
 
 @click.group(invoke_without_command=False)
 @click.option(
@@ -55,7 +54,7 @@ async def project(ctx, project_file: Path | None):
 @click.pass_context
 async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project"""
-    from gbs.tasks import BuildContext, BuildFileSet
+    from ..tasks import BuildContext, BuildFileSet
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]

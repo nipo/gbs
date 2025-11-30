@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 
-from gbs.logging import get_logger
+from ..logging import get_logger
 
 try:
     import click
@@ -331,7 +331,7 @@ class BuildContext:
         Returns:
             The populated fileset
         """
-        from gbs.tasks import BuildResource
+        from ..tasks import BuildResource
 
         # First pass: create all BuildResources
         partition_to_resources: dict[tuple[str, str], list] = {}
@@ -380,7 +380,7 @@ class BuildContext:
         Raises:
             ValueError: If no backends are configured
         """
-        from gbs.backend_loader import load_backends_from_project
+        from ..backend_loader import load_backends_from_project
 
         if not self.project or not hasattr(self.project, 'raw_config'):
             raise ValueError("BuildContext has no project configuration")
@@ -402,7 +402,7 @@ class BuildContext:
         Returns:
             Number of iterations until convergence
         """
-        from gbs.backend import run_backend_iteration
+        from ..backend import run_backend_iteration
 
         # Load backends
         registry = self.load_backends()
@@ -436,7 +436,7 @@ class BuildContext:
                 if show_progress:
                     # Use progress monitoring if available
                     try:
-                        from gbs.progress import run_with_progress
+                        from ..progress import run_with_progress
                         await run_with_progress(self, all_resources)
                     except ImportError:
                         # Fall back if progress module not available

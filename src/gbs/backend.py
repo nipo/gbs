@@ -10,7 +10,7 @@ All new code should import from the new locations directly.
 from __future__ import annotations
 
 # Re-export base classes from gbs.model.backend
-from gbs.model.backend import (
+from .model.backend import (
     Backend,
     BaseBackend,
     BackendRegistry,
@@ -18,9 +18,9 @@ from gbs.model.backend import (
 )
 
 # Re-export concrete backends from gbs.backend
-from gbs.backend.ghdl import GHDLBackend
-from gbs.backend.verilog_to_vhdl import VerilogToVHDLBackend
-from gbs.backend.mem_init import MemInitBackend
+from .backend.ghdl import GHDLBackend
+from .backend.verilog_to_vhdl import VerilogToVHDLBackend
+from .backend.mem_init import MemInitBackend
 
 __all__ = [
     # Base classes

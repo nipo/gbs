@@ -22,8 +22,8 @@ import re
 from typing import Any, AsyncIterator
 from pathlib import Path
 
-from gbs.model.backend import BaseBackend
-from gbs.model.build import BuildContext, BuildFileSet, BuildResource, Resource, Task, MessageSeverity, ToolMessage
+from ..model.backend import BaseBackend
+from ..model.build import BuildContext, BuildFileSet, BuildResource, Resource, Task, MessageSeverity, ToolMessage
 
 
 def parse_device_csv(gowin_path: Path, device: str, logger: logging.Logger) -> tuple[str, str]:

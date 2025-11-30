@@ -15,8 +15,8 @@ from __future__ import annotations
 from typing import Protocol, Any
 from abc import ABC, abstractmethod
 
-from gbs.model.build import BuildContext, BuildFileSet
-from gbs.logging import get_logger
+from .build import BuildContext, BuildFileSet
+from ..logging import get_logger
 
 
 class Backend(Protocol):

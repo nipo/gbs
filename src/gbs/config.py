@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 import yaml
 
-from gbs.logging import get_logger
+from .logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -6,11 +6,10 @@ Main entry point for the gbs command.
 import asyncclick as click
 from pathlib import Path
 
-from gbs.logging import setup_logging, get_logger, get_log_file
-from gbs.loaders import load_repository, load_project, load_project_with_repositories, LoadError
-from gbs.plugins import get_plugin_registry
-from gbs.config import GBSConfig
-
+from ..logging import setup_logging, get_logger, get_log_file
+from ..loaders import load_repository, load_project, load_project_with_repositories, LoadError
+from ..plugins import get_plugin_registry
+from ..config import GBSConfig
 
 def load_project_for_command(ctx, project_file: Path, additional_repos: tuple[Path] = ()):
     """Load project with GBS config for CLI commands
@@ -131,8 +130,8 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
 
 
 # Import and register command groups
-from gbs.cli.repo import repo
-from gbs.cli.project import project
+from .repo import repo
+from .project import project
 
 cli.add_command(repo)
 cli.add_command(project)

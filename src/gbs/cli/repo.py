@@ -7,15 +7,13 @@ import asyncclick as click
 from pathlib import Path
 import sys
 
-from gbs.logging import get_logger
-from gbs.loaders import load_repository, LoadError
-
+from ..logging import get_logger
+from ..loaders import load_repository, LoadError
 
 @click.group()
 async def repo():
     """Repository introspection commands"""
     pass
-
 
 @repo.command()
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
@@ -185,8 +183,8 @@ async def query(path: Path, partition: str, filter: tuple[str]):
         repository = load_repository(path)
 
         # Create a minimal project to use the resolver
-        from gbs.models import Project, Library, Partition, FilterCondition, ConditionalGroup
-        from gbs.resolver import DependencyResolver, PartitionRef
+        from ..models import Project, Library, Partition, FilterCondition, ConditionalGroup
+        from ..resolver import DependencyResolver, PartitionRef
 
         # Parse partition reference
         try:

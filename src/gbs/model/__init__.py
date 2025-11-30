@@ -7,7 +7,7 @@ This package contains the core model classes for the GBS build system:
 """
 
 # Re-export everything from build
-from gbs.model.build import (
+from .build import (
     BuildError,
     PrerequisiteFailed,
     BuildContext,
@@ -23,7 +23,7 @@ from gbs.model.build import (
 )
 
 # Re-export everything from repository
-from gbs.model.repository import (
+from .repository import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,
@@ -35,7 +35,7 @@ from gbs.model.repository import (
 )
 
 # Re-export everything from backend
-from gbs.model.backend import (
+from .backend import (
     Backend,
     BaseBackend,
     BackendRegistry,

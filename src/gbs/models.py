@@ -7,7 +7,7 @@ All new code should import from gbs.model.repository directly.
 from __future__ import annotations
 
 # Re-export everything from gbs.model.repository
-from gbs.model.repository import (
+from .model.repository import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,

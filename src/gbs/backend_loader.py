@@ -13,8 +13,8 @@ import importlib.metadata
 from typing import Any, Type
 from pathlib import Path
 
-from gbs.backend import Backend, BaseBackend, BackendRegistry
-from gbs.logging import get_logger
+from .backend import Backend, BaseBackend, BackendRegistry
+from .logging import get_logger
 
 
 class BackendLoadError(Exception):
@@ -299,7 +299,7 @@ def load_backends_from_project(project_config: dict[str, Any]) -> BackendRegistr
     registry = loader.load_from_config(backend_configs)
 
     # Auto-include backends from plugins
-    from gbs.plugins import get_plugin_registry
+    from .plugins import get_plugin_registry
     plugin_registry = get_plugin_registry()
     auto_backends = plugin_registry.get_auto_backends(registry)
 

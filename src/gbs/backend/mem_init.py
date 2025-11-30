@@ -7,8 +7,8 @@ This is a reference implementation demonstrating how a code generation backend w
 from __future__ import annotations
 from typing import Any
 
-from gbs.model.backend import BaseBackend
-from gbs.model.build import BuildContext, BuildFileSet, BuildResource
+from ..model.backend import BaseBackend
+from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 
 class MemInitBackend(BaseBackend):

@@ -11,9 +11,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from gbs.config import ToolConfig
+    from .config import ToolConfig
 
-from gbs.logging import get_logger
+from .logging import get_logger
 
 logger = get_logger(__name__)
 

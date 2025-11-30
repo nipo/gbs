@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from collections import defaultdict, deque
 
-from gbs.models import (
+from .models import (
     Partition,
     Library,
     Repository,
@@ -20,8 +20,8 @@ from gbs.models import (
     ConditionalGroup,
     FilterCondition,
 )
-from gbs.filters import evaluate_filter
-from gbs.logging import get_logger
+from .filters import evaluate_filter
+from .logging import get_logger
 
 
 logger = get_logger(__name__)

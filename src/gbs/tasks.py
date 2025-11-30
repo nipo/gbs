@@ -7,7 +7,7 @@ All new code should import from gbs.model.build directly.
 from __future__ import annotations
 
 # Re-export everything from gbs.model.build
-from gbs.model.build import (
+from .model.build import (
     BuildError,
     PrerequisiteFailed,
     BuildContext,

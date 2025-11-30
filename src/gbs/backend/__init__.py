@@ -7,7 +7,7 @@ Built-in backends are registered as plugins via the register() function.
 """
 
 # Re-export base classes from gbs.model.backend
-from gbs.model.backend import (
+from ..model.backend import (
     Backend,
     BaseBackend,
     BackendRegistry,
@@ -15,10 +15,10 @@ from gbs.model.backend import (
 )
 
 # Re-export all concrete backends
-from gbs.backend.ghdl import GHDLBackend
-from gbs.backend.verilog_to_vhdl import VerilogToVHDLBackend
-from gbs.backend.mem_init import MemInitBackend
-from gbs.backend.gowin import GowinBackend
+from .ghdl import GHDLBackend
+from .verilog_to_vhdl import VerilogToVHDLBackend
+from .mem_init import MemInitBackend
+from .gowin import GowinBackend
 
 __all__ = [
     # Base classes
@@ -45,7 +45,7 @@ def register(plugin_registry):
     Args:
         plugin_registry: PluginRegistry instance
     """
-    from gbs.config import ToolConfig
+    from ..config import ToolConfig
 
     # Register backends
     plugin_registry.register_backend("GHDLBackend", GHDLBackend)

@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from gbs.model.backend import BaseBackend
-from gbs.model.build import BuildContext, BuildFileSet, BuildResource, ExecutorTask
+from ..model.backend import BaseBackend
+from ..model.build import BuildContext, BuildFileSet, BuildResource, ExecutorTask
 
 
 class GHDLBackend(BaseBackend):
