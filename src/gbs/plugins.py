@@ -128,9 +128,9 @@ class PluginRegistry:
 
         # Register built-in backends first
         try:
-            import gbs.backend
-            if hasattr(gbs.backend, 'register'):
-                gbs.backend.register(self)
+            from . import backend
+            if hasattr(backend, 'register'):
+                backend.register(self)
                 logger.debug("Registered built-in backends")
         except Exception as e:
             logger.warning(f"Failed to register built-in backends: {e}")
