@@ -9,8 +9,215 @@ from typing import Any
 from pathlib import Path
 
 from ..model.backend import BaseBackend
-from ..model.build import BuildContext, BuildFileSet, BuildResource, ExecutorTask
+from ..model.build import BuildContext, BuildFileSet, BuildResource, Task, MessageSubprocess
 
+class GhdlInvocation(MessageSubprocess):
+    pass
+
+class ImportTask(Task):
+    """GHDL import task (ghdl -i + ghdl -a)"""
+
+    def __init__(
+        self,
+        context: BuildContext,
+        library_name: str,
+        ghdl_executable: str,
+        workdir: Path,
+        vhdl_std: str,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            context=context,
+            name=f"ghdl_import_{library_name}",
+            inputs=inputs,
+            outputs=outputs,
+            description=f"GHDL import {library_name}"
+        )
+        self.library_name = library_name
+        self.ghdl_executable = ghdl_executable
+        self.workdir = workdir
+        self.vhdl_std = vhdl_std
+
+    async def work(self) -> None:
+        """Execute GHDL import"""
+        import subprocess
+
+        sources = []
+        p_flags = []
+
+        for i in self.inputs:
+            if i.metadata["file_type"] == "vhdl":
+                sources.append(i.path.resolve())
+            elif i.metadata["file_type"] == "ghdl-cf":
+                p_flags.append(f"-P{i.path.parent.resolve()}")
+            else:
+                raise ValueError(f"Unknown input type {i}")
+
+        import_process = GhdlInvocation(argv = [
+            self.ghdl_executable, "-i",
+            f"--workdir={self.workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+            f"--work={self.library_name}",
+        ] + p_flags + sources)
+
+        async for msg in import_process:
+            self.add_message_obj(msg)
+
+        if import_process.returncode != 0:
+            raise RuntimeError(f"ghdl -i failed for {self.library_name}: {import_process.returncode}")
+
+        analyze_process = GhdlInvocation(argv = [
+            self.ghdl_executable, "-a",
+            f"--workdir={self.workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+            f"--work={self.library_name}",
+        ] + p_flags + sources)
+
+        async for msg in analyze_process:
+            self.add_message_obj(msg)
+
+        if analyze_process.returncode != 0:
+            raise RuntimeError(f"ghdl -i failed for {self.library_name}: {analyze_process.returncode}")
+
+class CompileLinkTask(Task):
+    """GHDL compile and link task for compiled backends (ghdl -c -e)"""
+
+    def __init__(
+        self,
+        context: BuildContext,
+        topcell: str,
+        ghdl_executable: str,
+        root_workdir: Path,
+        vhdl_std: str,
+        root_library: str,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            context=context,
+            name=f"ghdl_link_{topcell}",
+            inputs=inputs,
+            outputs=outputs,
+            description=f"GHDL link {topcell}"
+        )
+        self.topcell = topcell
+        self.ghdl_executable = ghdl_executable
+        self.root_workdir = root_workdir
+        self.vhdl_std = vhdl_std
+        self.root_library = root_library
+
+    async def work(self) -> None:
+        """Execute GHDL compile and link"""
+        import subprocess
+
+        # Build -P flags for all libraries
+        p_flags = []
+        for res in self.inputs:
+            if res.metadata.get("file_type") == "ghdl-cf":
+                p_flags.append(f"-P{res.path.parent.resolve()}")
+
+        process = GhdlInvocation(argv = [
+            self.ghdl_executable, "-c", "-O2",
+            f"--workdir={self.root_workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+        ] + p_flags + [
+            f"--work={self.root_library}",
+            "-e", self.topcell
+        ])
+
+        async for msg in process:
+            self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(f"ghdl -c failed: {process.returncode}")
+
+class MakeElabTask(Task):
+    """GHDL make task for mcode/jit backends (ghdl -m / -e + wrapper generator)"""
+
+    def __init__(
+        self,
+        context: BuildContext,
+        topcell: str,
+        ghdl_executable: str,
+        root_workdir: Path,
+        vhdl_std: str,
+        root_library: str,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            context=context,
+            name=f"ghdl_make_{topcell}",
+            inputs=inputs,
+            outputs=outputs,
+            description=f"GHDL make {topcell}"
+        )
+        self.topcell = topcell
+        self.ghdl_executable = ghdl_executable
+        self.root_workdir = root_workdir
+        self.vhdl_std = vhdl_std
+        self.root_library = root_library
+
+    async def work(self) -> None:
+        """Execute GHDL compile and link"""
+        import subprocess
+
+        assert len(self.outputs) == 1
+
+        # Build -P flags for all libraries
+        p_flags = []
+        for res in self.inputs:
+            if res.metadata.get("file_type") == "ghdl-cf":
+                p_flags.append(f"-P{res.path.parent.resolve()}")
+
+        process = GhdlInvocation(argv = [
+            self.ghdl_executable, "-m",
+            f"--workdir={self.root_workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+        ] + p_flags + [
+            f"--work={self.root_library}",
+            self.topcell
+        ])
+
+        async for msg in process:
+            self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(f"ghdl -m failed: {process.returncode}")
+
+        process = GhdlInvocation(argv = [
+            self.ghdl_executable, "-e",
+            f"--workdir={self.root_workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+        ] + p_flags + [
+            f"--work={self.root_library}",
+            self.topcell
+        ])
+
+        async for msg in process:
+            self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(f"ghdl -e failed: {process.returncode}")
+
+        # Create run script
+        run_cmd = [
+            self.ghdl_executable, "-r",
+            f"--workdir={self.root_workdir.resolve()}",
+            f"--std={self.vhdl_std}",
+        ] + p_flags + [
+            f"--work={self.root_library}",
+            self.topcell,
+            '"$@"'
+        ]
+
+        script_content = f"""#!/bin/sh
+
+exec {' '.join(run_cmd)}
+"""
+        self.outputs[0].path.write_text(script_content)
+        self.outputs[0].path.chmod(0o755)
 
 class GHDLBackend(BaseBackend):
     """GHDL backend that compiles VHDL designs
@@ -201,7 +408,6 @@ class GHDLBackend(BaseBackend):
 
         # Track .cf files and analyze tasks for dependencies
         cf_files: dict[str, BuildResource] = {}
-        analyze_tasks: dict[str, ExecutorTask] = {}
 
         # Step 1 & 2: Import and analyze each library
         for library_name, library_files in by_library:
@@ -227,142 +433,46 @@ class GHDLBackend(BaseBackend):
             # .cf file that will be generated
             cf_path = workdir / f"{library_name}-obj{vhdl_version}.cf"
             cf_resource = context.get_resource(cf_path)
+            cf_resource.metadata["file_type"] = "ghdl-cf"
 
             # Track .cf file for dependencies (but don't add to fileset)
             cf_br = BuildResource(
                 resource=cf_resource,
-                file_type="ghdl_library",
+                file_type="ghdl-cf",
                 library=library_name,
                 is_source=False,
                 generated_by=self.name,
             )
+
             # Note: .cf files are internal GHDL artifacts, not added to fileset
             cf_files[library_name] = cf_br
 
+            inputs = []
+
             # Collect source file paths in partition dependency order
             # (by_library_ordered already returns files in correct dependency order)
-            source_paths = [str(br.path.resolve()) for br in vhdl_files]
+            for br in vhdl_files:
+                inputs.append(br.resource)
 
-            # Build -P flags for dependent libraries
-            # Use library dependency graph to get only the actual dependencies
-            p_flags = []
+            # Import depends on source files and dependent library .cf
+            # files Use library dependency graph to get only the
+            # actual dependencies
             lib_deps = lib_deps_graph.get(library_name, set())
-            for dep_lib in lib_deps:
-                dep_workdir = self.output_dir / dep_lib
-                p_flags.append(f"-P{dep_workdir.resolve()}")
-            self.logger.debug(f"Library {library_name} depends on {lib_deps}, p_flags: {p_flags}")
+            for dep_lib in cf_files:
+                if dep_lib == library_name:
+                    continue
+                inputs.append(cf_files[dep_lib].resource)
 
             # Create import task (ghdl -i)
-            # Capture loop variables with default arguments
-            def make_import_executor(ghdl_exe, wd, std, lib, pflags, srcs, cfp):
-                async def import_executor(ctx, inputs):
-                    cmd = [
-                        ghdl_exe, "-i",
-                        f"--workdir={wd.resolve()}",
-                        f"--std={std}",
-                        f"--work={lib}",
-                    ] + pflags + srcs
-
-                    self.logger.info(f"Import: {' '.join(cmd)}")
-
-                    result = subprocess.run(cmd, capture_output=True, text=True)
-                    if result.returncode != 0:
-                        raise RuntimeError(f"ghdl -i failed for {lib}: {result.stderr}")
-
-                    return [cfp]
-                return import_executor
-
-            import_executor = make_import_executor(
-                ghdl_executable, workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path
-            )
-
-            # Import depends on source files and dependent library .cf files
-            # Use library dependency graph to get only the actual dependencies
-            import_inputs = [br.resource for br in vhdl_files]
-            for dep_lib in lib_deps:
-                if dep_lib in cf_files:
-                    import_inputs.append(cf_files[dep_lib].resource)
-
-            import_task = ExecutorTask(
-                context,
-                f"ghdl_import_{library_name}",
-                inputs=import_inputs,
+            import_task = ImportTask(
+                context=context,
+                library_name=library_name,
+                ghdl_executable=ghdl_executable,
+                workdir=workdir,
+                vhdl_std=self.vhdl_std,
+                inputs=inputs,
                 outputs=[cf_resource],
-                executor=import_executor,
-                description=f"GHDL import {library_name}"
             )
-
-            # Create analyze task (ghdl -a)
-            # For compiled backends, analyze creates .o files
-            # For mcode, it just updates the .cf file
-            object_files = []
-            if backend_type in ["gcc", "llvm"]:
-                for br in vhdl_files:
-                    # Object file is named after the source: foo.vhd -> foo.pkg.o or foo.o
-                    src_name = br.path.stem  # e.g., "text.pkg" from "text.pkg.vhd"
-                    obj_path = workdir / f"{src_name}.o"
-                    object_files.append(obj_path)
-
-            # Capture loop variables with default arguments
-            def make_analyze_executor(ghdl_exe, wd, std, lib, pflags, srcs, cfp, objfiles):
-                async def analyze_executor(ctx, inputs):
-                    cmd = [
-                        ghdl_exe, "-a",
-                        f"--workdir={wd.resolve()}",
-                        f"--std={std}",
-                        f"--work={lib}",
-                    ] + pflags + srcs
-
-                    self.logger.info(f"Analyze: {' '.join(cmd)}")
-
-                    result = subprocess.run(cmd, capture_output=True, text=True)
-                    if result.returncode != 0:
-                        raise RuntimeError(f"ghdl -a failed for {lib}: {result.stderr}")
-
-                    # Touch .cf to update timestamp
-                    cfp.touch()
-                    return [cfp] + objfiles
-                return analyze_executor
-
-            analyze_executor = make_analyze_executor(
-                ghdl_executable, workdir, self.vhdl_std, library_name, p_flags[:], source_paths[:], cf_path, object_files[:]
-            )
-
-            # Analyze inputs: source files and dependent library analyze tasks
-            # Use library dependency graph to get only the actual dependencies
-            analyze_inputs = [import_task] + [br.resource for br in vhdl_files]
-            for dep_lib in lib_deps:
-                if dep_lib in analyze_tasks:
-                    # Depend on the analyze task, not just the .cf file
-                    analyze_inputs.append(analyze_tasks[dep_lib])
-
-            # Analyze outputs: .cf file and object files (if compiled backend)
-            analyze_output_resources = [cf_resource]
-            for obj_path in object_files:
-                analyze_output_resources.append(context.get_resource(obj_path))
-
-            analyze_task = ExecutorTask(
-                context,
-                f"ghdl_analyze_{library_name}",
-                inputs=analyze_inputs,
-                outputs=analyze_output_resources,
-                executor=analyze_executor,
-                description=f"GHDL analyze {library_name}"
-            )
-
-            # Track analyze task for dependencies
-            analyze_tasks[library_name] = analyze_task
-
-            # Add object files to fileset (for compiled backends)
-            for obj_path in object_files:
-                obj_br = BuildResource(
-                    resource=context.get_resource(obj_path),
-                    file_type="vhdl_elab",  # Tests expect this file type
-                    library=library_name,
-                    is_source=False,
-                    generated_by=self.name,
-                )
-                fileset.add(obj_br)
 
             self._processed_libraries.add(library_name)
 
@@ -404,142 +514,30 @@ class GHDLBackend(BaseBackend):
 
         root_workdir = self.output_dir / root_library
 
-        # Build -P flags for all libraries
-        p_flags = []
-        for lib_name in cf_files.keys():
-            lib_workdir = self.output_dir / lib_name
-            p_flags.append(f"-P{lib_workdir.resolve()}")
-
         if backend_type in ["gcc", "llvm"]:
-            # Compiled backend: ghdl -c -e
-            executable_path = Path.cwd() / topcell
-            executable_resource = context.get_resource(executable_path)
+            final_task_class = CompileLinkTask
+        else:
+            final_task_class = MakeElabTask
 
-            async def compile_link_executor(ctx, inputs):
-                cmd = [
-                    ghdl_executable, "-c", "-O2",
-                    f"--workdir={root_workdir.resolve()}",
-                    f"--std={self.vhdl_std}",
-                ] + p_flags + [
-                    f"--work={root_library}",
-                    "-e", topcell
-                ]
+        executable_path = Path.cwd() / topcell
+        executable_resource = context.get_resource(executable_path)
 
-                self.logger.info(f"Linking: {' '.join(cmd)}")
+        link_task = final_task_class(
+            context=context,
+            topcell=topcell,
+            ghdl_executable=ghdl_executable,
+            root_workdir=root_workdir,
+            vhdl_std=self.vhdl_std,
+            root_library=root_library,
+            inputs=[x.resource for x in cf_files.values()],
+            outputs=[executable_resource],
+        )
 
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise RuntimeError(f"GHDL -c -e failed: {result.stderr}")
-
-                return [executable_path]
-
-            link_task = ExecutorTask(
-                context,
-                f"ghdl_link_{topcell}",
-                inputs=[cf_files[lib].resource for lib in cf_files],
-                outputs=[executable_resource],
-                executor=compile_link_executor,
-                description=f"GHDL link {topcell}"
-            )
-
-            sim_br = BuildResource(
-                resource=executable_resource,
-                file_type="ghdl_simulator",
-                library=root_library,
-                is_source=False,
-                generated_by=self.name,
-            )
-            fileset.add(sim_br)
-
-        else:  # mcode/jit
-            # Mcode backend: ghdl -m, ghdl -e, then create run script
-
-            # ghdl -m (make)
-            async def make_executor(ctx, inputs):
-                cmd = [
-                    ghdl_executable, "-m",
-                    f"--workdir={root_workdir.resolve()}",
-                    f"--std={self.vhdl_std}",
-                ] + p_flags + [
-                    f"--work={root_library}",
-                    topcell
-                ]
-
-                self.logger.info(f"Make: {' '.join(cmd)}")
-
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise RuntimeError(f"GHDL -m failed: {result.stderr}")
-
-                # Return a marker file
-                marker = root_workdir / f".{topcell}_made"
-                marker.touch()
-                return [marker]
-
-            make_marker = context.get_resource(root_workdir / f".{topcell}_made")
-
-            make_task = ExecutorTask(
-                context,
-                f"ghdl_make_{topcell}",
-                inputs=[cf_files[lib].resource for lib in cf_files],
-                outputs=[make_marker],
-                executor=make_executor,
-                description=f"GHDL make {topcell}"
-            )
-
-            # ghdl -e (elaborate)
-            async def elab_executor(ctx, inputs):
-                cmd = [
-                    ghdl_executable, "-e",
-                    f"--workdir={root_workdir.resolve()}",
-                    f"--std={self.vhdl_std}",
-                ] + p_flags + [
-                    f"--work={root_library}",
-                    topcell
-                ]
-
-                self.logger.info(f"Elaborate: {' '.join(cmd)}")
-
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise RuntimeError(f"GHDL -e failed: {result.stderr}")
-
-                # Create run script
-                script_path = Path.cwd() / topcell
-                run_cmd = [
-                    ghdl_executable, "-r",
-                    f"--workdir={root_workdir.resolve()}",
-                    f"--std={self.vhdl_std}",
-                ] + p_flags + [
-                    f"--work={root_library}",
-                    topcell,
-                    '"$@"'
-                ]
-
-                script_content = f"""#!/bin/sh
-{' '.join(run_cmd)}
-"""
-                script_path.write_text(script_content)
-                script_path.chmod(0o755)
-
-                return [script_path]
-
-            script_resource = context.get_resource(Path.cwd() / topcell)
-
-            elab_task = ExecutorTask(
-                context,
-                f"ghdl_elab_{topcell}",
-                inputs=[make_marker],
-                outputs=[script_resource],
-                executor=elab_executor,
-                description=f"GHDL elaborate {topcell}"
-            )
-
-            sim_br = BuildResource(
-                resource=script_resource,
-                file_type="ghdl_simulator",
-                library=root_library,
-                is_source=False,
-                generated_by=self.name,
-            )
-            fileset.add(sim_br)
+        sim_br = BuildResource(
+            resource=executable_resource,
+            file_type="ghdl-simulator",
+            library=root_library,
+            is_source=False,
+            generated_by=self.name,
+        )
+        fileset.add(sim_br)

@@ -19,7 +19,7 @@ The build process:
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, Callable, Awaitable, Optional
+from typing import Any, Callable, Awaitable, Optional, AsyncIterator
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
@@ -173,7 +173,7 @@ class BuildContext:
         Add a message to the build context
         """
         self.__messages.append(message)
-    
+
     @property
     def semaphore(self) -> asyncio.Semaphore:
         """Get semaphore, creating it lazily if needed"""
@@ -309,7 +309,7 @@ class BuildContext:
             while pending:
                 done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
                 bar.update(len(done))
-        
+
     async def _cleanup(self) -> None:
         self.logger.debug("Cleanup")
         for p in self.running:
@@ -320,7 +320,7 @@ class BuildContext:
 
         for m in self.messages_get(min_severity = MessageSeverity.WARNING):
             m.pprint()
-            
+
     def populate_fileset(self, build_set, fileset):
         """Populate fileset from resolved build set
 
@@ -348,9 +348,12 @@ class BuildContext:
                     if source_file.variant:
                         file_type = f"{file_type}_{source_file.variant}"
 
+                    res = self.get_resource(source_file.path)
+                    res.metadata["file_type"] = source_file.language
+                    res.metadata["library"] = lib_name
                     # Create BuildResource
                     br = BuildResource(
-                        resource=self.get_resource(source_file.path),
+                        resource=res,
                         file_type=file_type,
                         library=lib_name,
                     )
@@ -449,7 +452,7 @@ class BuildContext:
 
     def build(self):
         return ContextBuildManager(self)
-                
+
 class ContextBuildManager:
     def __init__(self, context):
         self.context = context
@@ -459,7 +462,7 @@ class ContextBuildManager:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.context._cleanup()
-                
+
 class BuildStep(asyncio.Future):
     """
     A step in a build, either a task, an artifact, a dependency, etc.
@@ -497,7 +500,7 @@ class BuildStep(asyncio.Future):
         """
         self.depends_on.add(dep)
         dep.expected_by.add(self)
-        
+
     def __repr__(self) -> str:
         return self._log_name
 
@@ -657,20 +660,20 @@ class BuildStep(asyncio.Future):
         implement generic filter here
         """
         return await self.work()
-        
+
     def __mark_done(self, exc: Exception = None):
         """Mark step as done"""
         if exc:
             self.set_exception(exc)
         else:
             self.set_result(None)
-        
+
     async def work(self):
         """
         Actual work load item.
         """
         ...
-    
+
 class VirtualResource(BuildStep):
     """An in-memory resource
 
@@ -717,7 +720,7 @@ class Resource(BuildStep):
             return self.path.stat().st_mtime
         except:
             return None
-        
+
     async def work(self):
         """
         Actual work load item - check file exists.
@@ -819,6 +822,119 @@ class Task(BuildStep):
         Must be overridden by subclasses
         """
         ...
+
+class MessageSubprocess:
+    """
+    A subprocess that generates a stream of ToolMessage objects.
+
+    Typical usage:
+
+    proc = MessageSubprocess(["ls", "-1", "/tmp"])
+
+    async for message in proc:
+        # do something
+        pass
+
+    # proc.returncode has the exit status
+
+    """
+    def __init__(self,
+                 argv: list[str],
+                 cwd: Path = Path(".")):
+        self.argv = argv
+        self.cwd = cwd
+        self.process = None
+        self.__queue = asyncio.Queue()
+
+    async def __aiter__(self) -> AsyncIterator[ToolMessage]:
+        """Asynchronous iterator of messages. Messages from stdout and
+        stderr transformers are mixed in the same iteration.  When
+        iterator completes, process has exited.
+        """
+        await self.__launch()
+
+        to_close = 2
+        while to_close:
+            msg = await self.__queue.get()
+            if msg is None:
+                to_close -= 1
+                continue
+            yield msg
+
+        await self.process.wait()
+        await self.stdout_task
+        await self.stderr_task
+
+    @property
+    def returncode(self):
+        if self.process:
+            return self.process.returncode
+        return None
+
+    async def stdout_transform(self, lines: AsyncIterator[str]) -> AsyncIterator[ToolMessage]:
+        """Transformer that receives lines of text from stdout one by
+        one, may create a message from it.
+
+        This may be overridden for custom message processing
+        """
+        async for line in lines:
+            yield ToolMessage(severity = MessageSeverity.INFO,
+                              message = line)
+
+    async def stderr_transform(self, lines: AsyncIterator[str]) -> AsyncIterator[ToolMessage]:
+        """Transformer that receives lines of text from stderr one by
+        one, may create a message from it.
+
+        This may be overridden for custom message processing
+        """
+        async for line in lines:
+            yield ToolMessage(severity = MessageSeverity.ERROR,
+                              message = line)
+
+    async def __stream_liner(self, stream) -> AsyncIterator[str]:
+        """Internal tool that takes a stream and yeilds it line by
+        line
+        """
+        buffer = ""
+        while True:
+            chunk = await stream.read(1024)
+            if not chunk:
+                break
+
+            buffer += chunk.decode('utf-8', errors='replace')
+
+            while True:
+                try:
+                    line, buffer = buffer.split("\n", 1)
+                except ValueError:
+                    break
+                yield line
+
+    async def __stream_handler(self, stream, transformer):
+        """Internal tool that takes a stream and puts it to queue
+        """
+        async for msg in transformer(self.__stream_liner(stream)):
+            await self.__queue.put(msg)
+        await self.__queue.put(None)
+
+    async def __launch(self):
+        if self.process:
+            return
+
+        self.process = await asyncio.create_subprocess_exec(
+            *self.argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self.cwd),
+        )
+
+        self.stdout_task = asyncio.create_task(
+            self.__stream_handler(self.process.stdout, self.stdout_transform))
+        self.stderr_task = asyncio.create_task(
+            self.__stream_handler(self.process.stderr, self.stderr_transform))
+
+
 
 # Type for task executor function
 TaskExecutor = Callable[['BuildContext', list[Any]], Awaitable[list[Any]]]

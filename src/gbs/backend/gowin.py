@@ -102,7 +102,7 @@ class Session:
             str(self.gw_sh_executable),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
             cwd=self.work_dir,
         )
 
