@@ -1,102 +1,34 @@
-"""GBS Command Line Interface
+"""GBS Project Commands
 
-Main entry point for the gbs command.
+Commands for managing GBS projects.
 """
 
 import asyncclick as click
 from pathlib import Path
 import sys
 
-from gbs.logging import setup_logging, get_logger, get_log_file
-from gbs.loaders import load_repository, load_project, load_project_with_repositories, LoadError
+from gbs.logging import get_logger
+from gbs.loaders import load_project, load_project_with_repositories, load_repository, LoadError
 from gbs.resolver import resolve_project
-from gbs.plugins import get_plugin_registry
-from gbs.config import GBSConfig
+from gbs.cli import load_project_for_command, get_project_file
 
 
-def load_project_for_command(ctx, project_file: Path, additional_repos: tuple[Path] = ()):
-    """Load project with GBS config for CLI commands
-
-    Args:
-        ctx: Click context with gbs_config
-        project_file: Path to project file
-        additional_repos: Optional additional repositories to load
-
-    Returns:
-        (project, repositories, gbs_config) tuple
-    """
-    gbs_config = ctx.obj.get("gbs_config")
-
-    click.echo(f"Loading project: {project_file}")
-    project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
-
-    # Load additional repositories from command line
-    for repo_path in additional_repos:
-        click.echo(f"Loading additional repository: {repo_path}")
-        repositories.append(load_repository(repo_path))
-
-    return project, repositories, gbs_config
-
-
-@click.group()
-@click.version_option()
+@click.group(invoke_without_command=False)
 @click.option(
-    "-v", "--verbose",
-    is_flag=True,
-    help="Enable verbose output (INFO level)"
-)
-@click.option(
-    "-d", "--debug",
-    is_flag=True,
-    help="Enable debug output (DEBUG level)"
-)
-@click.option(
-    "--log-dir",
-    type=click.Path(path_type=Path),
-    help="Custom directory for log files (default: .gbs/logs)"
+    "-f", "--file",
+    "project_file",
+    type=click.Path(exists=True, path_type=Path),
+    help="Project file (auto-discovered if not specified)"
 )
 @click.pass_context
-async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
-    """GBS: Gateware Build System
-
-    A build system for FPGA and ASIC gateware projects.
-    """
-    # Set up logging
-    setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
-    logger = get_logger()
-
-    # Load GBS configuration
-    logger.debug("Loading GBS configuration...")
-    plugin_registry = get_plugin_registry()
-    plugin_registry.discover_plugins()
-    default_tools = plugin_registry.get_default_tools()
-    gbs_config = GBSConfig.load(plugin_defaults=default_tools)
-
-    # Store in context for subcommands
-    ctx.ensure_object(dict)
-    ctx.obj["logger"] = logger
-    ctx.obj["log_file"] = get_log_file()
-    ctx.obj["gbs_config"] = gbs_config
-    ctx.obj["allow_progress_bars"] = not verbose and not debug
-
-    logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
-    logger.debug(f"Loaded {len(gbs_config.tools)} tools, {len(gbs_config.profiles)} profiles")
-
-
-@cli.group()
-async def repo():
-    """Repository introspection commands"""
-    pass
-
-
-@cli.group()
-async def project():
+async def project(ctx, project_file: Path | None):
     """Project management commands"""
-    pass
+    # Store project_file option in context (may be None)
+    # Auto-discovery will happen in subcommands if needed
+    ctx.obj["project_file_option"] = project_file
 
 
-@cli.command()
-@click.argument("project_file", type=click.Path(exists=True, path_type=Path), default="project.gbs.yaml")
+@project.command()
 @click.option(
     "-r", "--repo",
     type=click.Path(exists=True, path_type=Path),
@@ -121,15 +53,13 @@ async def project():
     help="Show build dependency graph and exit (do not build)"
 )
 @click.pass_context
-async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
-    """Build a project
-
-    PROJECT_FILE: Path to project file (default: project.gbs.yaml)
-    """
+async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
+    """Build a project"""
     from gbs.tasks import BuildContext, BuildFileSet
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
+    project_file = get_project_file(ctx)
 
     try:
         # Load project configuration
@@ -244,19 +174,16 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
         sys.exit(1)
 
 
-@cli.command()
-async def status():
+@project.command()
+@click.pass_context
+async def status(ctx):
     """Query build status"""
+    project_file = get_project_file(ctx)
+    click.echo(f"Status for project: {project_file}")
     click.echo("Status command - not yet implemented")
 
 
-@cli.command()
-@click.argument(
-    "project_file",
-    type=click.Path(exists=True, path_type=Path),
-    default="project.gbs.yaml",
-    required=False
-)
+@project.command()
 @click.option(
     "-o", "--output-dir",
     type=click.Path(path_type=Path),
@@ -274,17 +201,15 @@ async def status():
     help="Skip confirmation prompt and delete immediately"
 )
 @click.pass_context
-async def clean(ctx, project_file: Path, output_dir: Path, dry_run: bool, force: bool):
+async def clean(ctx, output_dir: Path, dry_run: bool, force: bool):
     """Clean build artifacts
 
     Removes build directories and generated files specified in backend configurations.
-    By default, looks for project.gbs.yaml in the current directory.
-
-    PROJECT_FILE: Path to project file (default: project.gbs.yaml)
     """
     import shutil
 
     logger = get_logger()
+    project_file = get_project_file(ctx)
 
     try:
         # Load project configuration
@@ -388,247 +313,12 @@ async def clean(ctx, project_file: Path, output_dir: Path, dry_run: bool, force:
         sys.exit(1)
 
 
-@repo.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
-async def list(path: Path):
-    """List libraries, partitions, and files in a repository
-
-    PATH: Path to repository file (e.g., repository.gbs.yaml)
-    """
-    logger = get_logger()
-
-    try:
-        # Load repository
-        repository = load_repository(path)
-
-        click.echo(f"Repository: {repository.name}")
-        if repository.description:
-            click.echo(f"Description: {repository.description}")
-        click.echo(f"Root: {repository.root}")
-        click.echo()
-
-        if not repository.libraries:
-            click.echo("No libraries found")
-            return
-
-        click.echo(f"Libraries ({len(repository.libraries)}):")
-        for lib_name, library in sorted(repository.libraries.items()):
-            click.echo(f"  {lib_name}")
-            if library.description:
-                click.echo(f"    Description: {library.description}")
-
-            if library.partitions:
-                click.echo(f"    Partitions ({len(library.partitions)}):")
-                for part_name, partition in sorted(library.partitions.items()):
-                    # Count sources by evaluating root group
-                    source_count = 0
-                    for group in partition.groups:
-                        for condition in group.conditions:
-                            source_count += len(condition.sources)
-
-                    click.echo(f"      {part_name} ({source_count} source files)")
-            else:
-                click.echo(f"    Partitions: (none)")
-            click.echo()
-
-    except LoadError as e:
-        logger.error(f"Failed to load repository: {e}")
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        logger.exception("Unexpected error")
-        click.echo(f"Unexpected error: {e}", err=True)
-        sys.exit(1)
-
-
-@repo.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
-async def validate(path: Path):
-    """Validate repository definitions
-
-    PATH: Path to repository file (e.g., repository.gbs.yaml)
-    """
-    logger = get_logger()
-
-    try:
-        # Load repository (this validates YAML structure)
-        repository = load_repository(path)
-
-        errors = []
-        warnings = []
-
-        # Check libraries
-        if not repository.libraries:
-            warnings.append("Repository contains no libraries")
-
-        # Validate each library
-        for lib_name, library in repository.libraries.items():
-            if not library.partitions:
-                warnings.append(f"Library '{lib_name}' contains no partitions")
-
-            # Validate each partition
-            for part_name, partition in library.partitions.items():
-                if not partition.groups:
-                    errors.append(f"Partition '{lib_name}.{part_name}' has no groups")
-                    continue
-
-                # Check for at least some content
-                has_content = False
-                for group in partition.groups:
-                    for condition in group.conditions:
-                        if condition.sources or condition.deps or condition.groups:
-                            has_content = True
-                            break
-                    if has_content:
-                        break
-
-                if not has_content:
-                    warnings.append(f"Partition '{lib_name}.{part_name}' has no sources or dependencies")
-
-        # Report results
-        click.echo(f"Repository: {repository.name}")
-        click.echo(f"Libraries: {len(repository.libraries)}")
-
-        total_partitions = sum(len(lib.partitions) for lib in repository.libraries.values())
-        click.echo(f"Partitions: {total_partitions}")
-        click.echo()
-
-        if errors:
-            click.echo(f"Errors ({len(errors)}):", err=True)
-            for error in errors:
-                click.echo(f"  ✗ {error}", err=True)
-            click.echo()
-
-        if warnings:
-            click.echo(f"Warnings ({len(warnings)}):")
-            for warning in warnings:
-                click.echo(f"  ⚠ {warning}")
-            click.echo()
-
-        if not errors and not warnings:
-            click.echo("✓ Repository is valid")
-        elif not errors:
-            click.echo("✓ Repository is valid (with warnings)")
-        else:
-            click.echo("✗ Repository has errors", err=True)
-            sys.exit(1)
-
-    except LoadError as e:
-        logger.error(f"Failed to load repository: {e}")
-        click.echo(f"Error loading repository: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        logger.exception("Unexpected error")
-        click.echo(f"Unexpected error: {e}", err=True)
-        sys.exit(1)
-
-
-@repo.command()
-@click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--partition", "-p", required=True, help="Partition to query (format: library.partition)")
-@click.option("--filter", "-f", multiple=True, help="Filter variable (format: var=value)")
-async def query(path: Path, partition: str, filter: tuple[str]):
-    """Query dependency traversal with filters
-
-    PATH: Path to repository file (e.g., repository.gbs.yaml)
-
-    Example: gbs repo query repo.yaml -p mylib.mypart -f vendor=xilinx -f sim=0
-    """
-    logger = get_logger()
-
-    try:
-        # Parse filter variables
-        filter_vars = {}
-        for filter_spec in filter:
-            if "=" not in filter_spec:
-                click.echo(f"Error: Invalid filter '{filter_spec}', expected format: var=value", err=True)
-                sys.exit(1)
-
-            var, value = filter_spec.split("=", 1)
-
-            # Try to parse as integer
-            try:
-                filter_vars[var] = int(value)
-            except ValueError:
-                filter_vars[var] = value
-
-        # Load repository
-        repository = load_repository(path)
-
-        # Create a minimal project to use the resolver
-        from gbs.models import Project, Library, Partition, FilterCondition, ConditionalGroup
-        from gbs.resolver import DependencyResolver, PartitionRef
-
-        # Parse partition reference
-        try:
-            start_ref = PartitionRef.parse(partition)
-        except ValueError as e:
-            click.echo(f"Error: {e}", err=True)
-            sys.exit(1)
-
-        # Create empty project with filter context
-        empty_partition = Partition(name="__query__", groups=[])
-        project = Project(
-            name="__query__",
-            root_partition=empty_partition,
-            topcell="none",
-            filter_vars=filter_vars
-        )
-
-        # Create resolver
-        resolver = DependencyResolver(project, [repository])
-
-        # Check partition exists
-        if resolver.get_partition(start_ref) is None:
-            click.echo(f"Error: Partition '{partition}' not found", err=True)
-            sys.exit(1)
-
-        # Build dependency graph from this partition
-        graph = resolver.build_dependency_graph([start_ref])
-
-        # Topologically sort
-        sorted_refs = resolver.topological_sort(graph)
-
-        # Display results
-        click.echo(f"Query: {partition}")
-        if filter_vars:
-            click.echo(f"Filters: {filter_vars}")
-        click.echo()
-
-        click.echo(f"Dependency tree ({len(sorted_refs)} partitions):")
-        click.echo()
-
-        for ref in sorted_refs:
-            resolved = graph[ref]
-            indent = "  " if ref != start_ref else "→ "
-
-            click.echo(f"{indent}{ref}")
-            click.echo(f"    Sources: {len(resolved.sources)} files")
-
-            if resolved.deps:
-                click.echo(f"    Depends on: {', '.join(str(d) for d in resolved.deps)}")
-
-        click.echo()
-        click.echo(f"Build order: {' → '.join(str(r) for r in sorted_refs)}")
-
-    except LoadError as e:
-        logger.error(f"Failed to load repository: {e}")
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        logger.exception("Unexpected error during query")
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-
 @project.command()
-@click.argument("project_file", type=click.Path(exists=True, path_type=Path))
-async def show(project_file: Path):
-    """Show project configuration
-
-    PROJECT_FILE: Path to project file (e.g., project.gbs.yaml)
-    """
+@click.pass_context
+async def show(ctx):
+    """Show project configuration"""
     logger = get_logger()
+    project_file = get_project_file(ctx)
 
     try:
         # Load project
@@ -660,15 +350,13 @@ async def show(project_file: Path):
 
 
 @project.command()
-@click.argument("project_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--repo", "-r", multiple=True, type=click.Path(exists=True, path_type=Path),
               help="Additional repository to load")
-async def fileset(project_file: Path, repo: tuple[Path]):
-    """Show resolved build file set
-
-    PROJECT_FILE: Path to project file (e.g., project.gbs.yaml)
-    """
+@click.pass_context
+async def fileset(ctx, repo: tuple[Path]):
+    """Show resolved build file set"""
     logger = get_logger()
+    project_file = get_project_file(ctx)
 
     try:
         # Load project and its specified repositories
@@ -711,12 +399,3 @@ async def fileset(project_file: Path, repo: tuple[Path]):
         logger.exception("Unexpected error during resolution")
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-
-def main():
-    """Entry point for the gbs command"""
-    cli(_anyio_backend="asyncio")
-
-
-if __name__ == "__main__":
-    main()
