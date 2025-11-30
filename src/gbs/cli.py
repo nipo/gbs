@@ -14,6 +14,30 @@ from gbs.plugins import get_plugin_registry
 from gbs.config import GBSConfig
 
 
+def load_project_for_command(ctx, project_file: Path, additional_repos: tuple[Path] = ()):
+    """Load project with GBS config for CLI commands
+
+    Args:
+        ctx: Click context with gbs_config
+        project_file: Path to project file
+        additional_repos: Optional additional repositories to load
+
+    Returns:
+        (project, repositories, gbs_config) tuple
+    """
+    gbs_config = ctx.obj.get("gbs_config")
+
+    click.echo(f"Loading project: {project_file}")
+    project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
+
+    # Load additional repositories from command line
+    for repo_path in additional_repos:
+        click.echo(f"Loading additional repository: {repo_path}")
+        repositories.append(load_repository(repo_path))
+
+    return project, repositories, gbs_config
+
+
 @click.group()
 @click.version_option()
 @click.option(
@@ -102,102 +126,47 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
 
     PROJECT_FILE: Path to project file (default: project.gbs.yaml)
     """
-    import asyncio
-    from gbs.tasks import BuildContext, BuildFileSet, BuildResource
-    from gbs.backend import run_backend_iteration
-    from gbs.backend_loader import load_backends_from_project
+    from gbs.tasks import BuildContext, BuildFileSet
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
 
     try:
-        # Get GBS config from context
-        gbs_config = ctx.obj.get("gbs_config")
-
-        # Load project and its specified repositories
-        click.echo(f"Loading project: {project_file}")
-        project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
-
-        # Load additional repositories from command line
-        for repo_path in repo:
-            click.echo(f"Loading additional repository: {repo_path}")
-            repositories.append(load_repository(repo_path))
+        # Load project configuration
+        project, repositories, gbs_config = load_project_for_command(ctx, project_file, repo)
 
         # Resolve dependencies
         click.echo("Resolving dependencies...")
         build_set = resolve_project(project, repositories)
-
         click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
 
         # Create build context
         build_ctx = BuildContext(project=project, gbs_config=gbs_config)
 
-        # Create build fileset and populate it
-        fileset = BuildFileSet(build_ctx)
-
+        # Create and populate fileset
         click.echo("Creating build fileset...")
-        # First pass: create all BuildResources
-        partition_to_resources: dict[tuple[str, str], list[BuildResource]] = {}
-        for lib_name in build_set.libraries:
-            if lib_name == "nsl_simulation":
-                click.echo(f"DEBUG: nsl_simulation partitions order: {build_set.partitions.get(lib_name, [])}")
-            for part_name in build_set.partitions.get(lib_name, []):
-                files = build_set.files.get((lib_name, part_name), [])
-                partition_key = (lib_name, part_name)
-                partition_to_resources[partition_key] = []
-
-                for source_file in files:
-                    # Map language to file type (language is now a plain string)
-                    file_type = source_file.language
-                    if source_file.variant:
-                        file_type = f"{file_type}_{source_file.variant}"
-
-                    # Create BuildResource
-                    br = BuildResource(
-                        resource=build_ctx.get_resource(source_file.path),
-                        file_type=file_type,
-                        library=lib_name,
-                    )
-                    partition_to_resources[partition_key].append(br)
-                    fileset.add(br)
-
-        # Second pass: populate BuildResource.depends_on based on partition dependencies
-        for partition_key, resources in partition_to_resources.items():
-            lib_name, part_name = partition_key
-            partition_deps = build_set.partition_deps.get(partition_key, set())
-
-            # For each resource in this partition, add dependencies on all resources from dependent partitions
-            for br in resources:
-                for dep_lib, dep_part in partition_deps:
-                    dep_partition_key = (dep_lib, dep_part)
-                    dep_resources = partition_to_resources.get(dep_partition_key, [])
-                    br.depends_on.update(dep_resources)
-
-        # Load backends from project configuration
-        click.echo("Loading backends...")
-        registry = load_backends_from_project(project.raw_config)
-
-        if len(registry) == 0:
-            click.echo("Warning: No backends configured", err=True)
-            click.echo("Add 'backends' section to project configuration")
-            sys.exit(1)
-
-        click.echo(f"Loaded {len(registry)} backend(s):")
-        for backend in registry:
-            click.echo(f"  - {backend.name} (priority={backend.priority})")
+        fileset = BuildFileSet(build_ctx)
+        build_ctx.populate_fileset(build_set, fileset)
 
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Load and run backends
+        click.echo("Loading backends...")
+        try:
+            registry = build_ctx.load_backends()
+            click.echo(f"Loaded {len(registry)} backend(s):")
+            for backend in registry:
+                click.echo(f"  - {backend.name} (priority={backend.priority})")
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            click.echo("Add 'backends' section to project configuration")
+            sys.exit(1)
+
         # Run backend iteration
         click.echo()
         click.echo("Running backend iteration...")
-        iterations = await run_backend_iteration(
-            build_ctx,
-            fileset,
-            registry,
-            max_iterations=max_iterations
-        )
+        iterations, registry = await build_ctx.run_backends(fileset, max_iterations)
         click.echo(f"Converged after {iterations} iteration(s)")
 
         # Show dependency graph if requested
@@ -250,23 +219,13 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
         # Execute build
         click.echo()
         click.echo("Executing build tasks...")
-        async with build_ctx.build():
-            # Gather all resources
-            all_resources = [br.resource for br in fileset]
-            if all_resources:
-                # Use progress monitoring if available and stdout is TTY
-                from gbs.progress import run_with_progress
-                import sys
-
-                if sys.stdout.isatty() and show_pb:
-                    # Run with progress bars
-                    await run_with_progress(build_ctx, all_resources)
-                else:
-                    # Run without progress bars
-                    await asyncio.gather(*all_resources)
+        num_files = await build_ctx.execute_build(
+            fileset,
+            show_progress=(sys.stdout.isatty() and show_pb)
+        )
 
         click.echo()
-        click.echo(f"Build complete: {len(fileset)} files processed")
+        click.echo(f"Build complete: {num_files} files processed")
 
         # Show summary
         click.echo()
@@ -328,12 +287,8 @@ async def clean(ctx, project_file: Path, output_dir: Path, dry_run: bool, force:
     logger = get_logger()
 
     try:
-        # Get GBS config from context
-        gbs_config = ctx.obj.get("gbs_config")
-
         # Load project configuration
-        click.echo(f"Loading project: {project_file}")
-        project = load_project(project_file, gbs_config=gbs_config)
+        project, repositories, gbs_config = load_project_for_command(ctx, project_file)
 
         # Collect directories and files to clean
         dirs_to_clean = set()

@@ -321,6 +321,132 @@ class BuildContext:
         for m in self.messages_get(min_severity = MessageSeverity.WARNING):
             m.pprint()
             
+    def populate_fileset(self, build_set, fileset):
+        """Populate fileset from resolved build set
+
+        Args:
+            build_set: Resolved BuildSet from dependency resolver
+            fileset: BuildFileSet to populate
+
+        Returns:
+            The populated fileset
+        """
+        from gbs.tasks import BuildResource
+
+        # First pass: create all BuildResources
+        partition_to_resources: dict[tuple[str, str], list] = {}
+
+        for lib_name in build_set.libraries:
+            for part_name in build_set.partitions.get(lib_name, []):
+                files = build_set.files.get((lib_name, part_name), [])
+                partition_key = (lib_name, part_name)
+                partition_to_resources[partition_key] = []
+
+                for source_file in files:
+                    # Map language to file type
+                    file_type = source_file.language
+                    if source_file.variant:
+                        file_type = f"{file_type}_{source_file.variant}"
+
+                    # Create BuildResource
+                    br = BuildResource(
+                        resource=self.get_resource(source_file.path),
+                        file_type=file_type,
+                        library=lib_name,
+                    )
+                    partition_to_resources[partition_key].append(br)
+                    fileset.add(br)
+
+        # Second pass: populate BuildResource.depends_on based on partition dependencies
+        for partition_key, resources in partition_to_resources.items():
+            lib_name, part_name = partition_key
+            partition_deps = build_set.partition_deps.get(partition_key, set())
+
+            # For each resource in this partition, add dependencies from dependent partitions
+            for br in resources:
+                for dep_lib, dep_part in partition_deps:
+                    dep_partition_key = (dep_lib, dep_part)
+                    dep_resources = partition_to_resources.get(dep_partition_key, [])
+                    br.depends_on.update(dep_resources)
+
+        return fileset
+
+    def load_backends(self):
+        """Load backends from project configuration
+
+        Returns:
+            BackendRegistry with loaded backends
+
+        Raises:
+            ValueError: If no backends are configured
+        """
+        from gbs.backend_loader import load_backends_from_project
+
+        if not self.project or not hasattr(self.project, 'raw_config'):
+            raise ValueError("BuildContext has no project configuration")
+
+        registry = load_backends_from_project(self.project.raw_config)
+
+        if len(registry) == 0:
+            raise ValueError("No backends configured in project")
+
+        return registry
+
+    async def run_backends(self, fileset, max_iterations: int = 100):
+        """Load and run backend iteration
+
+        Args:
+            fileset: BuildFileSet to process
+            max_iterations: Maximum iterations for backend convergence
+
+        Returns:
+            Number of iterations until convergence
+        """
+        from gbs.backend import run_backend_iteration
+
+        # Load backends
+        registry = self.load_backends()
+
+        # Run iteration
+        iterations = await run_backend_iteration(
+            self,
+            fileset,
+            registry,
+            max_iterations=max_iterations
+        )
+
+        return iterations, registry
+
+    async def execute_build(self, fileset, show_progress: bool = False):
+        """Execute the build for given fileset
+
+        Args:
+            fileset: BuildFileSet to build
+            show_progress: Whether to show progress bars
+
+        Returns:
+            Number of files processed
+        """
+        import asyncio
+
+        async with self.build():
+            # Gather all resources
+            all_resources = [br.resource for br in fileset]
+            if all_resources:
+                if show_progress:
+                    # Use progress monitoring if available
+                    try:
+                        from gbs.progress import run_with_progress
+                        await run_with_progress(self, all_resources)
+                    except ImportError:
+                        # Fall back if progress module not available
+                        await asyncio.gather(*all_resources)
+                else:
+                    # Run without progress bars
+                    await asyncio.gather(*all_resources)
+
+        return len(fileset)
+
     def build(self):
         return ContextBuildManager(self)
                 
