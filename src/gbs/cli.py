@@ -299,6 +299,12 @@ async def status():
     required=False
 )
 @click.option(
+    "-o", "--output-dir",
+    type=click.Path(path_type=Path),
+    default=Path("build"),
+    help="Build output directory to clean (default: build)"
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     help="Show what would be deleted without actually deleting"
@@ -308,7 +314,8 @@ async def status():
     is_flag=True,
     help="Skip confirmation prompt and delete immediately"
 )
-async def clean(project_file: Path, dry_run: bool, force: bool):
+@click.pass_context
+async def clean(ctx, project_file: Path, output_dir: Path, dry_run: bool, force: bool):
     """Clean build artifacts
 
     Removes build directories and generated files specified in backend configurations.
@@ -321,29 +328,34 @@ async def clean(project_file: Path, dry_run: bool, force: bool):
     logger = get_logger()
 
     try:
+        # Get GBS config from context
+        gbs_config = ctx.obj.get("gbs_config")
+
         # Load project configuration
         click.echo(f"Loading project: {project_file}")
-        project = load_project(project_file)
-
-        # Get backends from raw_config
-        backends = project.raw_config.get("backends", [])
-        if not backends:
-            click.echo("No backends configured - nothing to clean")
-            return
+        project = load_project(project_file, gbs_config=gbs_config)
 
         # Collect directories and files to clean
         dirs_to_clean = set()
         files_to_clean = set()
 
+        # Add default output directory
+        if not output_dir.is_absolute():
+            output_dir = project_file.parent / output_dir
+        dirs_to_clean.add(output_dir)
+
+        # Get backends from raw_config for additional cleanup
+        backends = project.raw_config.get("backends", [])
+
         for backend_config in backends:
             config = backend_config.get("config", {})
 
-            # Check for output_dir in backend config
+            # Check for additional output_dir in backend config
             if "output_dir" in config:
-                output_dir = Path(config["output_dir"])
-                if not output_dir.is_absolute():
-                    output_dir = project_file.parent / output_dir
-                dirs_to_clean.add(output_dir)
+                backend_output_dir = Path(config["output_dir"])
+                if not backend_output_dir.is_absolute():
+                    backend_output_dir = project_file.parent / backend_output_dir
+                dirs_to_clean.add(backend_output_dir)
 
             # Check for topcell (GHDL generates executables)
             if "topcell" in config:
