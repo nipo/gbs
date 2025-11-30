@@ -255,10 +255,10 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
             all_resources = [br.resource for br in fileset]
             if all_resources:
                 # Use progress monitoring if available and stdout is TTY
-                from gbs.progress import run_with_progress, HAS_TQDM
+                from gbs.progress import run_with_progress
                 import sys
 
-                if HAS_TQDM and sys.stdout.isatty() and show_pb:
+                if sys.stdout.isatty() and show_pb:
                     # Run with progress bars
                     await run_with_progress(build_ctx, all_resources)
                 else:

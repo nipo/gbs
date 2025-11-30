@@ -19,11 +19,11 @@ import csv
 import logging
 import random
 import re
-from typing import Any
+from typing import Any, AsyncIterator
 from pathlib import Path
 
 from gbs.model.backend import BaseBackend
-from gbs.model.build import BuildContext, BuildFileSet, BuildResource, Resource, Task
+from gbs.model.build import BuildContext, BuildFileSet, BuildResource, Resource, Task, MessageSeverity, ToolMessage
 
 
 def parse_device_csv(gowin_path: Path, device: str, logger: logging.Logger) -> tuple[str, str]:
@@ -72,6 +72,13 @@ def parse_device_csv(gowin_path: Path, device: str, logger: logging.Logger) -> t
         logger.error(f"Error parsing device CSV: {e}")
         return ("FPGA", device)  # Fallback
 
+class ProgressIndication:
+    """A progress indication specific to long-running tasks of gw_sh"""
+    
+    def __init__(self, percent, message):
+        self.percent = percent
+        self.message = message
+    
 class Session:
     """Shared gw_sh interactive session with command serialization
 
@@ -99,127 +106,130 @@ class Session:
             cwd=self.work_dir,
         )
 
-        # Enable interactive mode to get prompts
-        self.process.stdin.write(b"set tcl_interactive 1\n")
+        await self._tcl_send("set tcl_interactive 1")
+        async for msg in self._tcl_messages_receive():
+            pass
+
+    # Regex patterns for parsing Gowin output
+    progress_pattern = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
+    msg_pattern = re.compile(r'^(?P<level>[A-Z]+) +\(?(?P<ex>[A-Z0-9]+)\)? ?: (?P<message>.*)$')
+    file_pattern = re.compile(r'^(?P<explaination>[^\(]+)\("(?P<filename>[^"]+)":(?P<line>[0-9]+)\)$')
+    prompt = "% "
+
+    # Map Gowin levels to MessageSeverity
+    severity_map = {
+        'NOTE': MessageSeverity.NOTICE,
+        'INFO': MessageSeverity.INFO,
+        'WARN': MessageSeverity.WARNING,
+        'WARNING': MessageSeverity.WARNING,
+        'ERROR': MessageSeverity.ERROR,
+        'FATAL': MessageSeverity.FATAL,
+    }
+
+    @classmethod
+    def log_line_parse(cls, line: str) -> Optional[ToolMessage | ProgressIndication]:
+        """Parse a line into a ToolMessage"""
+        if not line:
+            return None
+
+        match = cls.progress_pattern.match(line)
+        if match:
+            return ProgressIndication(int(match.group("pct")), match.group("message"))
+        
+        # Try to match Gowin message format
+        match = cls.msg_pattern.match(line)
+        if not match:
+            # Unstructured output - create DEBUG message
+            return ToolMessage(
+                severity=MessageSeverity.DEBUG,
+                message=line,
+            )
+
+        level_str = match.group('level')
+        ex_code = match.group('ex')
+        message = match.group('message')
+
+        # Get message severity
+        severity = cls.severity_map.get(level_str, MessageSeverity.DEBUG)
+
+        # Check if message contains file/line info
+        file_match = cls.file_pattern.match(message)
+        if not file_match:
+            return ToolMessage(
+                severity=severity,
+                message=message,
+                identifier=ex_code,
+            )
+
+        explanation = file_match.group('explaination')
+        filename = file_match.group('filename')
+        line_num = int(file_match.group('line'))
+
+        return ToolMessage(
+            severity=severity,
+            message=explanation,
+            identifier=ex_code,
+            file_path=Path(filename),
+            line=line_num,
+        )
+
+    async def _tcl_send(self, tcl_command: str) -> None:
+        """Send TCL command to interpreter.
+
+        This method should be called with lock held.
+        """
+        self.logger.debug(f"% {tcl_command}")
+
+        # Send command with newline
+        self.process.stdin.write(f"{tcl_command}\n".encode('utf-8'))
         await self.process.stdin.drain()
 
-        # Wait for initial prompt
-        await self._read_until_prompt()
+    async def _tcl_messages_receive(self) -> AsyncIterator[ToolMessage | ProgressIndication]:
+        """Receive messages from the interpreter. End iteration when
+        we see prompt.
 
-    async def _read_until_prompt(self) -> str:
-        """Read output until '% ' prompt (with or without preceding newline)"""
-        output = ""
+        This method should be called with lock held.
+        """
+        buffer = ""
         while True:
-            chunk = await self.process.stdout.read(1)
+            chunk = await self.process.stdout.read(1024)
             if not chunk:
                 raise RuntimeError("gw_sh process terminated unexpectedly")
 
-            char = chunk.decode('utf-8', errors='replace')
-            output += char
+            buffer += chunk.decode('utf-8', errors='replace')
 
-            # Check for '% ' pattern (percent followed by space)
-            # Can be '\n% ' (with output) or just '% ' (no output)
-            if output.endswith('% '):
-                # Remove the '% ' from output
-                result = output[:-2]
-                # Strip trailing newline if present
-                if result.endswith('\n'):
-                    result = result[:-1]
-                return result
+            while True:
+                try:
+                    line, buffer = buffer.split("\n", 1)
+                except ValueError:
+                    break
 
-    async def send_command(self, tcl_command: str):
-        """Send TCL command and yield response lines as they arrive (serialized)
+                msg = self.log_line_parse(line)
+                if msg:
+                    yield msg
 
-        Lines are automatically logged at appropriate levels:
-        - Lines matching "LEVEL (EXnnnn) : message" are logged at that level
-        - Other lines are logged at DEBUG level
+            if buffer.lstrip().endswith(self.prompt):
+                break
+        
+    async def command_interact(self, tcl_command: str) -> AsyncIterator[ToolMessage | ProgressIndication]:
+        """Send TCL command and yield ToolMessage objects as they arrive (serialized)
+
+        Parses Gowin output and creates ToolMessage instances for structured messages.
+        Lines matching "LEVEL (EXnnnn) : message" are parsed into ToolMessage objects.
+        Other lines are yielded as DEBUG-level ToolMessage objects.
 
         Args:
             tcl_command: TCL command to execute
 
         Yields:
-            Response lines (without prompt or trailing newlines)
+            ToolMessage or gowin-specific progress instances for each line of output
         """
-        # Regex patterns for parsing Gowin output
-        msg_pattern = re.compile(r'^(?P<level>[A-Z]+) +\(?(?P<ex>[0-9]+)\)? ?: (?P<message>.*)$')
-        file_pattern = re.compile(r'^(?P<explaination>[^\(]+)\("(?P<filename>[^"]+)":(?P<line>[0-9]+)\)$')
-
-        # Map Gowin levels to Python logging levels
-        level_map = {
-            'NOTE': logging.INFO,
-            'WARN': logging.WARNING,
-            'ERROR': logging.ERROR,
-        }
-
-        def log_line(line: str):
-            """Parse and log a line at the appropriate level"""
-            if not line:
-                return
-
-            # Try to match Gowin message format
-            match = msg_pattern.match(line)
-            if match:
-                level_str = match.group('level')
-                ex_code = match.group('ex')
-                message = match.group('message')
-
-                # Get Python logging level
-                log_level = level_map.get(level_str, logging.DEBUG)
-
-                # Check if message contains file/line info
-                file_match = file_pattern.match(message)
-                if file_match:
-                    explanation = file_match.group('explaination')
-                    filename = file_match.group('filename')
-                    line_num = file_match.group('line')
-                    self.logger.log(log_level, f"{filename}:{line_num}: {ex_code}, {explanation}")
-                else:
-                    self.logger.log(log_level, f"{ex_code}: {message}")
-            else:
-                # Unstructured output - log at DEBUG
-                self.logger.debug(line)
 
         async with self.lock:
             await self._ensure_started()
-
-            self.logger.debug(f"% {tcl_command}")
-
-            # Send command with newline
-            self.process.stdin.write(f"{tcl_command}\n".encode('utf-8'))
-            await self.process.stdin.drain()
-
-            # Read and yield lines until prompt
-            buffer = ""
-            while True:
-                chunk = await self.process.stdout.read(1)
-                if not chunk:
-                    raise RuntimeError("gw_sh process terminated unexpectedly")
-
-                char = chunk.decode('utf-8', errors='replace')
-                buffer += char
-
-                # Check for '% ' prompt (percent followed by space)
-                if buffer.endswith('% '):
-                    # Remove prompt from buffer
-                    buffer = buffer[:-2]
-                    # Strip trailing newline if present
-                    if buffer.endswith('\n'):
-                        buffer = buffer[:-1]
-                    # Process and yield any remaining lines
-                    if buffer:
-                        for line in buffer.split('\n'):
-                            log_line(line)
-                            if line:  # Skip empty lines
-                                yield line
-                    return
-
-                # Yield complete lines as we receive them
-                if char == '\n':
-                    line = buffer[:-1]  # Remove the newline
-                    log_line(line)
-                    if line:  # Skip empty lines
-                        yield line
-                    buffer = ""
+            await self._tcl_send(tcl_command)
+            async for msg in self._tcl_messages_receive():
+                yield msg
 
     async def close(self):
         """Shutdown gw_sh cleanly"""
@@ -236,9 +246,53 @@ class Session:
                     self.process = None
 
 
+class GwShTask(Task):
+    def __init__(
+            self,
+            context: BuildContext,
+            name: str,
+            session: Session,
+            inputs: list,
+            outputs: list,
+            description: str = "",
+    ):
+        super().__init__(context = context,
+                         name = name,
+                         inputs = inputs,
+                         outputs = outputs,
+                         description = description)
+        self.session = session
+
+    async def command_interact(self, tcl_command: str) -> AsyncIterator[ToolMessage]:
+        """
+        Helper that wraps shell task, iterate through messages
+        """
+        async for msg in self.session.command_interact(tcl_command):
+            if isinstance(msg, ProgressIndication):
+                await self.update_progress(msg.percent / 100, msg.message)
+                continue
+            self.add_message_obj(msg)
+            yield msg
+
+    async def command_run(self, tcl_command: str) -> None:
+        """
+        Helper that runs a command and wait for completion
+        """
+        async for msg in self.command_interact(tcl_command):
+            pass
+
+class LongRunningCommand(GwShTask):
+    """Run Gowin long running via gw_sh"""
+
+    async def work(self, command) -> None:
+        """Run command via gw_sh (project already initialized)"""
+        await self.command_run(command)
+
+        self.logger.info(f"{command} finished")
+
 # Task classes for Gowin backend operations
 
-class ProjectInitTask(Task):
+class ProjectInitTask(GwShTask):
     """Initialize Gowin project in gw_sh session"""
 
     def __init__(
@@ -251,17 +305,14 @@ class ProjectInitTask(Task):
         inputs: list,
         outputs: list
     ):
-        # Derive device from context for description
-        device = context.project.raw_config.get("target", {}).get("part", "unknown")
-
         super().__init__(
             context,
-            "gowin_project_init",
-            inputs=inputs,
-            outputs=outputs,
-            description=f"Gowin project init: {device}"
+            name = "gowin_project_init",
+            session = session,
+            inputs = inputs,
+            outputs = outputs,
+            description = f"Gowin project init"
         )
-        self.session = session
         self.gowin_tool = gowin_tool
         self.output_base_name = output_base_name
         self.output_dir = output_dir
@@ -287,18 +338,15 @@ class ProjectInitTask(Task):
 
             # Configure device
             self.logger.debug(f"Configuring device: {part_group} {part_number}")
-            async for line in self.session.send_command(f"set_device -name {part_group} {part_number}"):
-                pass
+            await self.command_run(f"set_device -name {part_group} {part_number}")
 
             # Set top module
             self.logger.debug(f"Setting top module: {topcell}")
-            async for line in self.session.send_command(f"set_option -top_module {topcell}"):
-                pass
+            await self.command_run(f"set_option -top_module {topcell}")
 
             # Set output base name (for predictable output paths)
             self.logger.debug(f"Setting output base name: {self.output_base_name}")
-            async for line in self.session.send_command(f"set_option -output_base_name {self.output_base_name}"):
-                pass
+            await self.command_run(f"set_option -output_base_name {self.output_base_name}")
 
             # Process vendor-specific options
             # use_as_gpio: list of pin names to configure as GPIO
@@ -307,8 +355,7 @@ class ProjectInitTask(Task):
                 self.logger.debug(f"Configuring GPIO pins: {use_as_gpio}")
                 for pin_name in use_as_gpio:
                     self.logger.debug(f"  Setting {pin_name} as GPIO")
-                    async for line in self.session.send_command(f"set_option -use_{pin_name}_as_gpio 1"):
-                        pass
+                    await self.command_run(f"set_option -use_{pin_name}_as_gpio 1")
 
             # Add HDL files in dependency order (iterate over self.inputs with metadata)
             self.logger.debug(f"Adding {len(self.inputs)} HDL source files...")
@@ -321,20 +368,17 @@ class ProjectInitTask(Task):
 
                 # Add file
                 self.logger.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
-                async for line in self.session.send_command(f"add_file -type {file_type} {{{file_path}}}"):
-                    pass
+                await self.command_run(f"add_file -type {file_type} {{{file_path}}}")
 
                 # Set library property
-                async for line in self.session.send_command(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}"):
-                    pass
+                await self.command_run(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}")
 
                 await self.update_progress(i / total)
 
             # Add constraint files (even if they don't exist yet)
             for cst_file in [pin_cst_file, timing_sdc_file]:
                 if cst_file.exists() or True:  # Always add placeholder
-                    async for line in self.session.send_command(f"add_file {{{cst_file.relative_to(self.output_dir)}}}"):
-                        pass  # Ignore output - file might not exist yet
+                    await self.command_run(f"add_file {{{cst_file.relative_to(self.output_dir)}}}")
 
             # Set project options (defaults + user overrides)
             default_options = {
@@ -354,14 +398,12 @@ class ProjectInitTask(Task):
             self.logger.debug(f"Setting {len(options)} project options...")
             for key, value in options.items():
                 self.logger.debug(f"  set_option -{key} {value}")
-                async for line in self.session.send_command(f"set_option -{key} {value}"):
-                    pass
+                await self.command_run(f"set_option -{key} {value}")
 
             # Inject random 32-bit user code (build ID)
             user_code = random.randbytes(4)
             self.logger.info(f"Injecting user_code: {user_code.hex()}")
-            async for line in self.session.send_command(f"set_option -user_code {{{user_code.hex()}}}"):
-                pass
+            await self.command_run(f"set_option -user_code {{{user_code.hex()}}}")
 
             self.logger.info(f"Project initialization complete")
 
@@ -369,42 +411,6 @@ class ProjectInitTask(Task):
             self.logger.error(f"Project init failed with exception: {e}", exc_info=True)
             raise
 
-
-class LongRunningCommand(Task):
-    """Run Gowin long running via gw_sh"""
-
-    def __init__(
-            self,
-            context: BuildContext,
-            name: str,
-            session: Session,
-            inputs: list,
-            outputs: list,
-            description: str = ""
-    ):
-        super().__init__(
-            context,
-            name = name,
-            inputs = inputs,
-            outputs = outputs,
-            description = description
-        )
-        self.session = session
-
-    progress_re = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
-        
-    async def work(self, command) -> None:
-        """Run command via gw_sh (project already initialized)"""
-        async for line in self.session.send_command(command):
-            m = self.progress_re.match(line)
-            if m:
-                pct = int(m.group("pct"))
-                message = m.group("message")
-                self.logger.info(f"Progress: {pct}%, {message}")
-                await self.update_progress(pct / 100, message)
-            # XXX TODO, gather ERROR lines and reformat them
-
-        self.logger.info(f"{command} returned")
 
 class SynthesisTask(LongRunningCommand):
     """Run Gowin synthesis via gw_sh"""

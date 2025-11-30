@@ -127,7 +127,7 @@ def setup_logging(
     elif verbose:
         console_level = logging.INFO
     else:
-        console_level = logging.WARNING
+        console_level = logging.FATAL
 
     _logger_instance = GBSLogger(
         name="gbs",

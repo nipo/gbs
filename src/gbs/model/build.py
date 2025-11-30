@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable, Awaitable, Optional
 import asyncio
 from dataclasses import dataclass
+from enum import Enum
 import time
 
 from gbs.logging import get_logger
@@ -40,6 +41,62 @@ class PrerequisiteFailed(Exception):
     """Prerequisite failed while we were waiting on it"""
     pass
 
+
+class MessageSeverity(Enum):
+    """Severity levels for tool messages"""
+    DEBUG = "debug"
+    NOTICE = "notice"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    FATAL = "fatal"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass
+class ToolMessage:
+    """Standardized message from EDA tools and backends
+
+    Provides a homogeneous representation of messages from various tools,
+    including errors, warnings, and informational messages.
+    """
+    severity: MessageSeverity
+    message: str
+    identifier: Optional[str] = None
+    extended_message: Optional[str] = None
+    file_path: Optional[Path] = None
+    line: Optional[int] = None
+    column: Optional[int] = None
+    origin: "BuildStep" = None
+
+    def __str__(self) -> str:
+        """Format message for display"""
+        parts = [f"[{self.severity.value.upper()}]"]
+
+        if self.identifier:
+            parts.append(f"({self.identifier})")
+
+        if self.file_path:
+            location = str(self.file_path)
+            if self.line is not None:
+                location += f":{self.line}"
+                if self.column is not None:
+                    location += f":{self.column}"
+            parts.append(f"{location}:")
+
+        parts.append(self.message)
+
+        result = " ".join(parts)
+
+        if self.extended_message:
+            result += "\n" + self.extended_message
+
+        return result
+
+    def pprint(self):
+        print(str(self))
 
 class BuildContext:
     """Shared build context passed to all tasks and resources
@@ -72,11 +129,51 @@ class BuildContext:
         self.running = set()
         self.logger = get_logger("BuildContext")
         self.logger.debug("created")
+        self.__messages: list[ToolMessage] = []
 
         # Progress tracking
         self._progress_condition: Optional[asyncio.Condition] = None
         self._progress_version = 0
 
+    def messages_get(
+        self,
+        severity: Optional[MessageSeverity] = None,
+        min_severity: Optional[MessageSeverity] = None,
+    ) -> list[ToolMessage]:
+        """Get messages collected by this step
+
+        Args:
+            severity: If provided, only return messages with this exact severity
+            min_severity: If provided, only return messages at or above this severity
+
+        Returns:
+            List of ToolMessage objects matching the filter criteria
+        """
+        if severity is not None:
+            return [msg for msg in self.__messages if msg.severity == severity]
+        elif min_severity is not None:
+            # Define severity ordering
+            severity_order = [
+                MessageSeverity.DEBUG,
+                MessageSeverity.NOTICE,
+                MessageSeverity.INFO,
+                MessageSeverity.WARNING,
+                MessageSeverity.ERROR,
+                MessageSeverity.FATAL,
+            ]
+            min_index = severity_order.index(min_severity)
+            return [
+                msg for msg in self.__messages
+                if severity_order.index(msg.severity) >= min_index
+            ]
+        return self.__messages.copy()
+
+    def message_add(self, message: ToolMessage):
+        """
+        Add a message to the build context
+        """
+        self.__messages.append(message)
+    
     @property
     def semaphore(self) -> asyncio.Semaphore:
         """Get semaphore, creating it lazily if needed"""
@@ -221,6 +318,9 @@ class BuildContext:
             else:
                 p.exception()
 
+        for m in self.messages_get(min_severity = MessageSeverity.WARNING):
+            m.pprint()
+            
     def build(self):
         return ContextBuildManager(self)
                 
@@ -286,13 +386,9 @@ class BuildStep(asyncio.Future):
         to wake any UI watchers.
 
         Args:
-            progress: Progress value 0.0 to 1.0 (or 0-100, auto-normalized)
+            progress: Progress value 0.0 to 1.0
             message: Optional status message
         """
-        # Auto-normalize if given as percentage
-        if progress > 1.0:
-            progress = progress / 100.0
-
         progress = max(0.0, min(1.0, progress))
 
         # Update own state
@@ -306,8 +402,80 @@ class BuildStep(asyncio.Future):
         if progress >= 1.0:
             self.completed = True
 
+        self.logger.info(f"{self.name} progress: {progress * 100}%: {message or ''}")
+
         # Notify watchers
         await self.context.notify_progress_update()
+
+    def add_message(
+        self,
+        severity: MessageSeverity,
+        message: str,
+        identifier: Optional[str] = None,
+        extended_message: Optional[str] = None,
+        file_path: Optional[Path] = None,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+    ) -> ToolMessage:
+        """Add a tool message from individual fields
+
+        Creates a ToolMessage and adds it to this step's message collection.
+        Also logs the message using the step's logger.
+
+        Args:
+            severity: Message severity level
+            message: The message text
+            identifier: Optional tool-specific error identifier
+            extended_message: Optional multi-line extended details
+            file_path: Optional source file path
+            line: Optional line number
+            column: Optional column number
+
+        Returns:
+            The created ToolMessage
+        """
+        msg = ToolMessage(
+            severity=severity,
+            message=message,
+            identifier=identifier,
+            extended_message=extended_message,
+            file_path=file_path,
+            line=line,
+            column=column,
+        )
+        self.add_message_obj(msg)
+        return msg
+
+    def add_message_obj(self, msg: ToolMessage) -> None:
+        """Add a pre-constructed ToolMessage
+
+        Adds an existing ToolMessage to this step's message collection.
+        Also logs the message using the step's logger.
+
+        Args:
+            msg: The ToolMessage to add
+        """
+        msg.source = self
+        self.context.message_add(msg)
+        self._log_message(msg)
+
+    def _log_message(self, msg: ToolMessage) -> None:
+        """Log a ToolMessage using the step's logger
+
+        Args:
+            msg: The message to log
+        """
+        # Map severity to logger method
+        log_method = {
+            MessageSeverity.DEBUG: self.logger.debug,
+            MessageSeverity.NOTICE: self.logger.info,
+            MessageSeverity.INFO: self.logger.info,
+            MessageSeverity.WARNING: self.logger.warning,
+            MessageSeverity.ERROR: self.logger.error,
+            MessageSeverity.FATAL: self.logger.critical,
+        }.get(msg.severity, self.logger.info)
+
+        log_method(str(msg))
 
     def launch(self) -> asyncio.Task:
         if self.task:
@@ -344,8 +512,9 @@ class BuildStep(asyncio.Future):
             await self._work()
         except Exception as e:
             self.logger.debug("Work excepted: %s", e)
-            #import traceback
-            #traceback.print_exc()
+            import traceback
+            for line in traceback.format_exc().split("\n"):
+                self.logger.error(line)
             await self.update_progress(1.0, "Failed")
             self.__mark_done(e)
             return
