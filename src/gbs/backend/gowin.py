@@ -72,8 +72,7 @@ def parse_device_csv(gowin_path: Path, device: str, logger: logging.Logger) -> t
         logger.error(f"Error parsing device CSV: {e}")
         return ("FPGA", device)  # Fallback
 
-
-class GowinSession:
+class Session:
     """Shared gw_sh interactive session with command serialization
 
     Manages a persistent gw_sh subprocess that maintains synthesis state.
@@ -239,13 +238,13 @@ class GowinSession:
 
 # Task classes for Gowin backend operations
 
-class GowinProjectInitTask(Task):
+class ProjectInitTask(Task):
     """Initialize Gowin project in gw_sh session"""
 
     def __init__(
         self,
         context: BuildContext,
-        session: GowinSession,
+        session: Session,
         gowin_tool: str,
         output_base_name: str,
         output_dir: Path,
@@ -371,55 +370,89 @@ class GowinProjectInitTask(Task):
             raise
 
 
-class GowinSynthesisTask(Task):
-    """Run Gowin synthesis via gw_sh"""
+class LongRunningCommand(Task):
+    """Run Gowin long running via gw_sh"""
 
     def __init__(
-        self,
-        context: BuildContext,
-        session: GowinSession,
-        inputs: list,
-        outputs: list
+            self,
+            context: BuildContext,
+            name: str,
+            session: Session,
+            inputs: list,
+            outputs: list,
+            description: str = ""
     ):
-        # Derive device from context for description
-        device = context.project.raw_config.get("target", {}).get("part", "unknown")
-
         super().__init__(
             context,
-            "gowin_synthesis",
-            inputs=inputs,
-            outputs=outputs,
-            description=f"Gowin synthesis: {device}"
+            name = name,
+            inputs = inputs,
+            outputs = outputs,
+            description = description
         )
         self.session = session
 
     progress_re = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
         
+    async def work(self, command) -> None:
+        """Run command via gw_sh (project already initialized)"""
+        async for line in self.session.send_command(command):
+            m = self.progress_re.match(line)
+            if m:
+                pct = int(m.group("pct"))
+                message = m.group("message")
+                self.logger.info(f"Progress: {pct}%, {message}")
+                await self.update_progress(pct / 100, message)
+            # XXX TODO, gather ERROR lines and reformat them
+
+        self.logger.info(f"{command} returned")
+
+class SynthesisTask(LongRunningCommand):
+    """Run Gowin synthesis via gw_sh"""
+
+    def __init__(
+        self,
+        context: BuildContext,
+        session: Session,
+        inputs: list,
+        outputs: list
+    ):
+        super().__init__(
+            context,
+            name = "gowin_synthesis",
+            session = session,
+            inputs = inputs,
+            outputs = outputs,
+            description = "Gowin synthesis"
+        )
+        
     async def work(self) -> None:
         """Run synthesis via gw_sh (project already initialized)"""
-        try:
-            # Compute values from context
-            device = self.context.project.raw_config.get("target", {}).get("part")
-            # netlist_path is the only output resource
-            netlist_path = self.outputs[0].path
+        return await super().work("run syn")
+        
+class PnRTask(LongRunningCommand):
+    """Run Gowin place & route via gw_sh"""
 
-            self.logger.info(f"Running Gowin synthesis for {device}")
+    def __init__(
+        self,
+        context: BuildContext,
+        session: Session,
+        inputs: list,
+        outputs: list
+    ):
+        super().__init__(
+            context,
+            name = "gowin_pnr",
+            session = session,
+            inputs = inputs,
+            outputs = outputs,
+            description = "Gowin PnR"
+        )
 
-            # Project already configured by init task - just run synthesis
-            self.logger.info("Starting synthesis...")
-            async for line in self.session.send_command("run syn"):
-                m = self.progress_re.match(line)
-                if m:
-                    await self.update_progress(int(m.group("pct")) / 100, m.group("message"))
+    async def work(self) -> None:
+        """Run place & route via gw_sh (project already initialized)"""
+        return await super().work("run pnr")
 
-            self.logger.info(f"Synthesis complete: {netlist_path}")
-
-        except Exception as e:
-            self.logger.error(f"Synthesis failed with exception: {e}", exc_info=True)
-            raise
-
-
-class GowinAggregateConstraintsTask(Task):
+class AggregateConstraintsTask(Task):
     """Aggregate Gowin constraint files of a single type (.cst or .sdc)"""
 
     def __init__(
@@ -462,52 +495,6 @@ class GowinAggregateConstraintsTask(Task):
         self.logger.info(f"Aggregated {len(resources)} {constraint_type} constraint files to {output_file}")
 
 
-class GowinPnRTask(Task):
-    """Run Gowin place & route via gw_sh"""
-
-    def __init__(
-        self,
-        context: BuildContext,
-        session: GowinSession,
-        inputs: list,
-        outputs: list
-    ):
-        # Derive device from context for description
-        device = context.project.raw_config.get("target", {}).get("part", "unknown")
-
-        super().__init__(
-            context,
-            "gowin_pnr",
-            inputs=inputs,
-            outputs=outputs,
-            description=f"Gowin PnR: {device}"
-        )
-        self.session = session
-
-    progress_re = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
-
-    async def work(self) -> None:
-        """Run place & route via gw_sh (project already initialized)"""
-        # Compute values from context
-        device = self.context.project.raw_config.get("target", {}).get("part")
-        # bitstream_file is the only output resource
-        bitstream_file = self.outputs[0].path
-
-        self.logger.info(f"Running Gowin PnR for {device}")
-
-        # Note: HDL files and constraints already added during init task
-        # Just run PnR
-
-        # Run PnR (also generates bitstream)
-        self.logger.info("Starting place & route...")
-        async for line in self.session.send_command("run pnr"):
-            m = self.progress_re.match(line)
-            if m:
-                await self.update_progress(int(m.group("pct")) / 100, m.group("message"))
-
-        self.logger.info(f"Bitstream generated: {bitstream_file}")
-
-
 class GowinBackend(BaseBackend):
     """Gowin FPGA synthesis backend
 
@@ -540,14 +527,14 @@ class GowinBackend(BaseBackend):
         self.output_dir = Path(output_dir)
         self.gowin_tool = gowin_tool
         self.output_base_name = output_base_name
-        self._session: GowinSession | None = None
+        self._session: Session | None = None
         self._device_info: dict[str, str] | None = None  # Cached device characteristics
 
         # Task references (created on first process() call with HDL)
         self._pin_cst_task: Task | None = None
         self._timing_sdc_task: Task | None = None
 
-    def _get_session(self, context: BuildContext) -> GowinSession:
+    def _get_session(self, context: BuildContext) -> Session:
         """Get or create shared gw_sh session"""
         if self._session is None:
             gowin_config = context.get_tool(self.gowin_tool)
@@ -557,7 +544,7 @@ class GowinBackend(BaseBackend):
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
-            self._session = GowinSession(gw_sh, self.output_dir, self.logger)
+            self._session = Session(gw_sh, self.output_dir, self.logger)
 
         return self._session
 
@@ -733,7 +720,7 @@ class GowinBackend(BaseBackend):
             hdl_input_resources.append(resource)
 
         # Create project init task
-        init_task = GowinProjectInitTask(
+        init_task = ProjectInitTask(
             context=context,
             session=session,
             gowin_tool=self.gowin_tool,
@@ -744,7 +731,7 @@ class GowinBackend(BaseBackend):
         )
 
         # Create synthesis task
-        synth_task = GowinSynthesisTask(
+        synth_task = SynthesisTask(
             context=context,
             session=session,
             inputs=[init_marker_resource],
@@ -781,7 +768,7 @@ class GowinBackend(BaseBackend):
 
         # Create pin constraint aggregation task (.cst files)
         # Store reference for dynamic input updates
-        self._pin_cst_task = GowinAggregateConstraintsTask(
+        self._pin_cst_task = AggregateConstraintsTask(
             context=context,
             file_type="gowin-cst",
             inputs=cst_input_resources,
@@ -790,7 +777,7 @@ class GowinBackend(BaseBackend):
 
         # Create timing constraint aggregation task (.sdc files)
         # Store reference for dynamic input updates
-        self._timing_sdc_task = GowinAggregateConstraintsTask(
+        self._timing_sdc_task = AggregateConstraintsTask(
             context=context,
             file_type="gowin-sdc",
             inputs=sdc_input_resources,
@@ -798,7 +785,7 @@ class GowinBackend(BaseBackend):
         )
 
         # Create PnR task (depends on init + netlist + constraints)
-        pnr_task = GowinPnRTask(
+        pnr_task = PnRTask(
             context=context,
             session=session,
             inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
