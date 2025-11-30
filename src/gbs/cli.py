@@ -53,6 +53,7 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     ctx.obj["logger"] = logger
     ctx.obj["log_file"] = get_log_file()
     ctx.obj["gbs_config"] = gbs_config
+    ctx.obj["allow_progress_bars"] = not verbose and not debug
 
     logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
     logger.debug(f"Loaded {len(gbs_config.tools)} tools, {len(gbs_config.profiles)} profiles")
@@ -107,6 +108,7 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
     from gbs.backend_loader import load_backends_from_project
 
     logger = get_logger()
+    show_pb = ctx.obj["allow_progress_bars"]
 
     try:
         # Get GBS config from context
@@ -256,7 +258,7 @@ async def build(ctx, project_file: Path, repo: tuple[Path], output_dir: Path, ma
                 from gbs.progress import run_with_progress, HAS_TQDM
                 import sys
 
-                if HAS_TQDM and sys.stdout.isatty():
+                if HAS_TQDM and sys.stdout.isatty() and show_pb:
                     # Run with progress bars
                     await run_with_progress(build_ctx, all_resources)
                 else:
