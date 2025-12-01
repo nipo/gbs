@@ -543,25 +543,105 @@ class GHDLBackend(BaseBackend):
         fileset.add(sim_br)
 
 
-# Stub for new pass-based registry (Phase 2 compatibility)
-# TODO Phase 4: Convert to proper Pass-based implementation
+# Pass-based backend implementation
 def get_backend():
-    """Stub backend for registry discovery
-    
-    Returns a minimal Backend class. Full conversion pending.
-    """
+    """Get the pass-based backend for registry discovery"""
     from ..model.passes import Backend, Pass
-    
-    class GhdlStubPass(Pass):
-        name = "ghdl_stub"
+    from ..logging import get_logger
+
+    logger = get_logger(__name__)
+
+    class GhdlSimulatePass(Pass):
+        """Pass that compiles VHDL designs and creates a simulator executable
+
+        This pass uses GHDL to:
+        - Import and analyze VHDL sources by library
+        - Elaborate the top-level entity
+        - Generate a simulator executable
+        """
+        name = "simulate"
         input_types = {"vhdl"}
         output_types = {"ghdl-simulator"}
-        
+
+        def contribute_filter_vars(self, config):
+            """Indicate this is for simulation"""
+            # Get vhdl_std from config, default to "93c"
+            vhdl_std = config.get("vhdl_standard", "93c")
+
+            # Normalize VHDL version
+            vhdl_version = GHDLBackend._normalize_vhdl_version(vhdl_std)
+
+            return {
+                "target-usage": "simulation",
+                "compiler": "ghdl",
+                "vhdl-version": vhdl_version,
+            }
+
         async def execute(self, context, inputs):
-            # TODO: Implement proper pass execution
-            return []
-    
+            """Compile VHDL design with GHDL
+
+            Args:
+                context: BuildContext for tool lookup and resource management
+                inputs: List of BuildResource objects with file_type="vhdl"
+
+            Returns:
+                List containing one BuildResource with file_type="ghdl-simulator"
+            """
+            if not inputs:
+                logger.warning("No VHDL inputs provided to GHDL pass")
+                return []
+
+            # Get topcell from context
+            topcell = context.get_topcell()
+            if not topcell:
+                logger.warning("No topcell specified, skipping GHDL elaboration")
+                return []
+
+            # Get GHDL configuration from backend_config
+            # Note: backend_config should be passed to Pass instances by the executor
+            # For now, use defaults
+            output_dir = Path("build")
+            vhdl_std = "93c"
+            ghdl_tool = "ghdl"
+
+            # Create a temporary GHDL backend instance to reuse logic
+            # TODO: Refactor to avoid this - extract common methods
+            temp_backend = GHDLBackend(
+                output_dir=output_dir,
+                vhdl_std=vhdl_std,
+                ghdl_tool=ghdl_tool
+            )
+
+            # Get GHDL configuration
+            ghdl_executable, backend_type = temp_backend._get_ghdl_config(context)
+
+            # Ensure output directory exists
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create a temporary BuildFileSet to reuse existing logic
+            # TODO: Refactor GHDL backend to work without BuildFileSet
+            from ..model.build import BuildFileSet
+            temp_fileset = BuildFileSet(context)
+
+            # Add inputs to temporary fileset
+            for br in inputs:
+                temp_fileset.add(br)
+
+            # Process using the existing backend logic
+            await temp_backend.process(context, temp_fileset)
+
+            # Extract the simulator BuildResource from the fileset
+            simulators = list(temp_fileset.filter(file_type="ghdl-simulator"))
+
+            if not simulators:
+                logger.error("GHDL processing did not produce a simulator executable")
+                return []
+
+            logger.info(f"Created GHDL simulator: {simulators[0].path}")
+            return simulators
+
     class GhdlBackend(Backend):
-        passes = [GhdlStubPass]
-    
+        """Backend providing GHDL simulation"""
+        passes = [GhdlSimulatePass]
+
     return GhdlBackend

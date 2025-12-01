@@ -78,20 +78,73 @@ class VerilogToVHDLBackend(BaseBackend):
             self.logger.debug(f"Transpiled {verilog_br.path.name} -> {vhdl_path.name}")
 
 
-# Stub for new pass-based registry
+# Pass-based backend implementation
 def get_backend():
-    """Stub backend for registry discovery"""
+    """Get the pass-based backend for registry discovery"""
     from ..model.passes import Backend, Pass
-    
-    class VerilogToVHDLStubPass(Pass):
-        name = "verilog_to_vhdl_stub"
+    from ..logging import get_logger
+
+    logger = get_logger(__name__)
+
+    class VerilogToVHDLPass(Pass):
+        """Pass that transpiles Verilog files to VHDL
+
+        This is a reference implementation demonstrating a transformation pass.
+        It simulates transpilation by creating VHDL files with the same structure
+        as the input Verilog files.
+        """
+        name = "transpile"
         input_types = {"verilog"}
         output_types = {"vhdl"}
-        
+
+        def contribute_filter_vars(self, config):
+            """Indicate VHDL is the target language"""
+            return {
+                "target_language": "vhdl",
+                "has_verilog_transpiler": True,
+            }
+
         async def execute(self, context, inputs):
-            return []
-    
+            """Transform Verilog BuildResources to VHDL BuildResources
+
+            Args:
+                context: BuildContext for resource management
+                inputs: List of BuildResource objects with file_type="verilog"
+
+            Returns:
+                List of BuildResource objects with file_type="vhdl"
+            """
+            outputs = []
+
+            logger.info(f"Transpiling {len(inputs)} Verilog files to VHDL")
+
+            for verilog_br in inputs:
+                # Generate VHDL file path
+                vhdl_path = verilog_br.path.with_suffix(".vhd")
+
+                # Create VHDL BuildResource
+                vhdl_br = BuildResource(
+                    resource=context.get_resource(vhdl_path),
+                    file_type="vhdl",
+                    library=verilog_br.library,
+                    language_version="2008",
+                    is_source=False,
+                    generated_by="gbs.backend.verilog_to_vhdl:transpile",
+                )
+
+                # Copy dependencies from original
+                vhdl_br.depends_on = verilog_br.depends_on.copy()
+
+                outputs.append(vhdl_br)
+
+                logger.debug(
+                    f"Transpiled {verilog_br.path.name} -> {vhdl_path.name}"
+                )
+
+            return outputs
+
     class VerilogToVHDLBackend(Backend):
-        passes = [VerilogToVHDLStubPass]
-    
+        """Backend providing Verilog to VHDL transpilation"""
+        passes = [VerilogToVHDLPass]
+
     return VerilogToVHDLBackend

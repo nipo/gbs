@@ -70,20 +70,68 @@ class MemInitBackend(BaseBackend):
         self._generated = True
 
 
-# Stub for new pass-based registry
+# Pass-based backend implementation
 def get_backend():
-    """Stub backend for registry discovery"""
+    """Get the pass-based backend for registry discovery"""
     from ..model.passes import Backend, Pass
-    
-    class MemInitStubPass(Pass):
-        name = "mem_init_stub"
+    from ..logging import get_logger
+
+    logger = get_logger(__name__)
+
+    class MemInitPass(Pass):
+        """Pass that generates memory initialization files
+
+        This demonstrates a code generation pass that creates VHDL
+        initialization packages from memory specification files.
+        """
+        name = "generate"
         input_types = {"mem_spec"}
         output_types = {"vhdl"}
-        
+
+        def contribute_filter_vars(self, config):
+            """Indicate memory initialization support is available"""
+            return {
+                "has_mem_init": True,
+            }
+
         async def execute(self, context, inputs):
-            return []
-    
+            """Generate VHDL initialization files from memory specs
+
+            Args:
+                context: BuildContext for resource management
+                inputs: List of BuildResource objects with file_type="mem_spec"
+
+            Returns:
+                List of BuildResource objects with file_type="vhdl"
+            """
+            outputs = []
+
+            logger.info(f"Generating {len(inputs)} memory init files")
+
+            for spec_br in inputs:
+                # Generate VHDL initialization package
+                init_path = spec_br.path.with_name(spec_br.path.stem + "_init.vhd")
+
+                init_br = BuildResource(
+                    resource=context.get_resource(init_path),
+                    file_type="vhdl",
+                    library=spec_br.library,
+                    is_source=False,
+                    generated_by="gbs.backend.mem_init:generate",
+                )
+                # Initialization file depends on the spec file
+                init_br.depends_on.add(spec_br)
+
+                outputs.append(init_br)
+
+                logger.debug(
+                    f"Generated {init_path.name} from {spec_br.path.name}"
+                )
+
+            return outputs
+
     class MemInitBackend(Backend):
-        passes = [MemInitStubPass]
-    
+        """Backend providing memory initialization file generation"""
+        passes = [MemInitPass]
+
     return MemInitBackend
