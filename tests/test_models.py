@@ -12,6 +12,8 @@ from gbs.models import (
     Repository,
     Project,
     SourceFileSet,
+    OutputFile,
+    OutputGroup,
 )
 
 
@@ -174,3 +176,78 @@ def test_recursive_conditional_groups():
     assert len(parent_condition.groups) == 1
     assert parent_condition.groups[0].name == "family_select"
     assert len(parent_condition.groups[0].conditions) == 2
+
+
+def test_output_file():
+    """Test OutputFile creation and string representation"""
+    output = OutputFile(type="simulator", path=Path("build/sim.exe"))
+    assert output.type == "simulator"
+    assert output.path == Path("build/sim.exe")
+    assert "simulator" in str(output)
+    assert "sim.exe" in str(output)
+
+
+def test_output_group():
+    """Test OutputGroup creation"""
+    output_group = OutputGroup(
+        name="simulation",
+        topcell="testbench",
+        filter_vars={"sim": 1, "vendor": "generic"},
+        backend_config={"gbs.backend.ghdl": {"vhdl_standard": "2008"}},
+        outputs=[
+            OutputFile(type="simulator", path=Path("build/sim.exe"))
+        ]
+    )
+
+    assert output_group.name == "simulation"
+    assert output_group.topcell == "testbench"
+    assert output_group.filter_vars["sim"] == 1
+    assert "gbs.backend.ghdl" in output_group.backend_config
+    assert len(output_group.outputs) == 1
+    assert output_group.outputs[0].type == "simulator"
+    assert "simulation" in str(output_group)
+
+
+def test_output_group_with_constraints():
+    """Test OutputGroup with build planning constraints"""
+    output_group = OutputGroup(
+        name="synthesis",
+        topcell="top",
+        filter_vars={"vendor": "gowin"},
+        require_backends=["gbs.backend.gowin"],
+        exclude_passes=["gbs.backend.ghdl:simulate"],
+        outputs=[
+            OutputFile(type="gowin-fs", path=Path("build/bitstream.fs")),
+            OutputFile(type="gowin-bin", path=Path("build/flash.bin"))
+        ]
+    )
+
+    assert output_group.name == "synthesis"
+    assert len(output_group.require_backends) == 1
+    assert "gbs.backend.gowin" in output_group.require_backends
+    assert len(output_group.exclude_passes) == 1
+    assert len(output_group.outputs) == 2
+
+
+def test_project_with_output_groups():
+    """Test Project with output_groups field"""
+    root_partition = Partition(name="test_partition", groups=[])
+
+    output_group = OutputGroup(
+        name="sim",
+        topcell="tb",
+        outputs=[OutputFile(type="simulator", path=Path("sim.exe"))]
+    )
+
+    project = Project(
+        name="test_project",
+        root_partition=root_partition,
+        topcell="top",
+        filter_vars={"vendor": "xilinx"},
+        output_groups=[output_group]
+    )
+
+    assert project.name == "test_project"
+    assert len(project.output_groups) == 1
+    assert project.output_groups[0].name == "sim"
+    assert project.output_groups[0].topcell == "tb"
