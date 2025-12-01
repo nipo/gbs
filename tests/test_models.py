@@ -11,7 +11,7 @@ from gbs.models import (
     Library,
     Repository,
     Project,
-    BuildFileSet,
+    SourceFileSet,
 )
 
 
@@ -127,8 +127,8 @@ def test_project():
 
 
 def test_build_file_set():
-    """Test BuildFileSet creation and management"""
-    bfs = BuildFileSet()
+    """Test SourceFileSet creation and management"""
+    bfs = SourceFileSet()
     assert len(bfs.libraries) == 0
     assert len(bfs.get_all_files()) == 0
 

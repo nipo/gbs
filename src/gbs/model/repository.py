@@ -181,10 +181,10 @@ class Project:
 
 
 @dataclass
-class BuildFileSet:
-    """Ordered build file set after dependency resolution
+class SourceFileSet:
+    """Ordered source file set after dependency resolution
 
-    This represents the final, resolved set of files to build after
+    This represents the final, resolved set of source files to build after
     dependency traversal and filtering.
 
     Attributes:
@@ -200,7 +200,7 @@ class BuildFileSet:
 
     def __str__(self) -> str:
         total_files = sum(len(f) for f in self.files.values())
-        return f"BuildFileSet({len(self.libraries)} libraries, {total_files} files)"
+        return f"SourceFileSet({len(self.libraries)} libraries, {total_files} files)"
 
     def add_partition(self, library: str, partition: str, files: list[SourceFile], deps: list[tuple[str, str]] = None):
         """Add a partition with its files to the build set

@@ -15,7 +15,7 @@ from .models import (
     Library,
     Repository,
     Project,
-    BuildFileSet,
+    SourceFileSet,
     SourceFile,
     ConditionalGroup,
     FilterCondition,
@@ -352,11 +352,11 @@ class DependencyResolver:
         logger.debug(f"Topological sort complete: {len(result)} partitions")
         return result
 
-    def resolve(self) -> BuildFileSet:
+    def resolve(self) -> SourceFileSet:
         """Resolve all dependencies and create build file set
 
         Returns:
-            BuildFileSet with ordered partitions and files
+            SourceFileSet with ordered partitions and files
 
         Raises:
             ResolutionError: If resolution fails
@@ -375,7 +375,7 @@ class DependencyResolver:
         sorted_refs = self.topological_sort(graph)
 
         # Build file set
-        build_set = BuildFileSet()
+        build_set = SourceFileSet()
 
         for ref in sorted_refs:
             resolved = graph[ref]
@@ -399,7 +399,7 @@ class DependencyResolver:
 def resolve_project(
     project: Project,
     repositories: list[Repository]
-) -> BuildFileSet:
+) -> SourceFileSet:
     """Resolve project dependencies and create build file set
 
     Args:
@@ -407,7 +407,7 @@ def resolve_project(
         repositories: Available repositories
 
     Returns:
-        BuildFileSet with ordered partitions and files
+        SourceFileSet with ordered partitions and files
 
     Raises:
         ResolutionError: If resolution fails

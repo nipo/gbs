@@ -15,7 +15,7 @@ from .model.repository import (
     Library,
     Repository,
     Project,
-    BuildFileSet,
+    SourceFileSet,
 )
 
 __all__ = [
@@ -26,5 +26,5 @@ __all__ = [
     "Library",
     "Repository",
     "Project",
-    "BuildFileSet",
+    "SourceFileSet",
 ]
