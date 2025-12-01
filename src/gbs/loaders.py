@@ -458,17 +458,26 @@ def load_project(path: Path, gbs_config=None) -> Project:
         # Store profile repositories for later merging
         data["_profile_repositories"] = profile.repositories
 
-    # Required fields
-    required_fields = ["name", "topcell", "root"]
+    # Check if using new output-group format
+    has_output_groups = "output" in data
+
+    # Required fields depend on format
+    if has_output_groups:
+        # New format: output groups specify topcell
+        required_fields = ["name", "root"]
+    else:
+        # Old format: topcell at root level
+        required_fields = ["name", "topcell", "root"]
+
     for field in required_fields:
         if field not in data:
             raise LoadError(f"Project file {path} missing required field '{field}'")
 
     name = data["name"]
     description = data.get("description")
-    topcell = data["topcell"]
+    topcell = data.get("topcell")  # Optional if using output groups
 
-    # Filter variables
+    # Filter variables (old format only)
     filter_vars = data.get("filter_vars", {})
 
     # Validate target configuration (optional, required for synthesis backends)
@@ -521,16 +530,82 @@ def load_project(path: Path, gbs_config=None) -> Project:
     # Create the root partition
     root_partition = Partition(name=partition_name, groups=[root_group])
 
+    # Parse output groups (new format)
+    output_groups = []
+    if has_output_groups:
+        output_data = data.get("output", [])
+        if not isinstance(output_data, list):
+            raise LoadError("'output' must be a list of output groups")
+
+        for og_data in output_data:
+            if not isinstance(og_data, dict):
+                raise LoadError("Each output group must be a dictionary")
+
+            # Required fields
+            if "name" not in og_data:
+                raise LoadError("Output group missing required field 'name'")
+            if "topcell" not in og_data:
+                raise LoadError(f"Output group '{og_data['name']}' missing required field 'topcell'")
+
+            og_name = og_data["name"]
+            og_topcell = og_data["topcell"]
+            og_filter_vars = og_data.get("filter_vars", {})
+            og_backend_config = og_data.get("backend_config", {})
+
+            # Parse output files
+            og_outputs = []
+            outputs_data = og_data.get("outputs", [])
+            for output_data in outputs_data:
+                if not isinstance(output_data, dict):
+                    raise LoadError(f"Output in group '{og_name}' must be a dictionary")
+                if "type" not in output_data:
+                    raise LoadError(f"Output in group '{og_name}' missing 'type'")
+                if "path" not in output_data:
+                    raise LoadError(f"Output in group '{og_name}' missing 'path'")
+
+                from .model.repository import OutputFile
+                output_file = OutputFile(
+                    type=output_data["type"],
+                    path=Path(output_data["path"])
+                )
+                og_outputs.append(output_file)
+
+            # Parse constraints
+            og_require_passes = og_data.get("require_passes", [])
+            og_exclude_passes = og_data.get("exclude_passes", [])
+            og_require_backends = og_data.get("require_backends", [])
+            og_exclude_backends = og_data.get("exclude_backends", [])
+
+            from .model.repository import OutputGroup
+            output_group = OutputGroup(
+                name=og_name,
+                topcell=og_topcell,
+                filter_vars=og_filter_vars,
+                backend_config=og_backend_config,
+                outputs=og_outputs,
+                require_passes=og_require_passes,
+                exclude_passes=og_exclude_passes,
+                require_backends=og_require_backends,
+                exclude_backends=og_exclude_backends
+            )
+            output_groups.append(output_group)
+
+        logger.info(f"Loaded {len(output_groups)} output groups")
+
     project = Project(
         name=name,
         root_partition=root_partition,
         topcell=topcell,
         filter_vars=filter_vars,
         description=description,
-        raw_config=data
+        raw_config=data,
+        output_groups=output_groups
     )
 
-    logger.info(f"Loaded project '{name}' with topcell '{topcell}'")
+    if has_output_groups:
+        logger.info(f"Loaded project '{name}' with {len(output_groups)} output groups")
+    else:
+        logger.info(f"Loaded project '{name}' with topcell '{topcell}'")
     return project
 
 
