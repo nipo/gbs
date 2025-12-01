@@ -65,104 +65,18 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
         # Load project configuration
         project, repositories, gbs_config = load_project_for_command(ctx, project_file, repo)
 
-        # Resolve dependencies
-        click.echo("Resolving dependencies...")
-        build_set = resolve_project(project, repositories)
-        click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
-
-        # Create build context
-        build_ctx = BuildContext(project=project, gbs_config=gbs_config)
-
-        # Create and populate fileset
-        click.echo("Creating build fileset...")
-        fileset = BuildFileSet(build_ctx)
-        build_ctx.populate_fileset(build_set, fileset)
-
-        # Create output directory
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Load and run backends
-        click.echo("Loading backends...")
-        try:
-            registry = build_ctx.load_backends()
-            click.echo(f"Loaded {len(registry)} backend(s):")
-            for backend in registry:
-                click.echo(f"  - {backend.name} (priority={backend.priority})")
-        except ValueError as e:
-            click.echo(f"Error: {e}", err=True)
-            click.echo("Add 'backends' section to project configuration")
-            sys.exit(1)
-
-        # Run backend iteration
-        click.echo()
-        click.echo("Running backend iteration...")
-        iterations, registry = await build_ctx.run_backends(fileset, max_iterations)
-        click.echo(f"Converged after {iterations} iteration(s)")
-
-        # Show dependency graph if requested
-        if show_graph:
-            click.echo()
-            click.echo("Build dependency graph:")
-            click.echo()
-
-            # Collect all tasks
-            tasks = set()
-            for br in fileset:
-                # Check if resource has any tasks that expect it (producers)
-                if hasattr(br.resource, 'expected_by'):
-                    for dep in br.resource.expected_by:
-                        if hasattr(dep, 'executor'):  # It's a task
-                            tasks.add(dep)
-
-            # Display tasks with their dependencies
-            if not tasks:
-                click.echo("  No build tasks generated")
-            else:
-                for task in sorted(tasks, key=lambda t: t.name):
-                    click.echo(f"  Task: {task.name}")
-                    if task.description:
-                        click.echo(f"    Description: {task.description}")
-
-                    # Show inputs
-                    if hasattr(task, 'inputs') and task.inputs:
-                        click.echo(f"    Inputs ({len(task.inputs)}):")
-                        for inp in task.inputs:
-                            if hasattr(inp, 'path'):
-                                click.echo(f"      - {inp.path}")
-                            else:
-                                click.echo(f"      - {inp}")
-
-                    # Show outputs
-                    if hasattr(task, 'outputs') and task.outputs:
-                        click.echo(f"    Outputs ({len(task.outputs)}):")
-                        for out in task.outputs:
-                            if hasattr(out, 'path'):
-                                click.echo(f"      - {out.path}")
-                            else:
-                                click.echo(f"      - {out}")
-
-                    click.echo()
-
-            click.echo(f"Total tasks: {len(tasks)}")
-            return  # Exit without building
-
-        # Execute build
-        click.echo()
-        click.echo("Executing build tasks...")
-        num_files = await build_ctx.execute_build(
-            fileset,
-            show_progress=(sys.stdout.isatty() and show_pb)
-        )
-
-        click.echo()
-        click.echo(f"Build complete: {num_files} files processed")
-
-        # Show summary
-        click.echo()
-        click.echo("Build summary:")
-        for lib_name in fileset.libraries_in_dependency_order():
-            lib_files = fileset.filter(library=lib_name)
-            click.echo(f"  Library {lib_name}: {len(lib_files)} files")
+        # Check if using new output-group format
+        if project.output_groups:
+            await _build_with_output_groups(
+                project, repositories, gbs_config,
+                output_dir, max_iterations, show_graph, show_pb
+            )
+        else:
+            # Old profile-based format - use legacy build flow
+            await _build_legacy(
+                ctx, project, repositories, gbs_config,
+                output_dir, max_iterations, show_graph, show_pb
+            )
 
     except LoadError as e:
         logger.error(f"Failed to load project or repository: {e}")
@@ -172,6 +86,181 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
         logger.exception("Build failed")
         click.echo(f"Build failed: {e}", err=True)
         sys.exit(1)
+
+
+async def _build_with_output_groups(
+    project, repositories, gbs_config,
+    output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
+):
+    """Build using new planner + executor flow"""
+    from ..tasks import BuildContext
+    from ..backend.registry import BackendRegistry
+    from ..planner import plan_project
+    from ..executor import execute_project
+
+    # Resolve dependencies
+    click.echo("Resolving dependencies...")
+    build_set = resolve_project(project, repositories)
+    click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
+
+    # Create build context
+    build_ctx = BuildContext(project=project, gbs_config=gbs_config)
+
+    # Create and discover backends
+    click.echo("Discovering backends...")
+    registry = BackendRegistry()
+    registry.discover_backends()
+
+    backend_names = list(registry._backends.keys())
+    pass_count = len(registry._passes)
+    click.echo(f"Discovered {len(backend_names)} backend(s) with {pass_count} passes:")
+    for backend_module in backend_names:
+        backend_info = registry._backends[backend_module]
+        click.echo(f"  - {backend_module} ({len(backend_info.passes)} passes)")
+
+    # Plan build for all output groups
+    click.echo()
+    click.echo(f"Planning build for {len(project.output_groups)} output group(s)...")
+    plans = plan_project(project, repositories, registry)
+
+    for plan in plans:
+        click.echo(f"  Output group '{plan.output_group.name}':")
+        click.echo(f"    Topcell: {plan.output_group.topcell}")
+        click.echo(f"    Passes: {len(plan.passes)}")
+        click.echo(f"    Outputs: {len(plan.output_group.outputs)}")
+
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Execute build plans
+    click.echo()
+    click.echo("Executing build plans...")
+    results = await execute_project(build_ctx, plans)
+
+    # Show results
+    click.echo()
+    click.echo("Build complete!")
+    for og_name, fileset in results.items():
+        files_processed = len([br for br in fileset if hasattr(br.resource, 'path')])
+        click.echo(f"  Output group '{og_name}': {files_processed} files processed")
+
+    # Show summary
+    click.echo()
+    click.echo("Build summary:")
+    for og_name, fileset in results.items():
+        click.echo(f"  Output group: {og_name}")
+        for lib_name in fileset.libraries_in_dependency_order():
+            lib_files = fileset.filter(library=lib_name)
+            click.echo(f"    Library {lib_name}: {len(lib_files)} files")
+
+
+async def _build_legacy(
+    ctx, project, repositories, gbs_config,
+    output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
+):
+    """Legacy build using profile-based configuration"""
+    from ..tasks import BuildContext, BuildFileSet
+
+    logger = get_logger()
+
+    # Resolve dependencies
+    click.echo("Resolving dependencies...")
+    build_set = resolve_project(project, repositories)
+    click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
+
+    # Create build context
+    build_ctx = BuildContext(project=project, gbs_config=gbs_config)
+
+    # Create and populate fileset
+    click.echo("Creating build fileset...")
+    fileset = BuildFileSet(build_ctx)
+    build_ctx.populate_fileset(build_set, fileset)
+
+    # Create output directory
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load and run backends
+    click.echo("Loading backends...")
+    try:
+        registry = build_ctx.load_backends()
+        click.echo(f"Loaded {len(registry)} backend(s):")
+        for backend in registry:
+            click.echo(f"  - {backend.name} (priority={backend.priority})")
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("Add 'backends' section to project configuration")
+        sys.exit(1)
+
+    # Run backend iteration
+    click.echo()
+    click.echo("Running backend iteration...")
+    iterations, registry = await build_ctx.run_backends(fileset, max_iterations)
+    click.echo(f"Converged after {iterations} iteration(s)")
+
+    # Show dependency graph if requested
+    if show_graph:
+        click.echo()
+        click.echo("Build dependency graph:")
+        click.echo()
+
+        # Collect all tasks
+        tasks = set()
+        for br in fileset:
+            # Check if resource has any tasks that expect it (producers)
+            if hasattr(br.resource, 'expected_by'):
+                for dep in br.resource.expected_by:
+                    if hasattr(dep, 'executor'):  # It's a task
+                        tasks.add(dep)
+
+        # Display tasks with their dependencies
+        if not tasks:
+            click.echo("  No build tasks generated")
+        else:
+            for task in sorted(tasks, key=lambda t: t.name):
+                click.echo(f"  Task: {task.name}")
+                if task.description:
+                    click.echo(f"    Description: {task.description}")
+
+                # Show inputs
+                if hasattr(task, 'inputs') and task.inputs:
+                    click.echo(f"    Inputs ({len(task.inputs)}):")
+                    for inp in task.inputs:
+                        if hasattr(inp, 'path'):
+                            click.echo(f"      - {inp.path}")
+                        else:
+                            click.echo(f"      - {inp}")
+
+                # Show outputs
+                if hasattr(task, 'outputs') and task.outputs:
+                    click.echo(f"    Outputs ({len(task.outputs)}):")
+                    for out in task.outputs:
+                        if hasattr(out, 'path'):
+                            click.echo(f"      - {out.path}")
+                        else:
+                            click.echo(f"      - {out}")
+
+                click.echo()
+
+        click.echo(f"Total tasks: {len(tasks)}")
+        return  # Exit without building
+
+    # Execute build
+    click.echo()
+    click.echo("Executing build tasks...")
+    num_files = await build_ctx.execute_build(
+        fileset,
+        show_progress=(sys.stdout.isatty() and show_pb)
+    )
+
+    click.echo()
+    click.echo(f"Build complete: {num_files} files processed")
+
+    # Show summary
+    click.echo()
+    click.echo("Build summary:")
+    for lib_name in fileset.libraries_in_dependency_order():
+        lib_files = fileset.filter(library=lib_name)
+        click.echo(f"  Library {lib_name}: {len(lib_files)} files")
 
 
 @project.command()

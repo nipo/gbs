@@ -43,6 +43,11 @@ class BuildPlanExecutor:
         logger.info(f"Executing build plan: {plan.output_group.name}")
         logger.info(f"Plan has {len(plan.passes)} passes")
 
+        # Set topcell from output group onto project (for backward compatibility with context.get_topcell())
+        # Store original topcell to restore later
+        original_topcell = self.context.project.topcell
+        self.context.project.topcell = plan.output_group.topcell
+
         # Create BuildFileSet from source fileset
         fileset = BuildFileSet(self.context)
 
@@ -118,6 +123,9 @@ class BuildPlanExecutor:
             logger.warning(f"Reached maximum iterations ({max_iterations})")
 
         logger.info(f"Build plan execution complete ({iteration} iterations)")
+
+        # Restore original topcell
+        self.context.project.topcell = original_topcell
 
         return fileset
 
