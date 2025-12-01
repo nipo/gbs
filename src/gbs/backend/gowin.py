@@ -850,3 +850,22 @@ class GowinBackend(BaseBackend):
                 # Set up dependency so task waits for this resource
                 self._timing_sdc_task.dependency_add(resource)
 
+
+
+# Stub for new pass-based registry (Phase 2 compatibility)  
+def get_backend():
+    """Stub backend for registry discovery"""
+    from ..model.passes import Backend, Pass
+    
+    class GowinStubPass(Pass):
+        name = "gowin_stub"
+        input_types = {"vhdl", "verilog"}
+        output_types = {"gowin-fs", "gowin-bin"}
+        
+        async def execute(self, context, inputs):
+            return []
+    
+    class GowinBackend(Backend):
+        passes = [GowinStubPass]
+    
+    return GowinBackend

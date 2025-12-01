@@ -76,3 +76,22 @@ class VerilogToVHDLBackend(BaseBackend):
             self._processed_files.add(verilog_br.path)
 
             self.logger.debug(f"Transpiled {verilog_br.path.name} -> {vhdl_path.name}")
+
+
+# Stub for new pass-based registry
+def get_backend():
+    """Stub backend for registry discovery"""
+    from ..model.passes import Backend, Pass
+    
+    class VerilogToVHDLStubPass(Pass):
+        name = "verilog_to_vhdl_stub"
+        input_types = {"verilog"}
+        output_types = {"vhdl"}
+        
+        async def execute(self, context, inputs):
+            return []
+    
+    class VerilogToVHDLBackend(Backend):
+        passes = [VerilogToVHDLStubPass]
+    
+    return VerilogToVHDLBackend

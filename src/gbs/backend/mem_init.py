@@ -68,3 +68,22 @@ class MemInitBackend(BaseBackend):
             self.logger.debug(f"Generated {init_path.name} from {spec_br.path.name}")
 
         self._generated = True
+
+
+# Stub for new pass-based registry
+def get_backend():
+    """Stub backend for registry discovery"""
+    from ..model.passes import Backend, Pass
+    
+    class MemInitStubPass(Pass):
+        name = "mem_init_stub"
+        input_types = {"mem_spec"}
+        output_types = {"vhdl"}
+        
+        async def execute(self, context, inputs):
+            return []
+    
+    class MemInitBackend(Backend):
+        passes = [MemInitStubPass]
+    
+    return MemInitBackend

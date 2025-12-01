@@ -541,3 +541,27 @@ class GHDLBackend(BaseBackend):
             generated_by=self.name,
         )
         fileset.add(sim_br)
+
+
+# Stub for new pass-based registry (Phase 2 compatibility)
+# TODO Phase 4: Convert to proper Pass-based implementation
+def get_backend():
+    """Stub backend for registry discovery
+    
+    Returns a minimal Backend class. Full conversion pending.
+    """
+    from ..model.passes import Backend, Pass
+    
+    class GhdlStubPass(Pass):
+        name = "ghdl_stub"
+        input_types = {"vhdl"}
+        output_types = {"ghdl-simulator"}
+        
+        async def execute(self, context, inputs):
+            # TODO: Implement proper pass execution
+            return []
+    
+    class GhdlBackend(Backend):
+        passes = [GhdlStubPass]
+    
+    return GhdlBackend
