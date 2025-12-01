@@ -45,8 +45,10 @@ class BuildPlanExecutor:
 
         # Set topcell from output group onto project (for backward compatibility with context.get_topcell())
         # Store original topcell to restore later
-        original_topcell = self.context.project.topcell
-        self.context.project.topcell = plan.output_group.topcell
+        original_topcell = None
+        if self.context.project:
+            original_topcell = self.context.project.topcell
+            self.context.project.topcell = plan.output_group.topcell
 
         # Create BuildFileSet from source fileset
         fileset = BuildFileSet(self.context)
@@ -125,7 +127,8 @@ class BuildPlanExecutor:
         logger.info(f"Build plan execution complete ({iteration} iterations)")
 
         # Restore original topcell
-        self.context.project.topcell = original_topcell
+        if self.context.project:
+            self.context.project.topcell = original_topcell
 
         return fileset
 
