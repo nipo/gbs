@@ -24,10 +24,11 @@ class ReMatchGroup(click.Group):
 
             if len(matches) == 1:
                 return click.Group.get_command(self, ctx, matches[0])
-        else:
-            sys.stderr.write("Warning: short commands are not accepted from scripts")
 
-        ctx.fail(f"{cmd_name} is ambiguous, matches {', '.join(sorted(matches))}")
+            ctx.fail(f"{cmd_name} is ambiguous, matches {', '.join(sorted(matches))}")
+        else:
+            sys.stderr.write("Warning: short commands are not accepted from scripts\n")
+            return None
 
     async def resolve_command(self, ctx, args):
         # always return the full command name
