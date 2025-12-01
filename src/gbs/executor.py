@@ -1,9 +1,7 @@
 """Build Plan Executor
 
-Executes BuildPlans created by the planner.
-
-NOTE: This is a minimal implementation (Phase 5). Full backend conversion
-and iteration logic are TODO items.
+Executes BuildPlans created by the planner by running passes in order
+with iteration until stabilization.
 """
 
 from __future__ import annotations
@@ -20,12 +18,9 @@ logger = get_logger(__name__)
 class BuildPlanExecutor:
     """Executes a BuildPlan
 
-    This is a minimal executor that demonstrates the execution architecture.
-    Full implementation requires:
-    - Complete Pass.execute() implementations in backends
-    - Iteration until stabilization
-    - Resource transformation tracking
-    - Proper BuildFileSet population
+    Executes passes in order, with iteration until the fileset stabilizes
+    (no more modifications). Each pass transforms BuildResource inputs to
+    BuildResource outputs, which are added to the fileset for subsequent passes.
     """
 
     def __init__(self, context: BuildContext):
@@ -44,13 +39,6 @@ class BuildPlanExecutor:
 
         Returns:
             BuildFileSet with results
-
-        Note:
-            This is a stub implementation. Real execution requires:
-            1. Converting SourceFileSet to BuildFileSet
-            2. Executing each pass in order
-            3. Transforming resources through the pass chain
-            4. Iterating until stabilization
         """
         logger.info(f"Executing build plan: {plan.output_group.name}")
         logger.info(f"Plan has {len(plan.passes)} passes")
@@ -63,19 +51,90 @@ class BuildPlanExecutor:
 
         logger.info(f"Source fileset populated: {len(fileset)} files")
 
-        # Execute each pass
-        # TODO: This is where the real pass execution would happen
-        # For now, we just log what would be executed
-        for pass_class in plan.passes:
-            logger.info(f"Would execute pass: {pass_class.name}")
+        # Execute passes with iteration until stabilization
+        max_iterations = 10
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+            logger.info(f"Starting iteration {iteration}")
+
+            # Track modification serial before iteration
+            initial_serial = fileset.modification_serial
+
+            # Execute each pass in the plan
+            for pass_class in plan.passes:
+                logger.info(f"Executing pass: {pass_class.name}")
+                logger.debug(
+                    f"  Input types: {pass_class.input_types}, "
+                    f"Output types: {pass_class.output_types}"
+                )
+
+                # Determine backend module from pass class
+                backend_module = self._get_backend_module(pass_class)
+
+                # Get backend config for this pass
+                backend_config = plan.backend_configs.get(backend_module, {})
+
+                # Instantiate pass
+                pass_instance = pass_class()
+
+                # Filter inputs from fileset matching pass input_types
+                inputs = []
+                for input_type in pass_class.input_types:
+                    matching = list(fileset.filter(file_type=input_type))
+                    inputs.extend(matching)
+                    logger.debug(f"  Found {len(matching)} inputs of type {input_type}")
+
+                if not inputs:
+                    logger.debug(f"  No inputs found for pass {pass_class.name}, skipping")
+                    continue
+
+                # Execute pass
+                try:
+                    outputs = await pass_instance.execute(self.context, inputs)
+                    logger.debug(f"  Pass produced {len(outputs)} outputs")
+
+                    # Add outputs to fileset
+                    for output in outputs:
+                        fileset.add(output)
+                        logger.debug(f"    Added output: {output.path} ({output.file_type})")
+
+                except Exception as e:
+                    logger.error(f"Pass {pass_class.name} failed: {e}")
+                    raise
+
+            # Check if fileset was modified
+            if fileset.modification_serial == initial_serial:
+                logger.info(f"Fileset unchanged in iteration {iteration}, stopping")
+                break
+
             logger.debug(
-                f"  Input types: {pass_class.input_types}, "
-                f"  Output types: {pass_class.output_types}"
+                f"Fileset modified (serial {initial_serial} -> {fileset.modification_serial}), "
+                f"continuing iteration"
             )
 
-        logger.info(f"Build plan execution complete (stub)")
+        if iteration >= max_iterations:
+            logger.warning(f"Reached maximum iterations ({max_iterations})")
+
+        logger.info(f"Build plan execution complete ({iteration} iterations)")
 
         return fileset
+
+    @staticmethod
+    def _get_backend_module(pass_class: type) -> str:
+        """Determine backend module path from pass class
+
+        Args:
+            pass_class: Pass class
+
+        Returns:
+            Backend module path (e.g., "gbs.backend.ghdl")
+        """
+        module_path = pass_class.__module__
+        # Pass classes are defined in get_backend(), which is in the backend module
+        # Module path will be like "gbs.backend.ghdl"
+        return module_path
 
 
 async def execute_project(
