@@ -12,6 +12,11 @@ tools:
     config:
       executable: ghdl
 
+  - name: ghdl
+    variant: jit
+    config:
+      executable: /Users/nipo/local/bin/ghdl
+
   # GCC from PATH
   - name: gcc
     variant: system
@@ -37,7 +42,22 @@ profiles:
         config:
           output_dir: build
           vhdl_std: 93c
-          ghdl_tool: ghdl  # Use default GHDL
+          ghdl_tool: ghdl:system
+
+    # Note: Repository is defined at tree level (below) instead of in profile
+    # This allows examples to add project-specific repositories
+    repositories: []
+
+  simulation-jit:
+    # No filter_vars needed - GHDL backend automatically sets target=simulation
+    filter_vars: {}
+
+    backends:
+      - backend: gbs.backend:GHDLBackend
+        config:
+          output_dir: build
+          vhdl_std: 93c
+          ghdl_tool: ghdl:jit
 
     # Note: Repository is defined at tree level (below) instead of in profile
     # This allows examples to add project-specific repositories

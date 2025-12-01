@@ -1,9 +1,4 @@
 name: axi4_stream_fifo
-topcell: top
-
-# Use the simulation profile defined in ../../.gbs.yaml
-# This provides: filter_vars, backends, and repository configuration
-profile: simulation
 
 root:
   name: top
@@ -22,4 +17,16 @@ root:
     - language: vhdl
       files:
         - top.vhd
+
+output:
+  - name: simulation
+    topcell: top
+    filter_vars: {}
+    backend_config:
+      gbs.backend.ghdl:
+        vhdl_standard: "93c"
+        ghdl_tool: "ghdl:system"
+    outputs:
+      - type: ghdl-simulator
+        path: build/top
 

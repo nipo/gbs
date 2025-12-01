@@ -22,7 +22,6 @@ architecture gw of clock_internal is
   -- Aim for ~60MHz
 
 begin
-
   has_osca: if osc_mode_c = "osca"
   generate
     component OSCA is

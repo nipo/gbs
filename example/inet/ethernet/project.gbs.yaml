@@ -1,9 +1,4 @@
 name: inet_ethernet
-topcell: tb
-
-# Use the simulation profile defined in ../../.gbs.yaml
-# This provides: filter_vars, backends, and repository configuration
-profile: simulation
 
 root:
   name: main
@@ -23,4 +18,16 @@ root:
         - root.pkg.vhd
         - tb.vhd
         - dut.vhd
+
+output:
+  - name: simulation
+    topcell: tb
+    filter_vars: {}
+    backend_config:
+      gbs.backend.ghdl:
+        vhdl_standard: "93c"
+        ghdl_tool: "ghdl:system"
+    outputs:
+      - type: ghdl-simulator
+        path: build/tb
 
