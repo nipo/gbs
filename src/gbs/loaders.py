@@ -597,8 +597,7 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
 
     Merges repositories from multiple sources:
     1. Config-level repositories (from GBSConfig)
-    2. Profile repositories (if profile was used)
-    3. Project-level repositories (from project file)
+    2. Project-level repositories (from project file)
 
     Args:
         project_data: Parsed project YAML data
@@ -621,16 +620,7 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
             if repo:
                 repositories.append(repo)
 
-    # 2. Load profile repositories (if profile was expanded)
-    if "_profile_repositories" in project_data:
-        profile_repos = project_data["_profile_repositories"]
-        logger.debug(f"Loading {len(profile_repos)} profile repositories")
-        for repo_spec in profile_repos:
-            repo = _load_single_repository(repo_spec, project_base_path)
-            if repo:
-                repositories.append(repo)
-
-    # 3. Load project-level repositories
+    # 2. Load project-level repositories
     if "repositories" in project_data:
         logger.debug(f"Loading project-level repositories")
         for repo_spec in project_data["repositories"]:
@@ -638,7 +628,7 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
             if repo:
                 repositories.append(repo)
 
-    logger.info(f"Loaded {len(repositories)} repositories total (config + profile + project)")
+    logger.info(f"Loaded {len(repositories)} repositories total (config + project)")
     return repositories
 
 
@@ -646,11 +636,11 @@ def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Project
     """Load a project and its specified repositories
 
     Convenience function that loads a project and any repositories specified
-    in the project file, config, and profiles.
+    in the project file and config.
 
     Args:
         path: Path to project YAML file
-        gbs_config: Optional GBSConfig for profile expansion and repository merging
+        gbs_config: Optional GBSConfig for repository merging
 
     Returns:
         Tuple of (Project, list of Repository)
@@ -658,11 +648,10 @@ def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Project
     Raises:
         LoadError: If project or repositories cannot be loaded
     """
-    # Load project (handles profile expansion if present)
+    # Load project
     project = load_project(path, gbs_config=gbs_config)
 
-    # Use the project's raw_config (which includes profile expansion)
-    # instead of reloading the YAML file
+    # Use the project's raw_config instead of reloading the YAML file
     repositories = load_repositories_from_project(project.raw_config, path.parent, gbs_config=gbs_config)
 
     return project, repositories

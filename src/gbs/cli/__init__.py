@@ -127,7 +127,7 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     ctx.obj["allow_progress_bars"] = not verbose and not debug
 
     logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
-    logger.debug(f"Loaded {len(gbs_config.tools)} tools, {len(gbs_config.profiles)} profiles")
+    logger.debug(f"Loaded {len(gbs_config.tools)} tools")
 
 
 # Import and register command groups

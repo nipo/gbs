@@ -41,20 +41,6 @@ class ToolConfig:
             return f"{self.name}:{self.variant}"
         return self.name
 
-
-@dataclass
-class Profile:
-    """Named configuration profile
-
-    Profiles allow quick setup of common build configurations by
-    defining sets of filter_vars, backends, and repositories.
-    """
-    name: str
-    filter_vars: dict[str, Any] = field(default_factory=dict)
-    backends: list[dict] = field(default_factory=list)
-    repositories: list[dict] = field(default_factory=list)
-
-
 @dataclass
 class GBSConfig:
     """Global GBS configuration from user and tree config files
@@ -66,11 +52,9 @@ class GBSConfig:
 
     Merge rules:
     - Tools: Extend list, but (name, variant) tuples override
-    - Profiles: Override by name
     - Repositories: Extend list unconditionally
     """
     tools: list[ToolConfig] = field(default_factory=list)
-    profiles: dict[str, Profile] = field(default_factory=dict)
     repositories: list[dict] = field(default_factory=list)
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
@@ -124,7 +108,6 @@ class GBSConfig:
         final = cls._merge_configs(merged, tree_config)
 
         logger.debug(f"Loaded config: {len(final.tools)} tools, "
-                    f"{len(final.profiles)} profiles, "
                     f"{len(final.repositories)} repositories")
 
         return final
@@ -178,22 +161,11 @@ class GBSConfig:
                 config=tool_data.get('config', {})
             ))
 
-        # Parse profiles
-        profiles = {}
-        for profile_name, profile_data in data.get('profiles', {}).items():
-            profiles[profile_name] = Profile(
-                name=profile_name,
-                filter_vars=profile_data.get('filter_vars', {}),
-                backends=profile_data.get('backends', []),
-                repositories=profile_data.get('repositories', [])
-            )
-
         # Parse repositories
         repositories = data.get('repositories', [])
 
         return cls(
             tools=tools,
-            profiles=profiles,
             repositories=repositories
         )
 
@@ -202,7 +174,6 @@ class GBSConfig:
         """Custom merge logic
 
         - Tools: Extend list, but (name, variant) tuples override
-        - Profiles: Override by name
         - Repositories: Extend list unconditionally
 
         Args:
@@ -230,14 +201,10 @@ class GBSConfig:
             else:
                 merged_tools.append(new_tool)  # Add
 
-        # Profiles: override by name
-        merged_profiles = {**base.profiles, **override.profiles}
-
         # Repositories: extend unconditionally
         merged_repos = base.repositories + override.repositories
 
         return cls(
             tools=merged_tools,
-            profiles=merged_profiles,
             repositories=merged_repos
         )
