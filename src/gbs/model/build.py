@@ -131,6 +131,10 @@ class BuildContext:
         self.logger.debug("created")
         self.__messages: list[ToolMessage] = []
 
+        # Output group context (set when building a specific output group)
+        self._topcell: Optional[str] = None
+        self._topcell_library: Optional[str] = None
+
         # Progress tracking
         self._progress_condition: Optional[asyncio.Condition] = None
         self._progress_version = 0
@@ -211,25 +215,31 @@ class BuildContext:
     def step_register(self, step: "BuildStep") -> None:
         self.steps.add(step)
 
+    def set_output_group_context(self, topcell: str, topcell_library: Optional[str] = None):
+        """Set the current output group build context
+
+        Args:
+            topcell: Top-level entity/module name for this output group
+            topcell_library: Library containing topcell (defaults to 'work')
+        """
+        self._topcell = topcell
+        self._topcell_library = topcell_library or (self.project.root_library_name if self.project else "work")
+
     def get_topcell(self) -> Optional[str]:
-        """Get the project topcell name
+        """Get the current output group topcell name
 
         Returns:
-            Topcell name or None if no project is set
+            Topcell name or None if not set
         """
-        if self.project is None:
-            return None
-        return self.project.topcell
+        return self._topcell
 
     def get_topcell_library(self) -> Optional[str]:
         """Get the library name containing the topcell
 
         Returns:
-            Root library name or None if no project is set
+            Topcell library name or None if not set
         """
-        if self.project is None:
-            return None
-        return self.project.root_library_name
+        return self._topcell_library
 
     def get_tool(self, identifier: str, required: bool = True) -> Optional[dict[str, Any]]:
         """Get tool configuration by identifier
@@ -373,52 +383,6 @@ class BuildContext:
                     br.depends_on.update(dep_resources)
 
         return fileset
-
-    def load_backends(self):
-        """Load backends from project configuration
-
-        Returns:
-            BackendRegistry with loaded backends
-
-        Raises:
-            ValueError: If no backends are configured
-        """
-        from ..backend_loader import load_backends_from_project
-
-        if not self.project or not hasattr(self.project, 'raw_config'):
-            raise ValueError("BuildContext has no project configuration")
-
-        registry = load_backends_from_project(self.project.raw_config)
-
-        if len(registry) == 0:
-            raise ValueError("No backends configured in project")
-
-        return registry
-
-    async def run_backends(self, fileset, max_iterations: int = 100):
-        """Load and run backend iteration
-
-        Args:
-            fileset: BuildFileSet to process
-            max_iterations: Maximum iterations for backend convergence
-
-        Returns:
-            Number of iterations until convergence
-        """
-        from ..backend import run_backend_iteration
-
-        # Load backends
-        registry = self.load_backends()
-
-        # Run iteration
-        iterations = await run_backend_iteration(
-            self,
-            fileset,
-            registry,
-            max_iterations=max_iterations
-        )
-
-        return iterations, registry
 
     async def execute_build(self, fileset, show_progress: bool = False):
         """Execute the build for given fileset

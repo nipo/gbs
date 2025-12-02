@@ -183,30 +183,21 @@ class Repository:
 class Project:
     """A gateware project definition
 
-    Projects define a single root partition and build configuration.
+    Projects define a single root partition and build configuration using output groups.
     The root partition is always placed in the "work" library (required by synthesis tools).
 
     Attributes:
         name: Project name
         root_partition: The project's root partition (in "work" library)
-        topcell: Top-level entity/module name (deprecated, use output_groups)
-        filter_vars: Variables used for filter evaluation (deprecated, use output_groups)
+        output_groups: List of output groups defining build targets and configurations
         description: Optional description
         raw_config: Raw configuration dictionary (for accessing backends etc)
-        output_groups: List of output groups for new pass-based build planning
-
-    Note:
-        The topcell and filter_vars fields are deprecated in favor of the new
-        output_groups field. Both are kept for backward compatibility during
-        the transition to the new pass-based architecture.
     """
     name: str
     root_partition: Partition
-    topcell: str
-    filter_vars: dict[str, str | int] = field(default_factory=dict)
+    output_groups: list['OutputGroup']
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)
-    output_groups: list['OutputGroup'] = field(default_factory=list)
 
     @property
     def root_library_name(self) -> str:
@@ -214,7 +205,7 @@ class Project:
         return "work"
 
     def __str__(self) -> str:
-        return f"Project({self.name}, topcell={self.topcell})"
+        return f"Project({self.name}, {len(self.output_groups)} output groups)"
 
 
 @dataclass

@@ -65,18 +65,16 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
         # Load project configuration
         project, repositories, gbs_config = load_project_for_command(ctx, project_file, repo)
 
-        # Check if using new output-group format
-        if project.output_groups:
-            await _build_with_output_groups(
-                project, repositories, gbs_config,
-                output_dir, max_iterations, show_graph, show_pb
-            )
-        else:
-            # Old profile-based format - use legacy build flow
-            await _build_legacy(
-                ctx, project, repositories, gbs_config,
-                output_dir, max_iterations, show_graph, show_pb
-            )
+        #Verify project has output groups
+        if not project.output_groups:
+            click.echo("Error: Project must define at least one output group", err=True)
+            click.echo("See documentation for output group configuration", err=True)
+            sys.exit(1)
+
+        await _build_with_output_groups(
+            project, repositories, gbs_config,
+            output_dir, max_iterations, show_graph, show_pb
+        )
 
     except LoadError as e:
         logger.error(f"Failed to load project or repository: {e}")
@@ -201,9 +199,12 @@ async def _build_with_output_groups(
     for plan in plans:
         click.echo(f"\nBuilding output group '{plan.output_group.name}'...")
 
-        # Set topcell for this output group on the project
+        # Set topcell and library for this output group
         # This allows dispatchers to access the topcell via context.get_topcell()
-        build_ctx.project.topcell = plan.output_group.topcell
+        build_ctx.set_output_group_context(
+            topcell=plan.output_group.topcell,
+            topcell_library=project.root_library_name
+        )
 
         # Create BuildFileSet from plan's source fileset
         fileset = BuildFileSet(build_ctx)
@@ -256,115 +257,6 @@ async def _build_with_output_groups(
 
     click.echo()
     click.echo("Build complete!")
-
-
-async def _build_legacy(
-    ctx, project, repositories, gbs_config,
-    output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
-):
-    """Legacy build using profile-based configuration"""
-    from ..tasks import BuildContext, BuildFileSet
-
-    logger = get_logger()
-
-    # Resolve dependencies
-    click.echo("Resolving dependencies...")
-    build_set = resolve_project(project, repositories)
-    click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
-
-    # Create build context
-    build_ctx = BuildContext(project=project, gbs_config=gbs_config)
-
-    # Create and populate fileset
-    click.echo("Creating build fileset...")
-    fileset = BuildFileSet(build_ctx)
-    build_ctx.populate_fileset(build_set, fileset)
-
-    # Create output directory
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Load and run backends
-    click.echo("Loading backends...")
-    try:
-        registry = build_ctx.load_backends()
-        click.echo(f"Loaded {len(registry)} backend(s):")
-        for backend in registry:
-            click.echo(f"  - {backend.name} (priority={backend.priority})")
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        click.echo("Add 'backends' section to project configuration")
-        sys.exit(1)
-
-    # Run backend iteration
-    click.echo()
-    click.echo("Running backend iteration...")
-    iterations, registry = await build_ctx.run_backends(fileset, max_iterations)
-    click.echo(f"Converged after {iterations} iteration(s)")
-
-    # Show dependency graph if requested
-    if show_graph:
-        click.echo()
-        click.echo("Build dependency graph:")
-        click.echo()
-
-        # Collect all tasks
-        tasks = set()
-        for br in fileset:
-            # Check if resource has any tasks that expect it (producers)
-            if hasattr(br.resource, 'expected_by'):
-                for dep in br.resource.expected_by:
-                    if hasattr(dep, 'executor'):  # It's a task
-                        tasks.add(dep)
-
-        # Display tasks with their dependencies
-        if not tasks:
-            click.echo("  No build tasks generated")
-        else:
-            for task in sorted(tasks, key=lambda t: t.name):
-                click.echo(f"  Task: {task.name}")
-                if task.description:
-                    click.echo(f"    Description: {task.description}")
-
-                # Show inputs
-                if hasattr(task, 'inputs') and task.inputs:
-                    click.echo(f"    Inputs ({len(task.inputs)}):")
-                    for inp in task.inputs:
-                        if hasattr(inp, 'path'):
-                            click.echo(f"      - {inp.path}")
-                        else:
-                            click.echo(f"      - {inp}")
-
-                # Show outputs
-                if hasattr(task, 'outputs') and task.outputs:
-                    click.echo(f"    Outputs ({len(task.outputs)}):")
-                    for out in task.outputs:
-                        if hasattr(out, 'path'):
-                            click.echo(f"      - {out.path}")
-                        else:
-                            click.echo(f"      - {out}")
-
-                click.echo()
-
-        click.echo(f"Total tasks: {len(tasks)}")
-        return  # Exit without building
-
-    # Execute build
-    click.echo()
-    click.echo("Executing build tasks...")
-    num_files = await build_ctx.execute_build(
-        fileset,
-        show_progress=(sys.stdout.isatty() and show_pb)
-    )
-
-    click.echo()
-    click.echo(f"Build complete: {num_files} files processed")
-
-    # Show summary
-    click.echo()
-    click.echo("Build summary:")
-    for lib_name in fileset.libraries_in_dependency_order():
-        lib_files = fileset.filter(library=lib_name)
-        click.echo(f"  Library {lib_name}: {len(lib_files)} files")
 
 
 @project.command()
@@ -521,12 +413,6 @@ async def show(ctx):
         if project.description:
             click.echo(f"Description: {project.description}")
         click.echo()
-
-        if project.filter_vars:
-            click.echo("Filter variables:")
-            for var, value in sorted(project.filter_vars.items()):
-                click.echo(f"  {var} = {value}")
-            click.echo()
 
         click.echo("Root partition:")
         click.echo(f"  Library: {project.root_library_name}")

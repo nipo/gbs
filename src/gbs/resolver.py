@@ -87,16 +87,18 @@ class DependencyResolver:
         self,
         project: Project,
         repositories: list[Repository],
+        filter_vars: dict[str, str | int] | None = None,
     ):
         """Initialize the resolver
 
         Args:
             project: Project to build
             repositories: List of available repositories
+            filter_vars: Filter variables for conditional source selection (defaults to empty dict)
         """
         self.project = project
         self.repositories = repositories
-        self.filter_context = project.filter_vars
+        self.filter_context = filter_vars if filter_vars is not None else {}
 
         # Build library index: library_name -> Library
         self.libraries: dict[str, Library] = {}
