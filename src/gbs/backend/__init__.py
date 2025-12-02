@@ -40,19 +40,14 @@ __all__ = [
 
 
 def register(plugin_registry):
-    """Register built-in backends as plugins
+    """Register built-in backend default tool configurations
 
-    This allows built-in backends to be treated the same as external plugins.
-    Also contributes default tool configurations.
+    Contributes default tool configurations for built-in backends.
 
     Args:
         plugin_registry: PluginRegistry instance
     """
     from ..config import ToolConfig
-
-    # Register dispatchers (using new names internally)
-    plugin_registry.register_backend("GHDLBackend", GHDLDispatcher)
-    plugin_registry.register_backend("GowinBackend", GowinDispatcher)
 
     # Contribute default tools
     default_tools = [

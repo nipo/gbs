@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from collections import defaultdict, deque
 
-from .models import (
+from .model.repository import (
     Partition,
     Library,
     Repository,

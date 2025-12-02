@@ -341,8 +341,6 @@ class BuildContext:
         Returns:
             The populated fileset
         """
-        from ..tasks import BuildResource
-
         # First pass: create all BuildResources
         partition_to_resources: dict[tuple[str, str], list] = {}
 

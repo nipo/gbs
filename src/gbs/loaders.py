@@ -9,7 +9,7 @@ import importlib
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .models import (
+from .model.repository import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,

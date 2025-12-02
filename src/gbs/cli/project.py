@@ -55,7 +55,7 @@ async def project(ctx, project_file: Path | None):
 @click.pass_context
 async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project"""
-    from ..tasks import BuildContext, BuildFileSet
+    from ..model.build import BuildContext, BuildFileSet
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
@@ -91,7 +91,7 @@ async def _build_with_output_groups(
     output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
 ):
     """Build using new planner + executor flow"""
-    from ..tasks import BuildContext, BuildFileSet
+    from ..model.build import BuildContext, BuildFileSet
     from ..planner import plan_project
     from ..backend.registry import get_backend_registry
     from ..model.dispatcher import DispatcherRegistry, run_dispatcher_iteration
