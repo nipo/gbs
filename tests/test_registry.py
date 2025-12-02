@@ -267,10 +267,8 @@ def test_discover_backends_loads_builtins():
     reset_backend_registry()
     registry = get_backend_registry()
 
-    # Should have loaded the 4 built-in backends
+    # Should have loaded the 2 built-in backends (ghdl, gowin)
     backends = registry.list_backends()
-    assert len(backends) == 4
-    assert "gbs.backend.ghdl" in backends
-    assert "gbs.backend.gowin" in backends
-    assert "gbs.backend.verilog_to_vhdl" in backends
-    assert "gbs.backend.mem_init" in backends
+    assert len(backends) == 2
+    assert "gbs.builtin.ghdl" in backends
+    assert "gbs.builtin.gowin" in backends
