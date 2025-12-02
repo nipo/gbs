@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .config import ToolConfig
 
-from .logging import get_logger
+from ..logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -63,11 +63,13 @@ class PluginRegistry:
 
         # Register built-in backends first
         try:
-            from . import backend
-            if hasattr(backend, 'register'):
-                backend.register(self)
+            from .. import builtin
+            if hasattr(builtin, 'register'):
+                builtin.register(self)
                 logger.debug("Registered built-in backends")
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             logger.warning(f"Failed to register built-in backends: {e}")
 
         self._discovered = True

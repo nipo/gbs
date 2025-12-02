@@ -4,12 +4,11 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...model.backend import BaseBackend
-from ...model.passes import Pass
-from ...model.dispatcher import Dispatcher
+from ...backend.protocol import BaseBackend
+from ...backend.dispatcher import Dispatcher
+from ...planner.passes import Pass
 from .passes import GHDLSimulatePass
 from .dispatcher import GHDLDispatcher
-
 
 class GHDLBackend(BaseBackend):
     """GHDL Backend for VHDL simulation

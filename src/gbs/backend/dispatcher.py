@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Protocol, Any, runtime_checkable
 from abc import ABC, abstractmethod
 
-from .build import BuildContext, BuildFileSet
+from ..build.context import BuildContext, BuildFileSet
 from ..logging import get_logger
 
 

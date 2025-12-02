@@ -9,7 +9,7 @@ import importlib
 from typing import Optional
 from dataclasses import dataclass
 
-from ..model.backend import Backend
+from ..backend.protocol import Backend
 from ..logging import get_logger
 
 
@@ -22,7 +22,7 @@ class BackendInfo:
 
     Attributes:
         backend: The Backend instance
-        module_path: Module path (e.g., "gbs.backend.ghdl")
+        module_path: Module path (e.g., "gbs.builtin.ghdl")
     """
     backend: Backend
     module_path: str
@@ -50,8 +50,8 @@ class BackendRegistry:
 
         # Built-in backends
         builtin_modules = [
-            "gbs.backend.ghdl",
-            "gbs.backend.gowin",
+            "gbs.builtin.ghdl",
+            "gbs.builtin.gowin",
         ]
 
         for module_path in builtin_modules:
@@ -89,7 +89,7 @@ class BackendRegistry:
         """Load a backend from a module path
 
         Args:
-            module_path: Python module path (e.g., "gbs.backend.ghdl")
+            module_path: Python module path (e.g., "gbs.builtin.ghdl")
 
         Raises:
             ImportError: If module cannot be imported
@@ -123,7 +123,7 @@ class BackendRegistry:
         """Register a backend instance
 
         Args:
-            module_path: Module path (e.g., "gbs.backend.ghdl")
+            module_path: Module path (e.g., "gbs.builtin.ghdl")
             backend: The Backend instance
         """
         if module_path in self._backends:
@@ -142,7 +142,7 @@ class BackendRegistry:
         """Get backend instance by module path
 
         Args:
-            module_path: Backend module path (e.g., "gbs.backend.ghdl")
+            module_path: Backend module path (e.g., "gbs.builtin.ghdl")
 
         Returns:
             Backend instance, or None if not found
@@ -156,7 +156,7 @@ class BackendRegistry:
         """Get backend info by module path
 
         Args:
-            module_path: Backend module path (e.g., "gbs.backend.ghdl")
+            module_path: Backend module path (e.g., "gbs.builtin.ghdl")
 
         Returns:
             BackendInfo, or None if not found

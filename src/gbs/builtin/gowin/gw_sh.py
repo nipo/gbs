@@ -5,7 +5,9 @@ import re
 from typing import AsyncIterator
 from pathlib import Path
 
-from ...model.build import BuildContext, Task, MessageSeverity, ToolMessage
+from ...build.task import Task
+from ...build.context import BuildContext
+from ...build.message import MessageSeverity, ToolMessage
 
 __all__ = ["ProgressIndication", "Session", "GwShCommand", "LongRunningCommand"]
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Any
 
-from ...model.passes import Pass
+from ...planner.passes import Pass
 from .dispatcher import GHDLDispatcher
 
 

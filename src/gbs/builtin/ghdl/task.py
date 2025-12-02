@@ -1,6 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
-from ...model.build import BuildContext, Task, MessageSubprocess
+from ...build.task import Task
+from ...build.context import BuildContext
+from ...build.subprocess import MessageSubprocess
 
 class GhdlInvocation(MessageSubprocess):
     pass

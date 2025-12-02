@@ -3,8 +3,8 @@ import logging
 from typing import Any
 from pathlib import Path
 
-from ...model.dispatcher import BaseDispatcher
-from ...model.build import BuildContext, BuildFileSet, BuildResource
+from ...backend.dispatcher import BaseDispatcher
+from ...build.context import BuildContext, BuildFileSet, BuildResource
 from . import task
 from .gw_sh import Session
 

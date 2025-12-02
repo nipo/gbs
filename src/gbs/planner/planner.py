@@ -20,10 +20,10 @@ from dataclasses import dataclass, field
 from typing import Any
 from pathlib import Path
 
-from .model.passes import Pass, PassMetadata
-from .model.backend import Backend
-from .model.repository import Repository, OutputGroup, OutputFile, SourceFileSet
-from .logging import get_logger
+from .passes import Pass, PassMetadata
+from ..backend.protocol import Backend
+from ..repository.model import Repository, OutputGroup, OutputFile, SourceFileSet
+from ..logging import get_logger
 
 
 logger = get_logger(__name__)

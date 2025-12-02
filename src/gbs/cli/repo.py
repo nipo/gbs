@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from ..logging import get_logger
-from ..loaders import load_repository, LoadError
+from ..repository.loader import load_repository, LoadError
 from .group import ReMatchGroup
 
 @click.group(cls = ReMatchGroup)
@@ -185,7 +185,7 @@ async def query(path: Path, partition: str, filter: tuple[str]):
 
         # Create a minimal project to use the resolver
         from ..models import Project, Library, Partition, FilterCondition, ConditionalGroup
-        from ..resolver import DependencyResolver, PartitionRef
+        from ..repository.resolver import DependencyResolver, PartitionRef
 
         # Parse partition reference
         try:

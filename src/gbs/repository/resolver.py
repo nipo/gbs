@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from collections import defaultdict, deque
 
-from .model.repository import (
+from .model import (
     Partition,
     Library,
     Repository,
@@ -21,7 +21,7 @@ from .model.repository import (
     FilterCondition,
 )
 from .filters import evaluate_filter
-from .logging import get_logger
+from ..logging import get_logger
 
 
 logger = get_logger(__name__)

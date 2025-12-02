@@ -2,7 +2,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from ...model.build import BuildContext, Resource, Task
+from ...build.context import BuildContext
+from ...build.task import Resource, Task
 from .gw_sh import *
 from .device_info import parse_device_csv
 

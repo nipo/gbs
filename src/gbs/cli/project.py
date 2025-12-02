@@ -8,8 +8,8 @@ from pathlib import Path
 import sys
 
 from ..logging import get_logger
-from ..loaders import load_project, load_project_with_repositories, load_repository, LoadError
-from ..resolver import resolve_project
+from ..repository.loader import load_project, load_project_with_repositories, load_repository, LoadError
+from ..repository.resolver import resolve_project
 from ..cli import load_project_for_command, get_project_file
 from .group import ReMatchGroup
 
@@ -55,7 +55,7 @@ async def project(ctx, project_file: Path | None):
 @click.pass_context
 async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project"""
-    from ..model.build import BuildContext, BuildFileSet
+    from ..build import BuildContext, BuildFileSet
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
@@ -91,11 +91,11 @@ async def _build_with_output_groups(
     output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
 ):
     """Build using new planner + executor flow"""
-    from ..model.build import BuildContext, BuildFileSet
-    from ..planner import plan_project
+    from ..build import BuildContext, BuildFileSet
+    from ..planner.planner import plan_project
     from ..backend.registry import get_backend_registry
-    from ..model.dispatcher import DispatcherRegistry, run_dispatcher_iteration
-    from ..resolver import resolve_project
+    from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
+    from ..repository.resolver import resolve_project
 
     logger = get_logger()
 
@@ -116,7 +116,7 @@ async def _build_with_output_groups(
     backends = backend_registry.get_all_backends()
 
     # Create synthetic repository from project's root partition for planning
-    from ..model.repository import Repository, Library
+    from ..repository.model import Repository, Library
     from pathlib import Path
     project_repo = Repository(name=project.name, root=Path("."))
     project_library = Library(name=project.root_library_name)
@@ -427,8 +427,8 @@ async def show(ctx):
 @click.pass_context
 async def fileset(ctx, repo: tuple[Path], output_group: str | None):
     """Show resolved build file set for an output group"""
-    from ..resolver import DependencyResolver
-    from ..model.repository import Repository, Library
+    from ..repository.resolver import DependencyResolver
+    from ..repository.model import Repository, Library
 
     logger = get_logger()
     project_file = get_project_file(ctx)

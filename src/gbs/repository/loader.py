@@ -9,7 +9,7 @@ import importlib
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .model.repository import (
+from .model import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,
@@ -17,8 +17,10 @@ from .model.repository import (
     Library,
     Repository,
     Project,
+    OutputGroup,
+    OutputFile,
 )
-from .logging import get_logger
+from ..logging import get_logger
 
 
 logger = get_logger(__name__)
@@ -104,8 +106,12 @@ def get_repository_loader(name: str) -> Callable[[Path], Repository]:
         return loader
 
     except ImportError as e:
+        import traceback
+        traceback.print_exc()
         raise LoadError(f"Failed to import repository loader '{name}': {e}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise LoadError(f"Error loading repository loader '{name}': {e}")
 
 
@@ -508,7 +514,6 @@ def load_project(path: Path, gbs_config=None) -> Project:
             if "path" not in output_spec:
                 raise LoadError(f"Output in group '{og_name}' missing 'path'")
 
-            from .model.repository import OutputFile
             output_file = OutputFile(
                 type=output_spec["type"],
                 path=Path(output_spec["path"])
@@ -521,7 +526,6 @@ def load_project(path: Path, gbs_config=None) -> Project:
         og_require_backends = og_data.get("require_backends", [])
         og_exclude_backends = og_data.get("exclude_backends", [])
 
-        from .model.repository import OutputGroup
         output_group = OutputGroup(
             name=og_name,
             topcell=og_topcell,
