@@ -5,13 +5,13 @@ from pathlib import Path
 
 from gbs.backend.registry import (
     BackendRegistry,
-    PassInfo,
     BackendInfo,
     get_backend_registry,
     reset_backend_registry,
-    Backend,  # Import from registry where we have the temporary shim
 )
+from gbs.model.backend import BaseBackend, Backend
 from gbs.model.passes import Pass
+from gbs.model.dispatcher import Dispatcher
 
 
 # Mock passes for testing
@@ -32,7 +32,6 @@ class MockSynthesizePass(Pass):
         return {"syn": 1}
 
 
-
 class MockTransformPass(Pass):
     """Mock transformation pass"""
     name = "transform"
@@ -40,162 +39,135 @@ class MockTransformPass(Pass):
     output_types = {"vhdl"}
 
 
-
 # Mock backends for testing
-class MockBackendA(Backend):
+class MockBackendA(BaseBackend):
     """Mock backend A with two passes"""
-    passes = [MockSimulatePass, MockSynthesizePass]
+
+    def __init__(self):
+        super().__init__("test.backend.a")
+
+    def contribute_passes(self, config, output_types):
+        passes = []
+        if "simulator" in output_types:
+            passes.append(MockSimulatePass)
+        if "netlist" in output_types:
+            passes.append(MockSynthesizePass)
+        return passes
+
+    def create_dispatcher(self, config):
+        from gbs.model.dispatcher import BaseDispatcher
+
+        class TestDispatcher(BaseDispatcher):
+            def __init__(self):
+                super().__init__("test_dispatcher_a")
+
+            def get_filter_variables(self, context):
+                return {}
+
+            async def process(self, context, fileset):
+                pass
+
+        return TestDispatcher()
 
 
-class MockBackendB(Backend):
+class MockBackendB(BaseBackend):
     """Mock backend B with one pass"""
-    passes = [MockTransformPass]
+
+    def __init__(self):
+        super().__init__("test.backend.b")
+
+    def contribute_passes(self, config, output_types):
+        if "vhdl" in output_types:
+            return [MockTransformPass]
+        return []
+
+    def create_dispatcher(self, config):
+        from gbs.model.dispatcher import BaseDispatcher
+
+        class TestDispatcher(BaseDispatcher):
+            def __init__(self):
+                super().__init__("test_dispatcher_b")
+
+            def get_filter_variables(self, context):
+                return {}
+
+            async def process(self, context, fileset):
+                pass
+
+        return TestDispatcher()
 
 
 def test_registry_creation():
     """Test creating an empty registry"""
     registry = BackendRegistry()
     assert registry.list_backends() == []
-    assert registry.list_passes() == []
 
 
 def test_register_backend_manually():
     """Test manually registering a backend"""
     registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
+    backend = MockBackendA()
+    registry._register_backend("test.backend.a", backend)
 
     # Check backend was registered
     backends = registry.list_backends()
     assert len(backends) == 1
     assert "test.backend.a" in backends
 
-    # Check passes were registered
-    passes = registry.list_passes()
-    assert len(passes) == 2
-    assert "test.backend.a:simulate" in passes
-    assert "test.backend.a:synthesize" in passes
-
-
-def test_get_pass():
-    """Test getting a pass by full name"""
-    registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-
-    pass_class = registry.get_pass("test.backend.a:simulate")
-    assert pass_class is MockSimulatePass
-
-    pass_class = registry.get_pass("test.backend.a:nonexistent")
-    assert pass_class is None
-
-
-def test_get_pass_info():
-    """Test getting pass info"""
-    registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-
-    pass_info = registry.get_pass_info("test.backend.a:simulate")
-    assert pass_info is not None
-    assert pass_info.pass_class is MockSimulatePass
-    assert pass_info.backend_module == "test.backend.a"
-    assert pass_info.full_name == "test.backend.a:simulate"
-
 
 def test_get_backend():
     """Test getting a backend by module path"""
     registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
+    backend_a = MockBackendA()
+    registry._register_backend("test.backend.a", backend_a)
 
-    backend_class = registry.get_backend("test.backend.a")
-    assert backend_class is MockBackendA
+    backend = registry.get_backend("test.backend.a")
+    assert backend is backend_a
 
-    backend_class = registry.get_backend("test.backend.nonexistent")
-    assert backend_class is None
+    backend = registry.get_backend("test.backend.nonexistent")
+    assert backend is None
 
 
 def test_get_backend_info():
     """Test getting backend info"""
     registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
+    backend_a = MockBackendA()
+    registry._register_backend("test.backend.a", backend_a)
 
     backend_info = registry.get_backend_info("test.backend.a")
     assert backend_info is not None
-    assert backend_info.backend_class is MockBackendA
+    assert backend_info.backend is backend_a
     assert backend_info.module_path == "test.backend.a"
-    assert len(backend_info.passes) == 2
-
-
-def test_find_passes_by_output_type():
-    """Test finding passes by output type"""
-    registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-    registry._register_backend("test.backend.b", MockBackendB)
-
-    # Find passes that produce "simulator"
-    passes = registry.find_passes_by_output_type("simulator")
-    assert len(passes) == 1
-    assert passes[0].pass_class is MockSimulatePass
-
-    # Find passes that produce "vhdl"
-    passes = registry.find_passes_by_output_type("vhdl")
-    assert len(passes) == 1
-    assert passes[0].pass_class is MockTransformPass
-
-    # Find passes that produce nonexistent type
-    passes = registry.find_passes_by_output_type("nonexistent")
-    assert len(passes) == 0
-
-
-def test_find_passes_by_input_type():
-    """Test finding passes by input type"""
-    registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-    registry._register_backend("test.backend.b", MockBackendB)
-
-    # Find passes that consume "vhdl"
-    passes = registry.find_passes_by_input_type("vhdl")
-    assert len(passes) == 2
-    assert any(p.pass_class is MockSimulatePass for p in passes)
-    assert any(p.pass_class is MockSynthesizePass for p in passes)
-
-    # Find passes that consume "verilog"
-    passes = registry.find_passes_by_input_type("verilog")
-    assert len(passes) == 2
-    assert any(p.pass_class is MockSynthesizePass for p in passes)
-    assert any(p.pass_class is MockTransformPass for p in passes)
-
-    # Find passes that consume nonexistent type
-    passes = registry.find_passes_by_input_type("nonexistent")
-    assert len(passes) == 0
 
 
 def test_register_multiple_backends():
     """Test registering multiple backends"""
     registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-    registry._register_backend("test.backend.b", MockBackendB)
+    backend_a = MockBackendA()
+    backend_b = MockBackendB()
+    registry._register_backend("test.backend.a", backend_a)
+    registry._register_backend("test.backend.b", backend_b)
 
     backends = registry.list_backends()
     assert len(backends) == 2
     assert "test.backend.a" in backends
     assert "test.backend.b" in backends
 
-    passes = registry.list_passes()
-    assert len(passes) == 3
-
 
 def test_replace_existing_backend():
     """Test replacing an already registered backend"""
     registry = BackendRegistry()
-    registry._register_backend("test.backend.a", MockBackendA)
-    registry._register_backend("test.backend.a", MockBackendB)  # Replace
+    backend_a1 = MockBackendA()
+    backend_a2 = MockBackendB()
+    registry._register_backend("test.backend.a", backend_a1)
+    registry._register_backend("test.backend.a", backend_a2)  # Replace
 
     backends = registry.list_backends()
     assert len(backends) == 1
 
-    # Should have the passes from MockBackendB
-    passes = registry.list_passes()
-    assert len(passes) == 1
-    assert "test.backend.a:transform" in passes
+    # Should have the second backend
+    backend = registry.get_backend("test.backend.a")
+    assert backend is backend_a2
 
 
 def test_global_registry_singleton():
@@ -237,79 +209,68 @@ def test_load_backend_module_no_get_backend():
         registry._load_backend_module("sys")
 
 
-def test_pass_info_dataclass():
-    """Test PassInfo dataclass"""
-    pass_info = PassInfo(
-        pass_class=MockSimulatePass,
-        backend_module="test.backend",
-        full_name="test.backend:simulate"
-    )
-
-    assert pass_info.pass_class is MockSimulatePass
-    assert pass_info.backend_module == "test.backend"
-    assert pass_info.full_name == "test.backend:simulate"
-
-
 def test_backend_info_dataclass():
     """Test BackendInfo dataclass"""
-    pass_info = PassInfo(
-        pass_class=MockSimulatePass,
-        backend_module="test.backend",
-        full_name="test.backend:simulate"
-    )
-
+    backend = MockBackendA()
     backend_info = BackendInfo(
-        backend_class=MockBackendA,
-        module_path="test.backend",
-        passes=[pass_info]
+        backend=backend,
+        module_path="test.backend"
     )
 
-    assert backend_info.backend_class is MockBackendA
+    assert backend_info.backend is backend
     assert backend_info.module_path == "test.backend"
-    assert len(backend_info.passes) == 1
-    assert backend_info.passes[0] is pass_info
 
 
-def test_discover_backends_with_mocked_builtins(monkeypatch):
-    """Test discover_backends with mocked built-in modules"""
+def test_get_all_backends():
+    """Test getting all backend instances"""
     registry = BackendRegistry()
+    backend_a = MockBackendA()
+    backend_b = MockBackendB()
+    registry._register_backend("test.backend.a", backend_a)
+    registry._register_backend("test.backend.b", backend_b)
 
-    # Mock the built-in module list to avoid loading real backends
-    def mock_load(module_path):
-        if module_path == "mock.backend.a":
-            registry._register_backend(module_path, MockBackendA)
-        elif module_path == "mock.backend.b":
-            registry._register_backend(module_path, MockBackendB)
-        else:
-            raise ImportError(f"No module named '{module_path}'")
+    all_backends = registry.get_all_backends()
+    assert len(all_backends) == 2
+    assert backend_a in all_backends
+    assert backend_b in all_backends
 
-    # Patch the built-in list
-    monkeypatch.setattr(
-        "gbs.backend.registry.BackendRegistry._load_backend_module",
-        mock_load
-    )
 
-    # Override builtin_modules in discover_backends
-    original_discover = registry.discover_backends
+def test_backend_contribute_passes():
+    """Test that backends can contribute passes"""
+    backend = MockBackendA()
 
-    def patched_discover():
-        # Store original method
-        import gbs.backend.registry as reg_module
+    # Request simulator
+    passes = backend.contribute_passes({}, {"simulator"})
+    assert len(passes) == 1
+    assert passes[0] == MockSimulatePass
 
-        # Temporarily replace builtin list
-        original_builtins = None
-        try:
-            # Call with patched builtins
-            builtin_modules = ["mock.backend.a", "mock.backend.b"]
-            for module_path in builtin_modules:
-                try:
-                    mock_load(module_path)
-                except Exception:
-                    pass
-        finally:
-            pass
+    # Request netlist
+    passes = backend.contribute_passes({}, {"netlist"})
+    assert len(passes) == 1
+    assert passes[0] == MockSynthesizePass
 
-    patched_discover()
+    # Request both
+    passes = backend.contribute_passes({}, {"simulator", "netlist"})
+    assert len(passes) == 2
 
-    assert len(registry.list_backends()) == 2
-    assert len(registry.list_passes()) == 3
+
+def test_backend_create_dispatcher():
+    """Test that backends can create dispatchers"""
+    backend = MockBackendA()
+
+    dispatcher = backend.create_dispatcher({})
+    assert isinstance(dispatcher, Dispatcher)
+
+
+def test_discover_backends_loads_builtins():
+    """Test that discover_backends loads built-in backends"""
+    reset_backend_registry()
+    registry = get_backend_registry()
+
+    # Should have loaded the 4 built-in backends
+    backends = registry.list_backends()
+    assert len(backends) == 4
+    assert "gbs.backend.ghdl" in backends
+    assert "gbs.backend.gowin" in backends
+    assert "gbs.backend.verilog_to_vhdl" in backends
+    assert "gbs.backend.mem_init" in backends

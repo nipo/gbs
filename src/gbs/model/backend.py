@@ -13,12 +13,13 @@ Key concepts:
 """
 
 from __future__ import annotations
-from typing import Protocol, Any
+from typing import Protocol, Any, runtime_checkable
 from abc import ABC, abstractmethod
 
 from ..logging import get_logger
 
 
+@runtime_checkable
 class Backend(Protocol):
     """Protocol for backends that participate in build planning
 
