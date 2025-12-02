@@ -6,24 +6,17 @@ This module implements the Gowin synthesis backend that:
 3. Runs place & route to generate bitstream (via gw_sh)
 """
 
-from .backend import GowinDispatcher
-# Backward compatibility alias
-GowinBackend = GowinDispatcher
+from .dispatcher import GowinDispatcher
+from .backend import GowinBackend
 
-# Stub for new pass-based registry (Phase 2 compatibility)  
+# Backward compatibility alias
+GowinBackend_Legacy = GowinDispatcher
+
+
 def get_backend():
-    """Stub backend for registry discovery"""
-    from ...model.passes import Backend, Pass
-    
-    class GowinStubPass(Pass):
-        name = "gowin_stub"
-        input_types = {"vhdl", "verilog"}
-        output_types = {"gowin-fs", "gowin-bin"}
-        
-        async def execute(self, context, inputs):
-            return []
-    
-    class GowinBackend(Backend):
-        passes = [GowinStubPass]
-    
-    return GowinBackend
+    """Get the Gowin backend for build planning and execution
+
+    Returns:
+        GowinBackend instance implementing the Backend Protocol
+    """
+    return GowinBackend()

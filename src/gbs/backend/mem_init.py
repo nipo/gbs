@@ -7,14 +7,18 @@ This is a reference implementation demonstrating how a code generation backend w
 from __future__ import annotations
 from typing import Any
 
-from ..model.dispatcher import BaseDispatcher
+from ..model.dispatcher import BaseDispatcher, Dispatcher
+from ..model.backend import BaseBackend
+from ..model.passes import Pass
 from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 
-class MemInitDispatcher(BaseDispatcher):
-    """Example backend that generates memory initialization files
+# ========== Dispatcher (Execution) ==========
 
-    This demonstrates a code generation backend:
+class MemInitDispatcher(BaseDispatcher):
+    """Example dispatcher that generates memory initialization files
+
+    This demonstrates a code generation dispatcher:
     - Finds memory specification files
     - Generates initialization files
     - Runs only once (idempotent)
@@ -70,68 +74,81 @@ class MemInitDispatcher(BaseDispatcher):
         self._generated = True
 
 
-# Pass-based backend implementation
-def get_backend():
-    """Get the pass-based backend for registry discovery"""
-    from ..model.passes import Backend, Pass
-    from ..logging import get_logger
+# ========== Pass (Planning Metadata) ==========
 
-    logger = get_logger(__name__)
+class MemInitPass(Pass):
+    """Pass that generates memory initialization files
 
-    class MemInitPass(Pass):
-        """Pass that generates memory initialization files
+    This demonstrates a code generation pass that creates VHDL
+    initialization packages from memory specification files.
+    Pure planning metadata - execution is handled by MemInitDispatcher.
 
-        This demonstrates a code generation pass that creates VHDL
-        initialization packages from memory specification files.
+    Input types: mem_spec
+    Output types: vhdl
+    """
+    name = "mem-init-generate"
+    input_types = {"mem_spec"}
+    output_types = {"vhdl"}
+
+    def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Indicate memory initialization support is available"""
+        return {
+            "has_mem_init": True,
+        }
+
+
+# ========== Backend (Planning Interface) ==========
+
+class MemInitBackend(BaseBackend):
+    """Backend providing memory initialization file generation
+
+    This is a reference implementation demonstrating how a code generation backend works.
+    """
+
+    def __init__(self):
+        super().__init__("gbs.backend.mem_init")
+
+    def contribute_passes(
+        self,
+        config: dict[str, Any],
+        output_types: set[str]
+    ) -> list[type[Pass]]:
+        """Contribute memory initialization pass
+
+        Args:
+            config: Backend configuration (unused for this simple backend)
+            output_types: Set of desired output types
+
+        Returns:
+            List with MemInitPass if vhdl is in output types
         """
-        name = "generate"
-        input_types = {"mem_spec"}
-        output_types = {"vhdl"}
+        passes = []
 
-        def contribute_filter_vars(self, config):
-            """Indicate memory initialization support is available"""
-            return {
-                "has_mem_init": True,
-            }
+        # If VHDL is desired and we have mem_spec sources, offer generation
+        # Note: The planner will only use this pass if mem_spec sources exist
+        if "vhdl" in output_types:
+            passes.append(MemInitPass)
 
-        async def execute(self, context, inputs):
-            """Generate VHDL initialization files from memory specs
+        return passes
 
-            Args:
-                context: BuildContext for resource management
-                inputs: List of BuildResource objects with file_type="mem_spec"
+    def create_dispatcher(self, config: dict[str, Any]) -> Dispatcher:
+        """Create memory initialization dispatcher for execution
 
-            Returns:
-                List of BuildResource objects with file_type="vhdl"
-            """
-            outputs = []
+        Args:
+            config: Backend configuration (unused for this simple backend)
 
-            logger.info(f"Generating {len(inputs)} memory init files")
+        Returns:
+            MemInitDispatcher instance
+        """
+        return MemInitDispatcher()
 
-            for spec_br in inputs:
-                # Generate VHDL initialization package
-                init_path = spec_br.path.with_name(spec_br.path.stem + "_init.vhd")
 
-                init_br = BuildResource(
-                    resource=context.get_resource(init_path),
-                    file_type="vhdl",
-                    library=spec_br.library,
-                    is_source=False,
-                    generated_by="gbs.backend.mem_init:generate",
-                )
-                # Initialization file depends on the spec file
-                init_br.depends_on.add(spec_br)
+# ========== Registry Function ==========
 
-                outputs.append(init_br)
+def get_backend():
+    """Get the memory initialization backend for build planning and execution
 
-                logger.debug(
-                    f"Generated {init_path.name} from {spec_br.path.name}"
-                )
-
-            return outputs
-
-    class MemInitBackend(Backend):
-        """Backend providing memory initialization file generation"""
-        passes = [MemInitPass]
-
-    return MemInitBackend
+    Returns:
+        MemInitBackend instance implementing the Backend Protocol
+    """
+    return MemInitBackend()

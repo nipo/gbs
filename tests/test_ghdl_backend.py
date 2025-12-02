@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 
 from gbs.backend.ghdl import get_backend
-from gbs.backend.ghdl.backend_impl import GHDLBackend
+from gbs.backend.ghdl.backend import GHDLBackend
 from gbs.backend.ghdl.passes import GHDLSimulatePass
 from gbs.model.backend import Backend, BaseBackend
 from gbs.model.dispatcher import Dispatcher

@@ -8,14 +8,18 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ..model.dispatcher import BaseDispatcher
+from ..model.dispatcher import BaseDispatcher, Dispatcher
+from ..model.backend import BaseBackend
+from ..model.passes import Pass
 from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 
-class VerilogToVHDLDispatcher(BaseDispatcher):
-    """Example backend that transpiles Verilog to VHDL
+# ========== Dispatcher (Execution) ==========
 
-    This is a reference implementation demonstrating how a transpiler backend works:
+class VerilogToVHDLDispatcher(BaseDispatcher):
+    """Example dispatcher that transpiles Verilog to VHDL
+
+    This is a reference implementation demonstrating how a transpiler dispatcher works:
     - Finds Verilog files in the fileset
     - Creates VHDL equivalents (simulated - doesn't actually transpile)
     - Removes Verilog files
@@ -78,73 +82,81 @@ class VerilogToVHDLDispatcher(BaseDispatcher):
             self.logger.debug(f"Transpiled {verilog_br.path.name} -> {vhdl_path.name}")
 
 
-# Pass-based backend implementation
-def get_backend():
-    """Get the pass-based backend for registry discovery"""
-    from ..model.passes import Backend, Pass
-    from ..logging import get_logger
+# ========== Pass (Planning Metadata) ==========
 
-    logger = get_logger(__name__)
+class VerilogToVHDLPass(Pass):
+    """Pass that transpiles Verilog files to VHDL
 
-    class VerilogToVHDLPass(Pass):
-        """Pass that transpiles Verilog files to VHDL
+    This is a reference implementation demonstrating a transformation pass.
+    Pure planning metadata - execution is handled by VerilogToVHDLDispatcher.
 
-        This is a reference implementation demonstrating a transformation pass.
-        It simulates transpilation by creating VHDL files with the same structure
-        as the input Verilog files.
+    Input types: verilog
+    Output types: vhdl
+    """
+    name = "verilog-to-vhdl"
+    input_types = {"verilog"}
+    output_types = {"vhdl"}
+
+    def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Indicate VHDL is the target language"""
+        return {
+            "target_language": "vhdl",
+            "has_verilog_transpiler": True,
+        }
+
+
+# ========== Backend (Planning Interface) ==========
+
+class VerilogToVHDLBackend(BaseBackend):
+    """Backend providing Verilog to VHDL transpilation
+
+    This is a reference implementation demonstrating how a transpiler backend works.
+    """
+
+    def __init__(self):
+        super().__init__("gbs.backend.verilog_to_vhdl")
+
+    def contribute_passes(
+        self,
+        config: dict[str, Any],
+        output_types: set[str]
+    ) -> list[type[Pass]]:
+        """Contribute transpilation pass
+
+        Args:
+            config: Backend configuration (unused for this simple backend)
+            output_types: Set of desired output types
+
+        Returns:
+            List with VerilogToVHDLPass if vhdl is in output types
         """
-        name = "transpile"
-        input_types = {"verilog"}
-        output_types = {"vhdl"}
+        passes = []
 
-        def contribute_filter_vars(self, config):
-            """Indicate VHDL is the target language"""
-            return {
-                "target_language": "vhdl",
-                "has_verilog_transpiler": True,
-            }
+        # If VHDL is desired and we have verilog sources, offer transpilation
+        # Note: The planner will only use this pass if verilog sources exist
+        if "vhdl" in output_types:
+            passes.append(VerilogToVHDLPass)
 
-        async def execute(self, context, inputs):
-            """Transform Verilog BuildResources to VHDL BuildResources
+        return passes
 
-            Args:
-                context: BuildContext for resource management
-                inputs: List of BuildResource objects with file_type="verilog"
+    def create_dispatcher(self, config: dict[str, Any]) -> Dispatcher:
+        """Create transpiler dispatcher for execution
 
-            Returns:
-                List of BuildResource objects with file_type="vhdl"
-            """
-            outputs = []
+        Args:
+            config: Backend configuration (unused for this simple backend)
 
-            logger.info(f"Transpiling {len(inputs)} Verilog files to VHDL")
+        Returns:
+            VerilogToVHDLDispatcher instance
+        """
+        return VerilogToVHDLDispatcher()
 
-            for verilog_br in inputs:
-                # Generate VHDL file path
-                vhdl_path = verilog_br.path.with_suffix(".vhd")
 
-                # Create VHDL BuildResource
-                vhdl_br = BuildResource(
-                    resource=context.get_resource(vhdl_path),
-                    file_type="vhdl",
-                    library=verilog_br.library,
-                    file_type_version="2008",
-                    is_source=False,
-                    generated_by="gbs.backend.verilog_to_vhdl:transpile",
-                )
+# ========== Registry Function ==========
 
-                # Copy dependencies from original
-                vhdl_br.depends_on = verilog_br.depends_on.copy()
+def get_backend():
+    """Get the Verilog to VHDL backend for build planning and execution
 
-                outputs.append(vhdl_br)
-
-                logger.debug(
-                    f"Transpiled {verilog_br.path.name} -> {vhdl_path.name}"
-                )
-
-            return outputs
-
-    class VerilogToVHDLBackend(Backend):
-        """Backend providing Verilog to VHDL transpilation"""
-        passes = [VerilogToVHDLPass]
-
-    return VerilogToVHDLBackend
+    Returns:
+        VerilogToVHDLBackend instance implementing the Backend Protocol
+    """
+    return VerilogToVHDLBackend()
