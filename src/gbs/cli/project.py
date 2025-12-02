@@ -95,8 +95,10 @@ async def _build_with_output_groups(
     """Build using new planner + executor flow"""
     from ..tasks import BuildContext
     from ..backend.registry import BackendRegistry
-    from ..planner import plan_project
-    from ..executor import execute_project
+    # TODO: Reimplement after new planner/executor are created
+    # from ..planner import plan_project
+    # from ..executor import execute_project
+    raise NotImplementedError("This function needs to be rewritten with the new planner/executor architecture")
 
     # Create build context
     build_ctx = BuildContext(project=project, gbs_config=gbs_config)
