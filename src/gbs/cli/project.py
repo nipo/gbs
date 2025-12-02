@@ -98,11 +98,6 @@ async def _build_with_output_groups(
     from ..planner import plan_project
     from ..executor import execute_project
 
-    # Resolve dependencies
-    click.echo("Resolving dependencies...")
-    build_set = resolve_project(project, repositories)
-    click.echo(f"Resolved {len(build_set.get_all_files())} files in {len(build_set.libraries)} libraries")
-
     # Create build context
     build_ctx = BuildContext(project=project, gbs_config=gbs_config)
 
@@ -119,15 +114,66 @@ async def _build_with_output_groups(
         click.echo(f"  - {backend_module} ({len(backend_info.passes)} passes)")
 
     # Plan build for all output groups
+    # NOTE: Planning does its own source enumeration per candidate pass
     click.echo()
     click.echo(f"Planning build for {len(project.output_groups)} output group(s)...")
     plans = plan_project(project, repositories, registry)
 
     for plan in plans:
+        num_files = len(plan.source_fileset.get_all_files())
+        num_libs = len(plan.source_fileset.libraries)
         click.echo(f"  Output group '{plan.output_group.name}':")
         click.echo(f"    Topcell: {plan.output_group.topcell}")
+        click.echo(f"    Sources: {num_files} files in {num_libs} libraries")
         click.echo(f"    Passes: {len(plan.passes)}")
         click.echo(f"    Outputs: {len(plan.output_group.outputs)}")
+
+    # Show dependency graph if requested
+    if show_graph:
+        click.echo()
+        click.echo("Build dependency graph:")
+        click.echo()
+
+        for plan in plans:
+            click.echo(f"Output group: {plan.output_group.name}")
+            click.echo(f"  Topcell: {plan.output_group.topcell}")
+            click.echo()
+
+            # Show source files by library
+            click.echo(f"  Source files ({len(plan.source_fileset.get_all_files())} files):")
+            for lib_name in plan.source_fileset.libraries:
+                files = plan.source_fileset.files.get((lib_name, None), [])
+                if not files:
+                    # Try all partitions for this library
+                    for part_name in plan.source_fileset.partitions.get(lib_name, []):
+                        files.extend(plan.source_fileset.files.get((lib_name, part_name), []))
+
+                if files:
+                    click.echo(f"    Library {lib_name}:")
+                    for source_file in files:
+                        # Handle both enum and string for language
+                        lang_str = source_file.language.value if hasattr(source_file.language, 'value') else str(source_file.language)
+                        click.echo(f"      - {source_file.path.name} ({lang_str})")
+
+            click.echo()
+
+            # Show passes
+            click.echo(f"  Passes ({len(plan.passes)} passes):")
+            for pass_class in plan.passes:
+                click.echo(f"    - {pass_class.name}")
+                click.echo(f"        Input types: {', '.join(pass_class.input_types)}")
+                click.echo(f"        Output types: {', '.join(pass_class.output_types)}")
+
+            click.echo()
+
+            # Show expected outputs
+            click.echo(f"  Expected outputs ({len(plan.output_group.outputs)} files):")
+            for output_spec in plan.output_group.outputs:
+                click.echo(f"    - {output_spec.path} (type: {output_spec.type})")
+
+            click.echo()
+
+        return  # Exit without building
 
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
