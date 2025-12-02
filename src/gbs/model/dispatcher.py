@@ -12,13 +12,14 @@ Key concepts:
 """
 
 from __future__ import annotations
-from typing import Protocol, Any
+from typing import Protocol, Any, runtime_checkable
 from abc import ABC, abstractmethod
 
 from .build import BuildContext, BuildFileSet
 from ..logging import get_logger
 
 
+@runtime_checkable
 class Dispatcher(Protocol):
     """Protocol for dispatchers that transform the BuildFileSet
 

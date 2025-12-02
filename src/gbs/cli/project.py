@@ -94,11 +94,21 @@ async def _build_with_output_groups(
 ):
     """Build using new planner + executor flow"""
     from ..tasks import BuildContext
-    from ..backend.registry import BackendRegistry
-    # TODO: Reimplement after new planner/executor are created
-    # from ..planner import plan_project
-    # from ..executor import execute_project
-    raise NotImplementedError("This function needs to be rewritten with the new planner/executor architecture")
+    from ..planner import plan_project
+    from ..resolver import resolve_sources
+
+    logger = get_logger()
+
+    # For now, we only support planning (not execution)
+    # Execution requires backends to be updated to the new architecture:
+    # - Backend Protocol with contribute_passes() and create_dispatcher()
+    # - Dispatcher with async process() instead of Pass.execute()
+    # TODO: Implement execution once backends are updated
+    raise NotImplementedError(
+        "Output groups require backends to be updated to the new architecture.\n"
+        "Current backends still use the old Pass.execute() pattern.\n"
+        "Use legacy profile-based configuration until backends are migrated."
+    )
 
     # Create build context
     build_ctx = BuildContext(project=project, gbs_config=gbs_config)
