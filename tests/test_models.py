@@ -111,6 +111,68 @@ def test_repository():
     assert repo.get_library("nonexistent") is None
 
 
+def test_repository_file_types():
+    """Test Repository.file_types property"""
+    repo = Repository(name="test_repo", root=Path("/test"))
+
+    # Empty repository has no file types
+    assert repo.file_types == set()
+
+    # Create library with partitions containing different file types
+    lib = Library(name="hdl")
+
+    # Partition 1: VHDL files
+    vhdl_partition = Partition(
+        name="vhdl_part",
+        groups=[
+            ConditionalGroup(
+                name="sources",
+                conditions=[
+                    FilterCondition(
+                        expression="default",
+                        sources=[
+                            SourceFile(Path("a.vhd"), "vhdl", "2008"),
+                            SourceFile(Path("b.vhd"), "vhdl", "2008"),
+                        ]
+                    )
+                ]
+            )
+        ]
+    )
+
+    # Partition 2: Mixed VHDL and Verilog
+    mixed_partition = Partition(
+        name="mixed_part",
+        groups=[
+            ConditionalGroup(
+                name="sources",
+                conditions=[
+                    FilterCondition(
+                        expression="vendor = \"xilinx\"",
+                        sources=[
+                            SourceFile(Path("xilinx.v"), "verilog"),
+                            SourceFile(Path("top.vhd"), "vhdl"),
+                        ]
+                    ),
+                    FilterCondition(
+                        expression="default",
+                        sources=[
+                            SourceFile(Path("generic.sv"), "systemverilog"),
+                        ]
+                    )
+                ]
+            )
+        ]
+    )
+
+    lib.add_partition(vhdl_partition)
+    lib.add_partition(mixed_partition)
+    repo.add_library(lib)
+
+    # Should detect all three file types
+    assert repo.file_types == {"vhdl", "verilog", "systemverilog"}
+
+
 def test_project():
     """Test Project definition"""
     root_partition = Partition(name="test_partition", groups=[])

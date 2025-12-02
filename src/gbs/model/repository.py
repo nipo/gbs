@@ -148,6 +148,36 @@ class Repository:
         """Get a library by name"""
         return self.libraries.get(name)
 
+    @property
+    def file_types(self) -> set[str]:
+        """Get set of all file types provided by this repository
+
+        This is used by the build planner to determine what file types
+        are available as sources. Computed by scanning all source files
+        in all partitions across all libraries.
+
+        Returns:
+            Set of file type strings (e.g., {"vhdl", "verilog", "systemverilog"})
+        """
+        types = set()
+        for library in self.libraries.values():
+            for partition in library.partitions.values():
+                # Scan all conditional groups and their conditions
+                for group in partition.groups:
+                    for condition in group.conditions:
+                        # Add file types from sources in this condition
+                        for source in condition.sources:
+                            types.add(source.file_type)
+                        # Recursively scan nested groups
+                        def scan_nested_groups(groups):
+                            for g in groups:
+                                for c in g.conditions:
+                                    for s in c.sources:
+                                        types.add(s.file_type)
+                                    scan_nested_groups(c.groups)
+                        scan_nested_groups(condition.groups)
+        return types
+
 
 @dataclass
 class Project:
