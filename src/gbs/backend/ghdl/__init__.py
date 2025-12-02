@@ -10,9 +10,6 @@ from ...model.build import BuildContext, BuildFileSet, BuildResource
 from .dispatcher import GHDLDispatcher
 from . import backend
 
-# Backward compatibility alias
-GHDLBackend_Legacy = GHDLDispatcher
-
 
 def get_backend():
     """Get the GHDL backend for build planning and execution

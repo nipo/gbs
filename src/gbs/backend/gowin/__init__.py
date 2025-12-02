@@ -9,9 +9,6 @@ This module implements the Gowin synthesis backend that:
 from .dispatcher import GowinDispatcher
 from .backend import GowinBackend
 
-# Backward compatibility alias
-GowinBackend_Legacy = GowinDispatcher
-
 
 def get_backend():
     """Get the Gowin backend for build planning and execution
