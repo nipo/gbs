@@ -2,11 +2,11 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...model.backend import BaseBackend
+from ...model.dispatcher import BaseDispatcher
 from ...model.build import BuildContext, BuildFileSet, BuildResource
 from . import task
 
-class GHDLBackend(BaseBackend):
+class GHDLDispatcher(BaseDispatcher):
     """GHDL backend that compiles VHDL designs
 
     Supports both mcode and compiled (GCC/LLVM) GHDL backends.

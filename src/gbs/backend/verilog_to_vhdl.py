@@ -8,11 +8,11 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ..model.backend import BaseBackend
+from ...model.dispatcher import BaseDispatcher
 from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 
-class VerilogToVHDLBackend(BaseBackend):
+class VerilogToVHDLDispatcher(BaseDispatcher):
     """Example backend that transpiles Verilog to VHDL
 
     This is a reference implementation demonstrating how a transpiler backend works:

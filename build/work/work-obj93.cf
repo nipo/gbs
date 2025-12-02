@@ -1,0 +1,4 @@
+v 4
+file / "/private/var/folders/6y/gkytnlyd663cnld_1r0dz2fw0000gn/T/tmpyhzq_mc6/test.vhd" "af2b60c6a2e7b6af7acc23433dbcf734afc24ff4" "20251201233109.477":
+  entity test_entity at 2( 1) + 0 on 11;
+  architecture rtl of test_entity at 5( 48) + 0 on 12;

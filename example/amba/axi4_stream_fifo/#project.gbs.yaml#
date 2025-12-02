@@ -1,0 +1,32 @@
+name: axi4_stream_fifo#
+
+root:
+  name: top
+  deps:
+    - nsl_data.bytestream
+    - nsl_data.endian
+    - nsl_data.crc
+    - nsl_data.prbs
+    - nsl_data.text
+    - nsl_simulation.assertions
+    - nsl_simulation.driver
+    - nsl_simulation.logging
+    - nsl_amba.axi4_stream
+    - nsl_amba.stream_fifo
+  sources:
+    - language: vhdl
+      files:
+        - top.vhd
+
+output:
+  - name: simulation
+    topcell: top
+    filter_vars: {}
+    backend_config:
+      gbs.backend.ghdl:
+        vhdl_standard: "93c"
+        ghdl_tool: "ghdl:system"
+    outputs:
+      - type: ghdl-simulator
+        path: build/top
+

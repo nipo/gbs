@@ -1,14 +1,14 @@
-"""Backend System for GBS
+"""Dispatcher System for GBS
 
-This module implements the unified backend system where all backends
+This module implements the unified dispatcher system where all dispatchers
 (preprocessing, transpilation, and main compilation) are equal participants
 in an iterative transformation process.
 
 Key concepts:
-- Backend: Transforms BuildFileSet iteratively
-- BackendRegistry: Manages backends and their priorities
-- Iteration loop: Runs backends until fileset converges
-- Filter variables: Backends provide variables for partition evaluation
+- Dispatcher: Transforms BuildFileSet iteratively
+- DispatcherRegistry: Manages dispatchers and their priorities
+- Iteration loop: Runs dispatchers until fileset converges
+- Filter variables: Dispatchers provide variables for partition evaluation
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from .build import BuildContext, BuildFileSet
 from ..logging import get_logger
 
 
-class Backend(Protocol):
-    """Protocol for backends that transform the BuildFileSet
+class Dispatcher(Protocol):
+    """Protocol for dispatchers that transform the BuildFileSet
 
-    All backends must implement:
+    All dispatchers must implement:
     - name: Unique identifier
     - priority: Execution order (lower = earlier, default range 100-999)
     - get_filter_variables(): Provide variables for partition filtering
@@ -56,7 +56,7 @@ class Backend(Protocol):
     ) -> None:
         """Process the fileset, transforming it in place
 
-        Backends can:
+        Dispatchers can:
         - Add new generated files (e.g., transpiled outputs)
         - Remove processed files (e.g., inputs that were transformed)
         - Replace files (e.g., optimized versions)
@@ -77,18 +77,18 @@ class Backend(Protocol):
         ...
 
 
-class BaseBackend(ABC):
-    """Base class for backends
+class BaseDispatcher(ABC):
+    """Base class for dispatchers
 
-    Provides common functionality and enforces the Backend protocol.
+    Provides common functionality and enforces the Dispatcher protocol.
     Subclasses must implement get_filter_variables() and process().
     """
 
     def __init__(self, name: str, priority: int = 500):
-        """Initialize backend
+        """Initialize dispatcher
 
         Args:
-            name: Unique backend name
+            name: Unique dispatcher name
             priority: Execution priority (lower = earlier)
                      Suggested ranges:
                      100-299: Preprocessing (transpilers, code generators)
@@ -98,7 +98,7 @@ class BaseBackend(ABC):
         """
         self.name = name
         self.priority = priority
-        self.logger = get_logger(f"Backend({name})")
+        self.logger = get_logger(f"Dispatcher({name})")
 
     @abstractmethod
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
@@ -124,46 +124,46 @@ class BaseBackend(ABC):
         return f"{self.__class__.__name__}(name={self.name}, priority={self.priority})"
 
 
-class BackendRegistry:
-    """Registry for managing backends
+class DispatcherRegistry:
+    """Registry for managing dispatchers
 
-    Maintains the list of registered backends and provides methods for:
-    - Registering backends
-    - Getting backends in priority order
-    - Collecting filter variables from all backends
+    Maintains the list of registered dispatchers and provides methods for:
+    - Registering dispatchers
+    - Getting dispatchers in priority order
+    - Collecting filter variables from all dispatchers
     """
 
     def __init__(self):
         """Initialize empty registry"""
-        self._backends: list[Backend] = []
-        self.logger = get_logger("BackendRegistry")
+        self._dispatchers: list[Dispatcher] = []
+        self.logger = get_logger("DispatcherRegistry")
 
-    def register(self, backend: Backend) -> None:
-        """Register a backend
+    def register(self, dispatcher: Dispatcher) -> None:
+        """Register a dispatcher
 
         Args:
-            backend: Backend to register
+            dispatcher: Dispatcher to register
 
         Raises:
-            ValueError: If backend with same name already registered
+            ValueError: If dispatcher with same name already registered
         """
         # Check for duplicate names
-        if any(b.name == backend.name for b in self._backends):
-            raise ValueError(f"Backend with name '{backend.name}' already registered")
+        if any(d.name == dispatcher.name for d in self._dispatchers):
+            raise ValueError(f"Dispatcher with name '{dispatcher.name}' already registered")
 
-        self._backends.append(backend)
-        self.logger.debug(f"Registered backend: {backend.name} (priority={backend.priority})")
+        self._dispatchers.append(dispatcher)
+        self.logger.debug(f"Registered dispatcher: {dispatcher.name} (priority={dispatcher.priority})")
 
-    def get_backends_ordered(self) -> list[Backend]:
-        """Get backends in priority order (lowest priority first)
+    def get_dispatchers_ordered(self) -> list[Dispatcher]:
+        """Get dispatchers in priority order (lowest priority first)
 
         Returns:
-            List of backends sorted by priority
+            List of dispatchers sorted by priority
         """
-        return sorted(self._backends, key=lambda b: (b.priority, b.name))
+        return sorted(self._dispatchers, key=lambda d: (d.priority, d.name))
 
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Collect filter variables from all backends
+        """Collect filter variables from all dispatchers
 
         Args:
             context: Build context
@@ -172,43 +172,43 @@ class BackendRegistry:
             Combined dictionary of all filter variables
 
         Note:
-            If multiple backends provide the same variable, later backends
+            If multiple dispatchers provide the same variable, later dispatchers
             (higher priority) will override earlier ones.
         """
         variables = {}
-        for backend in self.get_backends_ordered():
-            backend_vars = backend.get_filter_variables(context)
-            if backend_vars:
-                variables.update(backend_vars)
+        for dispatcher in self.get_dispatchers_ordered():
+            dispatcher_vars = dispatcher.get_filter_variables(context)
+            if dispatcher_vars:
+                variables.update(dispatcher_vars)
                 self.logger.debug(
-                    f"Backend {backend.name} provided variables: {list(backend_vars.keys())}"
+                    f"Dispatcher {dispatcher.name} provided variables: {list(dispatcher_vars.keys())}"
                 )
         return variables
 
     def __len__(self) -> int:
-        """Number of registered backends"""
-        return len(self._backends)
+        """Number of registered dispatchers"""
+        return len(self._dispatchers)
 
     def __iter__(self):
-        """Iterate over backends in priority order"""
-        return iter(self.get_backends_ordered())
+        """Iterate over dispatchers in priority order"""
+        return iter(self.get_dispatchers_ordered())
 
 
-async def run_backend_iteration(
+async def run_dispatcher_iteration(
     context: BuildContext,
     fileset: BuildFileSet,
-    registry: BackendRegistry,
+    registry: DispatcherRegistry,
     max_iterations: int = 100
 ) -> int:
-    """Run backend iteration loop until convergence
+    """Run dispatcher iteration loop until convergence
 
-    Iteratively runs all backends until the fileset stops changing
+    Iteratively runs all dispatchers until the fileset stops changing
     (modification serial stabilizes).
 
     Args:
         context: Build context
         fileset: BuildFileSet to process
-        registry: Backend registry
+        registry: Dispatcher registry
         max_iterations: Maximum iterations before giving up
 
     Returns:
@@ -218,20 +218,20 @@ async def run_backend_iteration(
         RuntimeError: If max_iterations exceeded without convergence
 
     Example:
-        registry = BackendRegistry()
-        registry.register(VerilogToVHDL())
-        registry.register(GHDL())
+        registry = DispatcherRegistry()
+        registry.register(VerilogToVHDLDispatcher())
+        registry.register(GHDLDispatcher())
 
         fileset = BuildFileSet(context)
         # ... populate fileset with source files ...
 
-        iterations = await run_backend_iteration(context, fileset, registry)
+        iterations = await run_dispatcher_iteration(context, fileset, registry)
         print(f"Converged after {iterations} iterations")
     """
-    logger = get_logger("BackendIteration")
+    logger = get_logger("DispatcherIteration")
     iteration = 0
 
-    logger.info(f"Starting backend iteration with {len(registry)} backends")
+    logger.info(f"Starting dispatcher iteration with {len(registry)} dispatchers")
 
     while iteration < max_iterations:
         iteration += 1
@@ -239,10 +239,10 @@ async def run_backend_iteration(
 
         logger.debug(f"Iteration {iteration}: serial={serial_before}, files={len(fileset)}")
 
-        # Run all backends in priority order
-        for backend in registry:
-            logger.debug(f"Running backend: {backend.name}")
-            await backend.process(context, fileset)
+        # Run all dispatchers in priority order
+        for dispatcher in registry:
+            logger.debug(f"Running dispatcher: {dispatcher.name}")
+            await dispatcher.process(context, fileset)
 
         serial_after = fileset.modification_serial
 
@@ -262,6 +262,6 @@ async def run_backend_iteration(
 
     # Failed to converge
     raise RuntimeError(
-        f"Backend iteration did not converge after {max_iterations} iterations. "
-        f"This may indicate a backend is continuously modifying the fileset."
+        f"Dispatcher iteration did not converge after {max_iterations} iterations. "
+        f"This may indicate a dispatcher is continuously modifying the fileset."
     )

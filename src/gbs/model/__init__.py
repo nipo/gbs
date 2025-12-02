@@ -34,12 +34,12 @@ from .repository import (
     # Note: BuildFileSet is also defined in repository but we prefer the one from build
 )
 
-# Re-export everything from backend
-from .backend import (
-    Backend,
-    BaseBackend,
-    BackendRegistry,
-    run_backend_iteration,
+# Re-export everything from dispatcher
+from .dispatcher import (
+    Dispatcher,
+    BaseDispatcher,
+    DispatcherRegistry,
+    run_dispatcher_iteration,
 )
 
 __all__ = [
@@ -64,9 +64,9 @@ __all__ = [
     "Library",
     "Repository",
     "Project",
-    # backend module
-    "Backend",
-    "BaseBackend",
-    "BackendRegistry",
-    "run_backend_iteration",
+    # dispatcher module
+    "Dispatcher",
+    "BaseDispatcher",
+    "DispatcherRegistry",
+    "run_dispatcher_iteration",
 ]

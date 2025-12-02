@@ -3,12 +3,12 @@ import logging
 from typing import Any
 from pathlib import Path
 
-from ...model.backend import BaseBackend
+from ...model.dispatcher import BaseDispatcher
 from ...model.build import BuildContext, BuildFileSet, BuildResource
 from . import task
 from .gw_sh import Session
 
-class GowinBackend(BaseBackend):
+class GowinDispatcher(BaseDispatcher):
     """Gowin FPGA synthesis backend
 
     Workflow:

@@ -1,0 +1,19 @@
+name: nsl_cdc_demo
+description: NSL CDC constraint generation demo
+topcell: nsl_cdc_test
+
+# Use Gowin backend for synthesis
+profile: gowin
+
+target:
+  part: GW5AT-LV60PG484AC1/I0
+
+root:
+  name: top
+  sources:
+    - language: vhdl
+      files:
+        - nsl_cdc_test.vhd
+    - language: gowin-cst
+      files:
+        - pins.cst
