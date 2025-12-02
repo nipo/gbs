@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...model.passes import Pass
-from .backend import GHDLDispatcher
+from .dispatcher import GHDLDispatcher
 
 
 class GHDLSimulatePass(Pass):

@@ -7,8 +7,8 @@ Supports both mcode and compiled (GCC/LLVM) GHDL backends.
 from __future__ import annotations
 from pathlib import Path
 from ...model.build import BuildContext, BuildFileSet, BuildResource
-from .backend import GHDLDispatcher
-from .backend_impl import GHDLBackend
+from .dispatcher import GHDLDispatcher
+from . import backend
 
 # Backward compatibility alias
 GHDLBackend_Legacy = GHDLDispatcher
@@ -20,4 +20,4 @@ def get_backend():
     Returns:
         GHDLBackend instance implementing the Backend Protocol
     """
-    return GHDLBackend()
+    return backend.GHDLBackend()
