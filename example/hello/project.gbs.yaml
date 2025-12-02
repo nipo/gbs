@@ -6,7 +6,7 @@ root:
     - nsl_data.text
     - nsl_simulation.assertions
   sources:
-    - language: vhdl
+    - file_type: vhdl
       files:
         - top.vhd
 

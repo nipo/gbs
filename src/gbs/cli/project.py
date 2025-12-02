@@ -93,45 +93,49 @@ async def _build_with_output_groups(
     output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
 ):
     """Build using new planner + executor flow"""
-    from ..tasks import BuildContext
+    from ..tasks import BuildContext, BuildFileSet
     from ..planner import plan_project
-    from ..resolver import resolve_sources
+    from ..backend.registry import get_backend_registry
+    from ..model.dispatcher import DispatcherRegistry, run_dispatcher_iteration
+    from ..resolver import resolve_project
 
     logger = get_logger()
-
-    # For now, we only support planning (not execution)
-    # Execution requires backends to be updated to the new architecture:
-    # - Backend Protocol with contribute_passes() and create_dispatcher()
-    # - Dispatcher with async process() instead of Pass.execute()
-    # TODO: Implement execution once backends are updated
-    raise NotImplementedError(
-        "Output groups require backends to be updated to the new architecture.\n"
-        "Current backends still use the old Pass.execute() pattern.\n"
-        "Use legacy profile-based configuration until backends are migrated."
-    )
 
     # Create build context
     build_ctx = BuildContext(project=project, gbs_config=gbs_config)
 
-    # Create and discover backends
+    # Discover backends
     click.echo("Discovering backends...")
-    registry = BackendRegistry()
-    registry.discover_backends()
-
-    backend_names = list(registry._backends.keys())
-    pass_count = len(registry._passes)
-    click.echo(f"Discovered {len(backend_names)} backend(s) with {pass_count} passes:")
+    backend_registry = get_backend_registry()
+    backend_names = backend_registry.list_backends()
+    click.echo(f"Discovered {len(backend_names)} backend(s):")
     for backend_module in backend_names:
-        backend_info = registry._backends[backend_module]
-        click.echo(f"  - {backend_module} ({len(backend_info.passes)} passes)")
+        click.echo(f"  - {backend_module}")
 
     # Plan build for all output groups
-    # NOTE: Planning does its own source enumeration per candidate pass
     click.echo()
     click.echo(f"Planning build for {len(project.output_groups)} output group(s)...")
-    plans = plan_project(project, repositories, registry)
+    backends = backend_registry.get_all_backends()
 
+    # Create synthetic repository from project's root partition for planning
+    from ..model.repository import Repository, Library
+    from pathlib import Path
+    project_repo = Repository(name=project.name, root=Path("."))
+    project_library = Library(name=project.root_library_name)
+    project_library.add_partition(project.root_partition)
+    project_repo.add_library(project_library)
+
+    # Include project repo in repositories for planning
+    all_repositories = [project_repo] + repositories
+
+    plans = plan_project(project, all_repositories, backends)
+
+    # Resolve sources for each plan
     for plan in plans:
+        # Resolve dependencies for this output group's topcell
+        build_set = resolve_project(project, all_repositories)
+        plan.source_fileset = build_set
+
         num_files = len(plan.source_fileset.get_all_files())
         num_libs = len(plan.source_fileset.libraries)
         click.echo(f"  Output group '{plan.output_group.name}':")
@@ -190,26 +194,56 @@ async def _build_with_output_groups(
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Execute build plans
+    # Execute each build plan
     click.echo()
     click.echo("Executing build plans...")
-    results = await execute_project(build_ctx, plans)
 
-    # Show results
+    for plan in plans:
+        click.echo(f"\nBuilding output group '{plan.output_group.name}'...")
+
+        # Create BuildFileSet from plan's source fileset
+        fileset = BuildFileSet(build_ctx)
+        build_ctx.populate_fileset(plan.source_fileset, fileset)
+
+        # Determine which backends contributed to this plan
+        # We need to create dispatchers for these backends
+        backend_modules_used = set()
+        for pass_metadata in plan.passes:
+            # Each pass knows which backend it came from
+            # For now, we need to match passes to backends
+            # The planner should track this, but we can infer it from pass names
+            for backend_module in backend_names:
+                backend = backend_registry.get_backend(backend_module)
+                # Check if this backend provides this pass
+                contributed_passes = backend.contribute_passes(
+                    plan.output_group.backend_config.get(backend_module, {}),
+                    {output.type for output in plan.output_group.outputs}
+                )
+                if pass_metadata.pass_class in contributed_passes:
+                    backend_modules_used.add(backend_module)
+                    break
+
+        # Create dispatcher registry for this plan
+        dispatcher_registry = DispatcherRegistry()
+        for backend_module in backend_modules_used:
+            backend = backend_registry.get_backend(backend_module)
+            backend_config = plan.output_group.backend_config.get(backend_module, {})
+            backend_config['output_dir'] = str(output_dir)
+            dispatcher = backend.create_dispatcher(backend_config)
+            dispatcher_registry.register(dispatcher)
+            click.echo(f"  Registered dispatcher: {dispatcher.name}")
+
+        # Run dispatcher iteration
+        iterations = await run_dispatcher_iteration(
+            build_ctx,
+            fileset,
+            dispatcher_registry,
+            max_iterations=max_iterations
+        )
+        click.echo(f"  Converged after {iterations} iteration(s)")
+
     click.echo()
     click.echo("Build complete!")
-    for og_name, fileset in results.items():
-        files_processed = len([br for br in fileset if hasattr(br.resource, 'path')])
-        click.echo(f"  Output group '{og_name}': {files_processed} files processed")
-
-    # Show summary
-    click.echo()
-    click.echo("Build summary:")
-    for og_name, fileset in results.items():
-        click.echo(f"  Output group: {og_name}")
-        for lib_name in fileset.libraries_in_dependency_order():
-            lib_files = fileset.filter(library=lib_name)
-            click.echo(f"    Library {lib_name}: {len(lib_files)} files")
 
 
 async def _build_legacy(
