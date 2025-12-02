@@ -10,7 +10,7 @@ import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .model.build import BuildContext, BuildStep
+    from ..model.build import BuildContext, BuildStep
 
 from tqdm import tqdm
 
@@ -29,7 +29,7 @@ async def monitor_build_progress(context: BuildContext):
         return
 
     # Get all tasks (not Resources)
-    from .model.build import Task
+    from ..model.build import Task
     all_tasks = [step for step in context.steps if isinstance(step, Task)]
 
     if not all_tasks:

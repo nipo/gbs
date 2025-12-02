@@ -401,7 +401,7 @@ class BuildContext:
                 if show_progress:
                     # Use progress monitoring if available
                     try:
-                        from ..progress import run_with_progress
+                        from ..ui.progress import run_with_progress
                         await run_with_progress(self, all_resources)
                     except ImportError:
                         # Fall back if progress module not available
