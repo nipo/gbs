@@ -201,6 +201,10 @@ async def _build_with_output_groups(
     for plan in plans:
         click.echo(f"\nBuilding output group '{plan.output_group.name}'...")
 
+        # Set topcell for this output group on the project
+        # This allows dispatchers to access the topcell via context.get_topcell()
+        build_ctx.project.topcell = plan.output_group.topcell
+
         # Create BuildFileSet from plan's source fileset
         fileset = BuildFileSet(build_ctx)
         build_ctx.populate_fileset(plan.source_fileset, fileset)
@@ -241,6 +245,14 @@ async def _build_with_output_groups(
             max_iterations=max_iterations
         )
         click.echo(f"  Converged after {iterations} iteration(s)")
+
+        # Execute build tasks
+        click.echo(f"  Executing build tasks...")
+        num_files = await build_ctx.execute_build(
+            fileset,
+            show_progress=(sys.stdout.isatty() and show_pb)
+        )
+        click.echo(f"  Processed {num_files} files")
 
     click.echo()
     click.echo("Build complete!")
