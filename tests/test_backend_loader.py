@@ -20,11 +20,11 @@ class TestBackendLoader:
         """Test loading a valid backend class"""
         loader = BackendLoader()
 
-        # Load GHDLBackend from gbs.backend module
-        backend_class = loader.load_backend_class("gbs.backend:GHDLBackend")
+        # Load GHDLDispatcher from gbs.backend module
+        backend_class = loader.load_backend_class("gbs.backend:GHDLDispatcher")
 
         assert backend_class is not None
-        assert backend_class.__name__ == "GHDLBackend"
+        assert backend_class.__name__ == "GHDLDispatcher"
 
     def test_load_backend_class_invalid_spec(self):
         """Test loading with invalid spec format"""

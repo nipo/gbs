@@ -38,7 +38,7 @@ class TestPartitionLoader:
         assert root_cond.expression == "default"
         assert root_cond.is_default()
         assert len(root_cond.sources) == 2
-        assert root_cond.sources[0].language == "vhdl"
+        assert root_cond.sources[0].file_type == "vhdl"
         assert root_cond.sources[0].path.name == "file1.vhd"
 
     def test_load_conditional_partition(self):
@@ -192,8 +192,8 @@ class TestProjectLoader:
 
         # Check sources
         assert len(root_cond.sources) == 2
-        vhdl_sources = [s for s in root_cond.sources if s.language == "vhdl"]
-        other_sources = [s for s in root_cond.sources if s.language == "other"]
+        vhdl_sources = [s for s in root_cond.sources if s.file_type == "vhdl"]
+        other_sources = [s for s in root_cond.sources if s.file_type == "other"]
         assert len(vhdl_sources) == 1
         assert len(other_sources) == 1
 
@@ -223,7 +223,7 @@ class TestSourceLoading:
         partition = load_partition(partition_file)
         root_cond = partition.groups[0].conditions[0]
         source = root_cond.sources[0]
-        assert source.language == "vhdl"
+        assert source.file_type == "vhdl"
         assert source.variant == "2008"
 
     def test_load_sources_different_languages(self, tmp_path):
@@ -246,9 +246,9 @@ class TestSourceLoading:
         root_cond = partition.groups[0].conditions[0]
         sources = root_cond.sources
         assert len(sources) == 3
-        assert sources[0].language == "vhdl"
-        assert sources[1].language == "verilog"
-        assert sources[2].language == "systemverilog"
+        assert sources[0].file_type == "vhdl"
+        assert sources[1].file_type == "verilog"
+        assert sources[2].file_type == "systemverilog"
 
     def test_load_sources_any_language_accepted(self, tmp_path):
         """Test that any language string is accepted (free-form)"""
@@ -264,7 +264,7 @@ class TestSourceLoading:
         partition = load_partition(partition_file)
         root_cond = partition.groups[0].conditions[0]
         assert len(root_cond.sources) == 1
-        assert root_cond.sources[0].language == "custom_hdl"
+        assert root_cond.sources[0].file_type == "custom_hdl"
 
 
 class TestErrorHandling:

@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...model.dispatcher import BaseDispatcher
+from ..model.dispatcher import BaseDispatcher
 from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 
@@ -61,7 +61,7 @@ class VerilogToVHDLDispatcher(BaseDispatcher):
                 resource=context.get_resource(vhdl_path),
                 file_type="vhdl",
                 library=verilog_br.library,
-                language_version="2008",
+                file_type_version="2008",
                 is_source=False,
                 generated_by=self.name,
             )
@@ -127,7 +127,7 @@ def get_backend():
                     resource=context.get_resource(vhdl_path),
                     file_type="vhdl",
                     library=verilog_br.library,
-                    language_version="2008",
+                    file_type_version="2008",
                     is_source=False,
                     generated_by="gbs.backend.verilog_to_vhdl:transpile",
                 )

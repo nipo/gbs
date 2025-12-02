@@ -6,7 +6,9 @@ This module implements the Gowin synthesis backend that:
 3. Runs place & route to generate bitstream (via gw_sh)
 """
 
-from .backend import GowinBackend
+from .backend import GowinDispatcher
+# Backward compatibility alias
+GowinBackend = GowinDispatcher
 
 # Stub for new pass-based registry (Phase 2 compatibility)  
 def get_backend():

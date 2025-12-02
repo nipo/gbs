@@ -7,7 +7,7 @@ This is a reference implementation demonstrating how a code generation backend w
 from __future__ import annotations
 from typing import Any
 
-from ...model.dispatcher import BaseDispatcher
+from ..model.dispatcher import BaseDispatcher
 from ..model.build import BuildContext, BuildFileSet, BuildResource
 
 

@@ -21,7 +21,7 @@ def test_source_file():
     """Test SourceFile creation and string representation"""
     sf = SourceFile(Path("test.vhd"), "vhdl")
     assert sf.path == Path("test.vhd")
-    assert sf.language == "vhdl"
+    assert sf.file_type == "vhdl"
     assert sf.variant is None
     assert "test.vhd" in str(sf)
     assert "vhdl" in str(sf)

@@ -148,20 +148,19 @@ def load_sources(sources_data: list[dict[str, Any]], base_path: Path) -> list[So
     result = []
 
     for source_spec in sources_data:
-        if "language" not in source_spec:
-            raise LoadError("Source specification missing 'language' field")
+        # Support both "file_type" (new) and "language" (backward compatibility)
+        file_type = source_spec.get("file_type") or source_spec.get("language")
+        if not file_type:
+            raise LoadError("Source specification missing 'file_type' (or 'language') field")
         if "files" not in source_spec:
             raise LoadError("Source specification missing 'files' field")
-
-        # Language is just a string identifier (e.g., "vhdl", "verilog", "gowin-cst")
-        language = source_spec["language"]
 
         variant = source_spec.get("variant")
 
         for file_path in source_spec["files"]:
             result.append(SourceFile(
                 path=base_path / file_path,
-                language=language,
+                file_type=file_type,
                 variant=variant
             ))
 

@@ -301,7 +301,7 @@ class BuildPlanner:
         """
         types = set()
         for source_file in source_fileset.get_all_files():
-            types.add(source_file.language)
+            types.add(source_file.file_type)
         return types
 
     def _find_path_to_output(

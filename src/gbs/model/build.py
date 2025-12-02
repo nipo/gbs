@@ -344,12 +344,12 @@ class BuildContext:
 
                 for source_file in files:
                     # Map language to file type
-                    file_type = source_file.language
+                    file_type = source_file.file_type
                     if source_file.variant:
                         file_type = f"{file_type}_{source_file.variant}"
 
                     res = self.get_resource(source_file.path)
-                    res.metadata["file_type"] = source_file.language
+                    res.metadata["file_type"] = source_file.file_type
                     res.metadata["library"] = lib_name
                     # Create BuildResource
                     br = BuildResource(
@@ -1000,7 +1000,7 @@ class BuildResource:
         resource: The underlying Resource (asyncio Future for the file)
         file_type: Type of file (e.g., 'vhdl', 'verilog', 'systemverilog', 'c', 'vhd_elab')
         library: Library name for HDL files (None for non-HDL)
-        language_version: Language version (e.g., '2008' for VHDL, '2005' for Verilog)
+        file_type_version: File type version (e.g., '2008' for VHDL, '2005' for Verilog)
         is_source: True if source file, False if generated
         depends_on: Set of BuildResources this file depends on (for dep tracking)
         generated_by: Backend name that generated this file (None for source files)
@@ -1009,7 +1009,7 @@ class BuildResource:
     resource: Resource
     file_type: str
     library: str | None = None
-    language_version: str | None = None
+    file_type_version: str | None = None
     is_source: bool = True
     depends_on: set['BuildResource'] = None
     generated_by: str | None = None

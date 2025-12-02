@@ -150,7 +150,7 @@ class TestBackendRegistry:
         registry.register(backend1)
         registry.register(backend2)
 
-        ordered = registry.get_backends_ordered()
+        ordered = registry.get_dispatchers_ordered()
 
         assert len(ordered) == 3
         assert ordered[0].name == "backend1"
@@ -177,7 +177,7 @@ class TestBackendRegistry:
         registry.register(backend_a)
         registry.register(backend_b)
 
-        ordered = registry.get_backends_ordered()
+        ordered = registry.get_dispatchers_ordered()
 
         assert ordered[0].name == "a"
         assert ordered[1].name == "b"
@@ -727,7 +727,7 @@ class TestExampleBackends:
         registry.register(VerilogToVHDLBackend())  # 200
 
         # Get ordered list
-        ordered = registry.get_backends_ordered()
+        ordered = registry.get_dispatchers_ordered()
 
         assert len(ordered) == 3
         assert ordered[0].name == "mem_init"

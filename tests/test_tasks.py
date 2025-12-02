@@ -422,14 +422,14 @@ class TestBuildResource:
             resource=resource,
             file_type="vhdl",
             library="work",
-            language_version="2008",
+            file_type_version="2008",
             is_source=True
         )
 
         assert br.resource is resource
         assert br.file_type == "vhdl"
         assert br.library == "work"
-        assert br.language_version == "2008"
+        assert br.file_type_version == "2008"
         assert br.is_source is True
         assert len(br.depends_on) == 0
         assert br.generated_by is None

@@ -152,7 +152,7 @@ async def _build_with_output_groups(
                     click.echo(f"    Library {lib_name}:")
                     for source_file in files:
                         # Handle both enum and string for language
-                        lang_str = source_file.language.value if hasattr(source_file.language, 'value') else str(source_file.language)
+                        lang_str = source_file.file_type.value if hasattr(source_file.file_type, 'value') else str(source_file.file_type)
                         click.echo(f"      - {source_file.path.name} ({lang_str})")
 
             click.echo()
@@ -520,7 +520,7 @@ async def fileset(ctx, repo: tuple[Path]):
 
                 for source_file in files:
                     variant_str = f"-{source_file.variant}" if source_file.variant else ""
-                    click.echo(f"    - {source_file.path.name} ({source_file.language.value}{variant_str})")
+                    click.echo(f"    - {source_file.path.name} ({source_file.file_type.value}{variant_str})")
 
             click.echo()
 

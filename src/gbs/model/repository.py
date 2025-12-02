@@ -14,17 +14,17 @@ class SourceFile:
 
     Attributes:
         path: Path to the source file (relative to partition root)
-        language: File type/language string (e.g., "vhdl", "verilog", "gowin-cst", etc.)
-        variant: Optional language variant (e.g., "2008" for VHDL-2008)
+        file_type: File type string (e.g., "vhdl", "verilog", "gowin-cst", etc.)
+        variant: Optional type variant (e.g., "2008" for VHDL-2008)
     """
     path: Path
-    language: str
+    file_type: str
     variant: Optional[str] = None
 
     def __str__(self) -> str:
         if self.variant:
-            return f"{self.path} ({self.language}-{self.variant})"
-        return f"{self.path} ({self.language})"
+            return f"{self.path} ({self.file_type}-{self.variant})"
+        return f"{self.path} ({self.file_type})"
 
 
 @dataclass

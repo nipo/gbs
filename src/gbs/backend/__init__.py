@@ -6,19 +6,25 @@ Also re-exports base classes for convenience.
 Built-in backends are registered as plugins via the register() function.
 """
 
-# Re-export base classes from gbs.model.backend
-from ..model.backend import (
-    Backend,
-    BaseBackend,
-    BackendRegistry,
-    run_backend_iteration,
+# Re-export base classes from gbs.model.dispatcher
+from ..model.dispatcher import (
+    Dispatcher as Backend,
+    BaseDispatcher as BaseBackend,
+    DispatcherRegistry as BackendRegistry,
+    run_dispatcher_iteration as run_backend_iteration,
 )
 
-# Re-export all concrete backends
-from .ghdl import GHDLBackend
-from .verilog_to_vhdl import VerilogToVHDLBackend
-from .mem_init import MemInitBackend
-from .gowin import GowinBackend
+# Re-export all concrete dispatchers (with backward compatible names)
+from .ghdl import GHDLDispatcher
+from .verilog_to_vhdl import VerilogToVHDLDispatcher
+from .mem_init import MemInitDispatcher
+from .gowin import GowinDispatcher
+
+# Backward compatibility aliases
+GHDLBackend = GHDLDispatcher
+VerilogToVHDLBackend = VerilogToVHDLDispatcher
+MemInitBackend = MemInitDispatcher
+GowinBackend = GowinDispatcher
 
 __all__ = [
     # Base classes
@@ -26,7 +32,12 @@ __all__ = [
     "BaseBackend",
     "BackendRegistry",
     "run_backend_iteration",
-    # Concrete backends
+    # Concrete dispatchers (new names)
+    "GHDLDispatcher",
+    "VerilogToVHDLDispatcher",
+    "MemInitDispatcher",
+    "GowinDispatcher",
+    # Backward compatible names
     "GHDLBackend",
     "VerilogToVHDLBackend",
     "MemInitBackend",
@@ -47,11 +58,11 @@ def register(plugin_registry):
     """
     from ..config import ToolConfig
 
-    # Register backends
-    plugin_registry.register_backend("GHDLBackend", GHDLBackend)
-    plugin_registry.register_backend("VerilogToVHDLBackend", VerilogToVHDLBackend)
-    plugin_registry.register_backend("MemInitBackend", MemInitBackend)
-    plugin_registry.register_backend("GowinBackend", GowinBackend)
+    # Register dispatchers (using new names internally)
+    plugin_registry.register_backend("GHDLBackend", GHDLDispatcher)
+    plugin_registry.register_backend("VerilogToVHDLBackend", VerilogToVHDLDispatcher)
+    plugin_registry.register_backend("MemInitBackend", MemInitDispatcher)
+    plugin_registry.register_backend("GowinBackend", GowinDispatcher)
 
     # Contribute default tools
     default_tools = [
