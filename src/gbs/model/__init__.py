@@ -42,6 +42,12 @@ from .dispatcher import (
     run_dispatcher_iteration,
 )
 
+# Re-export everything from backend
+from .backend import (
+    Backend,
+    BaseBackend,
+)
+
 __all__ = [
     # build module
     "BuildError",
@@ -69,4 +75,7 @@ __all__ = [
     "BaseDispatcher",
     "DispatcherRegistry",
     "run_dispatcher_iteration",
+    # backend module (planning interface)
+    "Backend",
+    "BaseBackend",
 ]
