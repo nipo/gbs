@@ -164,7 +164,7 @@ class GowinDispatcher(BaseDispatcher):
             return
 
         # Get output base name
-        output_base_name = self.output_base_name or context.project.topcell
+        output_base_name = self.output_base_name or context.get_topcell()
 
         # Check if we have HDL sources
         has_hdl = bool(fileset.filter(file_type="vhdl") or fileset.filter(file_type="verilog"))

@@ -37,7 +37,7 @@ class ProjectInit(GwShCommand):
             # Compute values from context
             target = self.context.project.raw_config.get("target", {})
             device = target.get("part")
-            topcell = self.context.project.topcell
+            topcell = self.context.get_topcell()
 
             # Get Gowin tool config and parse device CSV
             gowin_config = self.context.get_tool(self.gowin_tool)

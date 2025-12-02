@@ -12,15 +12,19 @@ class GowinSynthesizePass(Pass):
 
     This pass uses Gowin EDA tools (via gw_sh) to:
     - Synthesize VHDL/Verilog to netlist
-    - Aggregate constraints from multiple sources
+    - Aggregate constraints from multiple sources (optional)
     - Run place & route
     - Generate bitstream
 
-    Input types: vhdl, verilog
+    Input types: vhdl (verilog and gowin-cst are optional, handled by dispatcher)
     Output types: gowin-fs (bitstream), gowin-netlist
+
+    Note: This pass lists only vhdl as input type for planning purposes.
+    The dispatcher can also handle verilog sources and gowin-cst constraints,
+    but they are optional and don't need to be present for planning.
     """
     name = "gowin-synthesize"
-    input_types = {"vhdl", "verilog"}
+    input_types = {"vhdl"}
     output_types = {"gowin-fs", "gowin-netlist"}
 
     def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:
