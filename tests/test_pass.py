@@ -1,10 +1,9 @@
-"""Tests for Pass and Backend base classes"""
+"""Tests for Pass planning metadata"""
 
 from pathlib import Path
 import pytest
 
-from gbs.model.passes import Pass, Backend
-from gbs.model.build import BuildContext, BuildResource, Resource
+from gbs.model.passes import Pass, PassMetadata
 
 
 class MockPass(Pass):
@@ -12,10 +11,6 @@ class MockPass(Pass):
     name = "mock_pass"
     input_types = {"vhdl"}
     output_types = {"simulator"}
-
-    async def execute(self, context, inputs):
-        """Mock execute that just returns empty list"""
-        return []
 
 
 class AnotherMockPass(Pass):
@@ -26,14 +21,6 @@ class AnotherMockPass(Pass):
 
     def contribute_filter_vars(self, config):
         return {"syn": 1}
-
-    async def execute(self, context, inputs):
-        return []
-
-
-class MockBackend(Backend):
-    """Mock backend for testing"""
-    passes = [MockPass, AnotherMockPass]
 
 
 def test_pass_attributes():
@@ -58,26 +45,114 @@ def test_pass_contribute_filter_vars_custom():
     assert result == {"syn": 1}
 
 
-def test_backend_get_passes():
-    """Test Backend.get_passes()"""
-    passes = MockBackend.get_passes()
-    assert len(passes) == 2
-    assert MockPass in passes
-    assert AnotherMockPass in passes
-
-
 def test_multiple_input_output_types():
     """Test pass with multiple input/output types"""
+
     class MultiPass(Pass):
         name = "multi"
         input_types = {"vhdl", "verilog", "systemverilog"}
         output_types = {"netlist", "timing"}
-
-        async def execute(self, context, inputs):
-            return []
 
     pass_inst = MultiPass()
     assert len(pass_inst.input_types) == 3
     assert len(pass_inst.output_types) == 2
     assert "vhdl" in pass_inst.input_types
     assert "netlist" in pass_inst.output_types
+
+
+def test_pass_with_priority():
+    """Test pass with custom priority"""
+
+    class HighPriorityPass(Pass):
+        name = "high_priority"
+        input_types = {"vhdl"}
+        output_types = {"simulator"}
+        priority = 10
+
+    pass_inst = HighPriorityPass()
+    assert pass_inst.priority == 10
+
+
+def test_pass_with_fork():
+    """Test pass with can_fork flag"""
+
+    class ForkPass(Pass):
+        name = "fork_pass"
+        input_types = {"vhdl", "verilog"}
+        output_types = {"netlist"}
+        can_fork = True
+
+    pass_inst = ForkPass()
+    assert pass_inst.can_fork is True
+
+
+def test_pass_str_representation():
+    """Test Pass __str__ method"""
+    pass_inst = MockPass()
+    str_repr = str(pass_inst)
+    assert "mock_pass" in str_repr
+    assert "vhdl" in str_repr
+    assert "simulator" in str_repr
+
+
+def test_pass_repr():
+    """Test Pass __repr__ method"""
+    pass_inst = MockPass()
+    repr_str = repr(pass_inst)
+    assert "MockPass" in repr_str
+    assert "mock_pass" in repr_str
+
+
+def test_pass_metadata_creation():
+    """Test PassMetadata creation"""
+    metadata = PassMetadata(
+        pass_class=MockPass,
+        config={},
+        backend_name="test_backend"
+    )
+
+    assert metadata.pass_class == MockPass
+    assert metadata.backend_name == "test_backend"
+    assert metadata.name == "mock_pass"
+    assert metadata.input_types == {"vhdl"}
+    assert metadata.output_types == {"simulator"}
+    assert metadata.filter_vars == {}
+
+
+def test_pass_metadata_with_filter_vars():
+    """Test PassMetadata with filter variables"""
+    metadata = PassMetadata(
+        pass_class=AnotherMockPass,
+        config={},
+        backend_name="test_backend"
+    )
+
+    assert metadata.filter_vars == {"syn": 1}
+
+
+def test_pass_metadata_with_config():
+    """Test PassMetadata passes config to contribute_filter_vars"""
+
+    class ConfigurablePass(Pass):
+        name = "configurable"
+        input_types = {"vhdl"}
+        output_types = {"simulator"}
+
+        def contribute_filter_vars(self, config):
+            return {"mode": config.get("mode", "default")}
+
+    metadata = PassMetadata(
+        pass_class=ConfigurablePass,
+        config={"mode": "simulation"},
+        backend_name="test_backend"
+    )
+
+    assert metadata.filter_vars == {"mode": "simulation"}
+
+
+def test_pass_no_execute_method():
+    """Test that Pass no longer has execute() method"""
+    pass_inst = MockPass()
+
+    # Pass should NOT have execute() method
+    assert not hasattr(pass_inst, 'execute') or not callable(getattr(pass_inst, 'execute', None))

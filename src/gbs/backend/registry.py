@@ -9,8 +9,22 @@ import importlib
 from typing import Optional
 from dataclasses import dataclass
 
-from ..model.passes import Pass, Backend
+from ..model.passes import Pass
+# Note: This registry uses the old Backend class pattern.
+# It will need to be rewritten to use the new Backend interface from model.backend
+# For now, we'll create a temporary compatibility shim
 from ..logging import get_logger
+
+
+# Temporary Backend class for backward compatibility with old registry
+# This will be replaced when the new Planner is implemented
+class Backend:
+    """Temporary Backend class for old registry compatibility"""
+    passes: list[type[Pass]]
+
+    @classmethod
+    def get_passes(cls) -> list[type[Pass]]:
+        return cls.passes
 
 
 logger = get_logger(__name__)

@@ -9,8 +9,9 @@ from gbs.backend.registry import (
     BackendInfo,
     get_backend_registry,
     reset_backend_registry,
+    Backend,  # Import from registry where we have the temporary shim
 )
-from gbs.model.passes import Pass, Backend
+from gbs.model.passes import Pass
 
 
 # Mock passes for testing
@@ -19,9 +20,6 @@ class MockSimulatePass(Pass):
     name = "simulate"
     input_types = {"vhdl"}
     output_types = {"simulator"}
-
-    async def execute(self, context, inputs):
-        return []
 
 
 class MockSynthesizePass(Pass):
@@ -33,8 +31,6 @@ class MockSynthesizePass(Pass):
     def contribute_filter_vars(self, config):
         return {"syn": 1}
 
-    async def execute(self, context, inputs):
-        return []
 
 
 class MockTransformPass(Pass):
@@ -43,8 +39,6 @@ class MockTransformPass(Pass):
     input_types = {"verilog"}
     output_types = {"vhdl"}
 
-    async def execute(self, context, inputs):
-        return []
 
 
 # Mock backends for testing

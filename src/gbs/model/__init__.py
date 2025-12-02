@@ -48,6 +48,12 @@ from .backend import (
     BaseBackend,
 )
 
+# Re-export everything from passes
+from .passes import (
+    Pass,
+    PassMetadata,
+)
+
 __all__ = [
     # build module
     "BuildError",
@@ -78,4 +84,7 @@ __all__ = [
     # backend module (planning interface)
     "Backend",
     "BaseBackend",
+    # passes module (planning metadata)
+    "Pass",
+    "PassMetadata",
 ]
