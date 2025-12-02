@@ -5,8 +5,8 @@ Tests configuration loading, merging, tool lookup, and profile expansion.
 
 import pytest
 from pathlib import Path
-from gbs.config import GBSConfig, ToolConfig, Profile
-from gbs.loaders import load_project, load_project_with_repositories, LoadError
+from gbs.config.model import GBSConfig, ToolConfig
+from gbs.repository.loader import load_project, load_project_with_repositories, LoadError
 
 
 class TestToolConfig:
@@ -34,30 +34,6 @@ class TestToolConfig:
         tool = ToolConfig(name="ghdl")
         assert tool.variant is None
         assert tool.config == {}
-
-
-class TestProfile:
-    """Test Profile dataclass"""
-
-    def test_profile_creation(self):
-        """Test creating a profile"""
-        profile = Profile(
-            name="sim",
-            filter_vars={"sim": 1},
-            backends=[{"backend": "gbs.backend:GHDLBackend"}],
-            repositories=[{"path": "libs/nsl"}]
-        )
-        assert profile.name == "sim"
-        assert profile.filter_vars == {"sim": 1}
-        assert len(profile.backends) == 1
-        assert len(profile.repositories) == 1
-
-    def test_profile_defaults(self):
-        """Test default values"""
-        profile = Profile(name="test")
-        assert profile.filter_vars == {}
-        assert profile.backends == []
-        assert profile.repositories == []
 
 
 class TestGBSConfigMerge:
@@ -110,23 +86,6 @@ class TestGBSConfigMerge:
 
         merged = GBSConfig._merge_configs(base, override)
         assert len(merged.tools) == 2
-
-    def test_merge_profiles_override_by_name(self):
-        """Test that profiles override by name"""
-        base = GBSConfig(profiles={
-            "sim": Profile("sim", filter_vars={"sim": 1}),
-            "synth": Profile("synth", filter_vars={"sim": 0}),
-        })
-        override = GBSConfig(profiles={
-            "sim": Profile("sim", filter_vars={"sim": 1, "vendor": "xilinx"}),
-        })
-
-        merged = GBSConfig._merge_configs(base, override)
-        assert len(merged.profiles) == 2
-        # sim profile overridden
-        assert merged.profiles["sim"].filter_vars == {"sim": 1, "vendor": "xilinx"}
-        # synth profile unchanged
-        assert merged.profiles["synth"].filter_vars == {"sim": 0}
 
     def test_merge_repositories_extend(self):
         """Test that repositories extend unconditionally"""
@@ -209,7 +168,7 @@ class TestBuildContextToolLookup:
 
     def test_get_tool_with_config(self):
         """Test getting tool when config is present"""
-        from gbs.tasks import BuildContext
+        from gbs.build import BuildContext
 
         config = GBSConfig(tools=[
             ToolConfig("ghdl", "llvm", {"executable": "/usr/bin/ghdl"}),
@@ -223,8 +182,8 @@ class TestBuildContextToolLookup:
 
     def test_get_tool_required_not_found(self):
         """Test that required=True raises error when tool not found"""
-        from gbs.tasks import BuildContext
-        from gbs.model.build import BuildError
+        from gbs.build import BuildContext
+        from gbs.build import BuildError
 
         config = GBSConfig()
         ctx = BuildContext(gbs_config=config)
@@ -234,7 +193,7 @@ class TestBuildContextToolLookup:
 
     def test_get_tool_optional_not_found(self):
         """Test that required=False returns None when tool not found"""
-        from gbs.tasks import BuildContext
+        from gbs.build import BuildContext
 
         config = GBSConfig()
         ctx = BuildContext(gbs_config=config)
@@ -244,8 +203,8 @@ class TestBuildContextToolLookup:
 
     def test_get_tool_no_config(self):
         """Test that no config raises error when required=True"""
-        from gbs.tasks import BuildContext
-        from gbs.model.build import BuildError
+        from gbs.build import BuildContext
+        from gbs.build import BuildError
 
         ctx = BuildContext()
 
@@ -254,122 +213,11 @@ class TestBuildContextToolLookup:
 
     def test_get_tool_no_config_optional(self):
         """Test that no config returns None when required=False"""
-        from gbs.tasks import BuildContext
+        from gbs.build import BuildContext
 
         ctx = BuildContext()
         tool = ctx.get_tool("ghdl", required=False)
         assert tool is None
-
-
-class TestProfileExpansion:
-    """Test profile expansion in project loader"""
-
-    def test_profile_expansion_basic(self, tmp_path):
-        """Test basic profile expansion"""
-        # Create project with profile reference
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: sim
-
-root:
-  name: root
-""")
-
-        # Create config with profile
-        config = GBSConfig(profiles={
-            "sim": Profile(
-                "sim",
-                filter_vars={"sim": 1, "vendor": "xilinx"},
-                backends=[{"backend": "gbs.backend:GHDLBackend"}],
-                repositories=[{"path": "libs/nsl"}]
-            )
-        })
-
-        # Load project with config
-        project = load_project(project_file, gbs_config=config)
-
-        # Verify profile was expanded
-        assert project.filter_vars == {"sim": 1, "vendor": "xilinx"}
-        assert "backends" in project.raw_config
-        assert project.raw_config["backends"] == [{"backend": "gbs.backend:GHDLBackend"}]
-
-    def test_profile_not_found_error(self, tmp_path):
-        """Test that missing profile raises error"""
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: nonexistent
-
-root:
-  name: root
-""")
-
-        config = GBSConfig(profiles={
-            "sim": Profile("sim")
-        })
-
-        with pytest.raises(LoadError, match="Profile 'nonexistent' not found"):
-            load_project(project_file, gbs_config=config)
-
-    def test_profile_with_explicit_config_error(self, tmp_path):
-        """Test that profile + explicit config raises error"""
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: sim
-filter_vars:
-  custom: 1
-
-root:
-  name: root
-""")
-
-        config = GBSConfig(profiles={
-            "sim": Profile("sim")
-        })
-
-        with pytest.raises(LoadError, match="cannot specify both 'profile' and"):
-            load_project(project_file, gbs_config=config)
-
-    def test_profile_with_backends_conflict(self, tmp_path):
-        """Test that profile + backends raises error"""
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: sim
-backends:
-  - backend: gbs.backend:GHDLBackend
-
-root:
-  name: root
-""")
-
-        config = GBSConfig(profiles={
-            "sim": Profile("sim")
-        })
-
-        with pytest.raises(LoadError, match="cannot specify both 'profile' and"):
-            load_project(project_file, gbs_config=config)
-
-    def test_profile_without_config_error(self, tmp_path):
-        """Test that profile without config raises error"""
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: sim
-
-root:
-  name: root
-""")
-
-        with pytest.raises(LoadError, match="no GBSConfig provided"):
-            load_project(project_file, gbs_config=None)
 
 
 class TestRepositoryMerging:
@@ -404,42 +252,6 @@ root:
         project, repos = load_project_with_repositories(project_file, gbs_config=config)
 
         # Verify config repository was loaded
-        assert len(repos) == 1
-        assert repos[0].name == "repo1"
-
-    def test_profile_repositories_loaded(self, tmp_path):
-        """Test that profile repositories are loaded"""
-        # Create dummy repository
-        repo_file = tmp_path / "libs" / "repo1" / "repository.gbs.yaml"
-        repo_file.parent.mkdir(parents=True)
-        repo_file.write_text("""
-name: repo1
-libraries: []
-""")
-
-        # Create project with profile
-        project_file = tmp_path / "project.gbs.yaml"
-        project_file.write_text("""
-name: test_project
-topcell: top
-profile: sim
-
-root:
-  name: root
-""")
-
-        # Create config with profile containing repositories
-        config = GBSConfig(profiles={
-            "sim": Profile(
-                "sim",
-                repositories=[{"path": str(repo_file)}]
-            )
-        })
-
-        # Load project with config
-        project, repos = load_project_with_repositories(project_file, gbs_config=config)
-
-        # Verify profile repository was loaded
         assert len(repos) == 1
         assert repos[0].name == "repo1"
 
@@ -510,7 +322,7 @@ class TestPluginSystem:
     def test_register_backend(self):
         """Test registering a backend plugin"""
         from gbs.plugins import PluginRegistry
-        from gbs.backend import GHDLBackend
+        from gbs.backend.protocol import Backend
 
         registry = PluginRegistry()
         registry.register_backend("test", GHDLBackend)

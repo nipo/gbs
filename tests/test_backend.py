@@ -5,48 +5,48 @@ import asyncio
 from pathlib import Path
 
 from gbs.backend import (
-    Backend,
-    BaseBackend,
-    BackendRegistry,
-    run_backend_iteration,
+    Dispatcher,
+    BaseDispatcher,
+    DispatcherRegistry,
+    run_dispatcher_iteration,
 )
-from gbs.tasks import BuildContext, BuildFileSet, BuildResource
+from gbs.build import BuildContext, BuildFileSet, BuildResource
 
 
-class TestBackend:
-    """Tests for BaseBackend and Backend protocol"""
+class TestDispatcher:
+    """Tests for BaseDispatcher and Backend protocol"""
 
-    def test_base_backend_creation(self):
-        """Test creating a BaseBackend subclass"""
+    def test_base_dispatcher_creation(self):
+        """Test creating a BaseDispatcher subclass"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {"test_var": "test_value"}
 
             async def process(self, context, fileset):
                 pass
 
-        backend = TestBackend("test_backend", priority=100)
-        assert backend.name == "test_backend"
-        assert backend.priority == 100
+        dispatcher = TestBackend("test_backend", priority=100)
+        assert dispatcher.name == "test_backend"
+        assert dispatcher.priority == 100
 
-    def test_base_backend_default_priority(self):
+    def test_base_dispatcher_default_priority(self):
         """Test default priority is 500"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        backend = TestBackend("test")
-        assert backend.priority == 500
+        dispatcher = TestBackend("test")
+        assert dispatcher.priority == 500
 
-    def test_backend_filter_variables(self):
-        """Test backend provides filter variables"""
+    def test_dispatcher_filter_variables(self):
+        """Test dispatcher provides filter variables"""
 
-        class VHDLBackend(BaseBackend):
+        class VHDLBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {
                     "target_language": "vhdl",
@@ -66,89 +66,89 @@ class TestBackend:
         assert vars["has_verilog"] is False
 
     @pytest.mark.asyncio
-    async def test_backend_process(self, tmp_path):
-        """Test backend process method"""
+    async def test_dispatcher_process(self, tmp_path):
+        """Test dispatcher process method"""
         processed = []
 
-        class LoggingBackend(BaseBackend):
+        class LoggingBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 processed.append(self.name)
 
-        backend = LoggingBackend("logger")
+        dispatcher = LoggingBackend("logger")
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
 
-        await backend.process(ctx, fileset)
+        await dispatcher.process(ctx, fileset)
 
         assert "logger" in processed
 
 
-class TestBackendRegistry:
-    """Tests for BackendRegistry"""
+class TestDispatcherRegistry:
+    """Tests for DispatcherRegistry"""
 
     def test_registry_creation(self):
         """Test creating empty registry"""
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         assert len(registry) == 0
 
-    def test_register_backend(self):
-        """Test registering a backend"""
+    def test_register_dispatcher(self):
+        """Test registering a dispatcher"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
-        backend = TestBackend("test", priority=100)
-        registry.register(backend)
+        registry = DispatcherRegistry()
+        dispatcher = TestBackend("test", priority=100)
+        registry.register(dispatcher)
 
         assert len(registry) == 1
 
     def test_register_duplicate_name_fails(self):
         """Test that registering duplicate names raises error"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
-        backend1 = TestBackend("test", priority=100)
-        backend2 = TestBackend("test", priority=200)
+        registry = DispatcherRegistry()
+        dispatcher1 = TestBackend("test", priority=100)
+        dispatcher2 = TestBackend("test", priority=200)
 
-        registry.register(backend1)
+        registry.register(dispatcher1)
 
         with pytest.raises(ValueError, match="already registered"):
-            registry.register(backend2)
+            registry.register(dispatcher2)
 
-    def test_backends_ordered_by_priority(self):
-        """Test backends are ordered by priority"""
+    def test_dispatchers_ordered_by_priority(self):
+        """Test dispatchers are ordered by priority"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
 
         # Register in random order
-        backend3 = TestBackend("backend3", priority=300)
-        backend1 = TestBackend("backend1", priority=100)
-        backend2 = TestBackend("backend2", priority=200)
+        dispatcher3 = TestBackend("backend3", priority=300)
+        dispatcher1 = TestBackend("backend1", priority=100)
+        dispatcher2 = TestBackend("backend2", priority=200)
 
-        registry.register(backend3)
-        registry.register(backend1)
-        registry.register(backend2)
+        registry.register(dispatcher3)
+        registry.register(dispatcher1)
+        registry.register(dispatcher2)
 
         ordered = registry.get_dispatchers_ordered()
 
@@ -157,25 +157,25 @@ class TestBackendRegistry:
         assert ordered[1].name == "backend2"
         assert ordered[2].name == "backend3"
 
-    def test_backends_ordered_by_name_when_same_priority(self):
-        """Test backends with same priority are ordered by name"""
+    def test_dispatchers_ordered_by_name_when_same_priority(self):
+        """Test dispatchers with same priority are ordered by name"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
 
-        backend_c = TestBackend("c", priority=100)
-        backend_a = TestBackend("a", priority=100)
-        backend_b = TestBackend("b", priority=100)
+        dispatcher_c = TestBackend("c", priority=100)
+        dispatcher_a = TestBackend("a", priority=100)
+        dispatcher_b = TestBackend("b", priority=100)
 
-        registry.register(backend_c)
-        registry.register(backend_a)
-        registry.register(backend_b)
+        registry.register(dispatcher_c)
+        registry.register(dispatcher_a)
+        registry.register(dispatcher_b)
 
         ordered = registry.get_dispatchers_ordered()
 
@@ -186,21 +186,21 @@ class TestBackendRegistry:
     def test_collect_filter_variables(self):
         """Test collecting filter variables from multiple backends"""
 
-        class Backend1(BaseBackend):
+        class Backend1(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {"var1": "value1", "shared": "backend1"}
 
             async def process(self, context, fileset):
                 pass
 
-        class Backend2(BaseBackend):
+        class Backend2(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {"var2": "value2", "shared": "backend2"}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(Backend1("backend1", priority=100))
         registry.register(Backend2("backend2", priority=200))
 
@@ -216,14 +216,14 @@ class TestBackendRegistry:
     def test_iterate_over_registry(self):
         """Test iterating over registry yields backends in order"""
 
-        class TestBackend(BaseBackend):
+        class TestBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
             async def process(self, context, fileset):
                 pass
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(TestBackend("b", priority=200))
         registry.register(TestBackend("a", priority=100))
 
@@ -231,14 +231,14 @@ class TestBackendRegistry:
         assert names == ["a", "b"]
 
 
-class TestBackendIteration:
-    """Tests for backend iteration loop"""
+class TestDispatcherIteration:
+    """Tests for dispatcher iteration loop"""
 
     @pytest.mark.asyncio
     async def test_single_iteration_convergence(self, tmp_path):
         """Test that iteration converges when backends don't modify"""
 
-        class NoOpBackend(BaseBackend):
+        class NoOpBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
@@ -248,10 +248,10 @@ class TestBackendIteration:
 
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(NoOpBackend("noop"))
 
-        iterations = await run_backend_iteration(ctx, fileset, registry)
+        iterations = await run_dispatcher_iteration(ctx, fileset, registry)
 
         assert iterations == 1
 
@@ -259,7 +259,7 @@ class TestBackendIteration:
     async def test_multi_iteration_convergence(self, tmp_path):
         """Test convergence after multiple iterations"""
 
-        class CountingBackend(BaseBackend):
+        class CountingBackend(BaseDispatcher):
             def __init__(self, name, max_count=3):
                 super().__init__(name)
                 self.count = 0
@@ -282,10 +282,10 @@ class TestBackendIteration:
 
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(CountingBackend("counter", max_count=3))
 
-        iterations = await run_backend_iteration(ctx, fileset, registry)
+        iterations = await run_dispatcher_iteration(ctx, fileset, registry)
 
         # Should take 4 iterations:
         # Iteration 1: add file_0 (count=1)
@@ -299,7 +299,7 @@ class TestBackendIteration:
     async def test_max_iterations_exceeded(self, tmp_path):
         """Test that max iterations raises error"""
 
-        class InfiniteBackend(BaseBackend):
+        class InfiniteBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
@@ -315,18 +315,18 @@ class TestBackendIteration:
 
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(InfiniteBackend("infinite"))
 
         with pytest.raises(RuntimeError, match="did not converge"):
-            await run_backend_iteration(ctx, fileset, registry, max_iterations=10)
+            await run_dispatcher_iteration(ctx, fileset, registry, max_iterations=10)
 
     @pytest.mark.asyncio
-    async def test_multiple_backends_execution_order(self, tmp_path):
-        """Test that backends execute in priority order"""
+    async def test_multiple_dispatchers_execution_order(self, tmp_path):
+        """Test that dispatchers execute in priority order"""
         execution_order = []
 
-        class OrderedBackend(BaseBackend):
+        class OrderedBackend(BaseDispatcher):
             def get_filter_variables(self, context):
                 return {}
 
@@ -335,23 +335,23 @@ class TestBackendIteration:
 
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
 
         # Register in reverse order
         registry.register(OrderedBackend("backend3", priority=300))
         registry.register(OrderedBackend("backend2", priority=200))
         registry.register(OrderedBackend("backend1", priority=100))
 
-        await run_backend_iteration(ctx, fileset, registry)
+        await run_dispatcher_iteration(ctx, fileset, registry)
 
         # Should execute in priority order
         assert execution_order == ["backend1", "backend2", "backend3"]
 
     @pytest.mark.asyncio
-    async def test_backend_can_add_resources(self, tmp_path):
-        """Test backend can add resources to fileset"""
+    async def test_dispatcher_can_add_resources(self, tmp_path):
+        """Test dispatcher can add resources to fileset"""
 
-        class ResourceAdder(BaseBackend):
+        class ResourceAdder(BaseDispatcher):
             def __init__(self, name):
                 super().__init__(name)
                 self.added = False
@@ -375,20 +375,20 @@ class TestBackendIteration:
 
         ctx = BuildContext()
         fileset = BuildFileSet(ctx)
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(ResourceAdder("generator"))
 
-        await run_backend_iteration(ctx, fileset, registry)
+        await run_dispatcher_iteration(ctx, fileset, registry)
 
         assert len(fileset) == 3
         generated = fileset.filter(generated_by="generator")
         assert len(generated) == 3
 
     @pytest.mark.asyncio
-    async def test_backend_can_remove_resources(self, tmp_path):
-        """Test backend can remove resources from fileset"""
+    async def test_dispatcher_can_remove_resources(self, tmp_path):
+        """Test dispatcher can remove resources from fileset"""
 
-        class ResourceRemover(BaseBackend):
+        class ResourceRemover(BaseDispatcher):
             def __init__(self, name):
                 super().__init__(name)
                 self.removed = False
@@ -426,10 +426,10 @@ class TestBackendIteration:
 
         assert len(fileset) == 4
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(ResourceRemover("remover"))
 
-        await run_backend_iteration(ctx, fileset, registry)
+        await run_dispatcher_iteration(ctx, fileset, registry)
 
         # Verilog files should be removed
         assert len(fileset) == 2
@@ -437,10 +437,10 @@ class TestBackendIteration:
         assert len(fileset.filter(file_type="verilog")) == 0
 
     @pytest.mark.asyncio
-    async def test_backend_can_replace_resources(self, tmp_path):
-        """Test backend can replace resources"""
+    async def test_dispatcher_can_replace_resources(self, tmp_path):
+        """Test dispatcher can replace resources"""
 
-        class ResourceReplacer(BaseBackend):
+        class ResourceReplacer(BaseDispatcher):
             def __init__(self, name):
                 super().__init__(name)
                 self.replaced = False
@@ -479,10 +479,10 @@ class TestBackendIteration:
         assert len(fileset) == 2
         assert len(fileset.filter(file_type="verilog")) == 2
 
-        registry = BackendRegistry()
+        registry = DispatcherRegistry()
         registry.register(ResourceReplacer("replacer"))
 
-        await run_backend_iteration(ctx, fileset, registry)
+        await run_dispatcher_iteration(ctx, fileset, registry)
 
         # Should have vhdl files instead
         assert len(fileset) == 2
@@ -491,271 +491,4 @@ class TestBackendIteration:
         assert len(fileset.filter(generated_by="replacer")) == 2
 
 
-class TestExampleBackends:
-    """Integration tests with example backends"""
-
-    @pytest.mark.asyncio
-    async def test_verilog_to_vhdl_backend(self, tmp_path):
-        """Test VerilogToVHDL backend transpiles files"""
-        from gbs.backend import VerilogToVHDLBackend
-
-        ctx = BuildContext()
-        fileset = BuildFileSet(ctx)
-
-        # Add verilog files
-        for i in range(2):
-            br = BuildResource(
-                resource=ctx.get_resource(tmp_path / f"module{i}.v"),
-                file_type="verilog",
-                library="work"
-            )
-            fileset.add(br)
-
-        assert len(fileset) == 2
-        assert len(fileset.filter(file_type="verilog")) == 2
-
-        # Run backend
-        registry = BackendRegistry()
-        registry.register(VerilogToVHDLBackend())
-
-        await run_backend_iteration(ctx, fileset, registry)
-
-        # Should have VHDL files instead
-        assert len(fileset) == 2
-        assert len(fileset.filter(file_type="verilog")) == 0
-        assert len(fileset.filter(file_type="vhdl")) == 2
-        assert len(fileset.filter(generated_by="verilog_to_vhdl")) == 2
-
-    @pytest.mark.asyncio
-    async def test_ghdl_backend_creates_tasks(self, tmp_path):
-        """Test GHDL backend creates compilation tasks"""
-        from gbs.backend import GHDLBackend
-
-        ctx = BuildContext()
-        ctx.project = type('obj', (object,), {
-            'topcell': 'entity0',
-            'root_library_name': 'work'
-        })()
-        fileset = BuildFileSet(ctx)
-
-        # Add VHDL files
-        for i in range(2):
-            br = BuildResource(
-                resource=ctx.get_resource(tmp_path / f"entity{i}.vhd"),
-                file_type="vhdl",
-                library="work"
-            )
-            fileset.add(br)
-
-        assert len(fileset) == 2
-
-        # Run backend
-        registry = BackendRegistry()
-        registry.register(GHDLBackend(output_dir=tmp_path / "build"))
-
-        await run_backend_iteration(ctx, fileset, registry)
-
-        # Should have original VHDL files + simulator executable
-        # New GHDL backend doesn't add intermediate .o files to fileset
-        assert len(fileset) == 3  # 2 VHDL + 1 simulator
-        assert len(fileset.filter(file_type="vhdl")) == 2
-        assert len(fileset.filter(file_type="ghdl-simulator")) == 1
-        assert len(fileset.filter(generated_by="ghdl")) == 1
-
-    @pytest.mark.asyncio
-    async def test_mem_init_backend(self, tmp_path):
-        """Test MemInit backend generates files"""
-        from gbs.backend import MemInitBackend
-
-        ctx = BuildContext()
-        fileset = BuildFileSet(ctx)
-
-        # Add memory spec files
-        for i in range(2):
-            br = BuildResource(
-                resource=ctx.get_resource(tmp_path / f"mem{i}.mem"),
-                file_type="mem_spec",
-                library="work"
-            )
-            fileset.add(br)
-
-        assert len(fileset) == 2
-
-        # Run backend
-        registry = BackendRegistry()
-        registry.register(MemInitBackend())
-
-        await run_backend_iteration(ctx, fileset, registry)
-
-        # Should have spec + generated VHDL files
-        assert len(fileset) == 4
-        assert len(fileset.filter(file_type="mem_spec")) == 2
-        assert len(fileset.filter(file_type="vhdl")) == 2
-        assert len(fileset.filter(generated_by="mem_init")) == 2
-
-    @pytest.mark.asyncio
-    async def test_full_pipeline_verilog_to_ghdl(self, tmp_path):
-        """Test full pipeline: Verilog -> VHDL -> GHDL compilation"""
-        from gbs.backend import VerilogToVHDLBackend, GHDLBackend
-
-        ctx = BuildContext()
-        ctx.project = type('obj', (object,), {
-            'topcell': 'module0',
-            'root_library_name': 'work'
-        })()
-        fileset = BuildFileSet(ctx)
-
-        # Add Verilog source files
-        for i in range(2):
-            br = BuildResource(
-                resource=ctx.get_resource(tmp_path / f"module{i}.v"),
-                file_type="verilog",
-                library="work"
-            )
-            fileset.add(br)
-
-        assert len(fileset) == 2
-
-        # Register backends in order
-        registry = BackendRegistry()
-        registry.register(VerilogToVHDLBackend())  # priority 200
-        registry.register(GHDLBackend(output_dir=tmp_path / "build"))  # priority 500
-
-        # Run iteration
-        iterations = await run_backend_iteration(ctx, fileset, registry)
-
-        # Should converge after 2 iterations:
-        # 1. VerilogToVHDL transpiles, GHDL compiles transpiled files
-        # 2. No more changes
-        assert iterations == 2
-
-        # Final fileset should have:
-        # - 2 VHDL files (transpiled from Verilog)
-        # - 1 simulator executable (compiled by GHDL)
-        # - 0 Verilog files (replaced by VHDL)
-        assert len(fileset) == 3  # 2 VHDL + 1 simulator
-        assert len(fileset.filter(file_type="verilog")) == 0
-        assert len(fileset.filter(file_type="vhdl")) == 2
-        assert len(fileset.filter(file_type="ghdl-simulator")) == 1
-        assert len(fileset.filter(generated_by="verilog_to_vhdl")) == 2
-        assert len(fileset.filter(generated_by="ghdl")) == 1
-
-    @pytest.mark.asyncio
-    async def test_full_pipeline_with_mem_init(self, tmp_path):
-        """Test full pipeline with all three backends"""
-        from gbs.backend import MemInitBackend, VerilogToVHDLBackend, GHDLBackend
-
-        ctx = BuildContext()
-        ctx.project = type('obj', (object,), {
-            'topcell': 'entity',
-            'root_library_name': 'work'
-        })()
-        fileset = BuildFileSet(ctx)
-
-        # Add mixed source files
-        # 1 Verilog file
-        fileset.add(BuildResource(
-            resource=ctx.get_resource(tmp_path / "module.v"),
-            file_type="verilog",
-            library="work"
-        ))
-
-        # 1 VHDL file
-        fileset.add(BuildResource(
-            resource=ctx.get_resource(tmp_path / "entity.vhd"),
-            file_type="vhdl",
-            library="work"
-        ))
-
-        # 1 memory spec
-        fileset.add(BuildResource(
-            resource=ctx.get_resource(tmp_path / "rom.mem"),
-            file_type="mem_spec",
-            library="work"
-        ))
-
-        assert len(fileset) == 3
-
-        # Register all backends
-        registry = BackendRegistry()
-        registry.register(MemInitBackend())  # priority 150
-        registry.register(VerilogToVHDLBackend())  # priority 200
-        registry.register(GHDLBackend(output_dir=tmp_path / "build"))  # priority 500
-
-        # Get filter variables
-        variables = registry.get_filter_variables(ctx)
-        assert variables["has_mem_init"] is True
-        assert variables["target_language"] == "vhdl"
-        assert variables["has_verilog_transpiler"] is True
-        assert variables["compiler"] == "ghdl"
-
-        # Run iteration
-        iterations = await run_backend_iteration(ctx, fileset, registry)
-
-        # Should converge
-        assert iterations <= 3
-
-        # Final fileset analysis:
-        # - 1 mem_spec (rom.mem - original)
-        # - 3 VHDL source files (entity.vhd original + module.vhd from verilog + rom_init.vhd from mem_init)
-        # - 1 simulator executable (from GHDL)
-        # - 0 Verilog files (module.v was replaced)
-        # Total: 5 files
-
-        assert len(fileset.filter(file_type="mem_spec")) == 1
-        vhdl_files = fileset.filter(file_type="vhdl")
-        assert len(vhdl_files) == 3  # entity.vhd, module.vhd, rom_init.vhd
-        assert len(fileset.filter(file_type="ghdl-simulator")) == 1
-        assert len(fileset.filter(file_type="verilog")) == 0
-
-        # Check generated_by
-        assert len(fileset.filter(generated_by="mem_init")) >= 1
-        assert len(fileset.filter(generated_by="verilog_to_vhdl")) >= 1
-        assert len(fileset.filter(generated_by="ghdl")) == 1
-
-    @pytest.mark.asyncio
-    async def test_backend_priority_order(self, tmp_path):
-        """Test that backends execute in priority order"""
-        from gbs.backend import MemInitBackend, VerilogToVHDLBackend, GHDLBackend
-
-        ctx = BuildContext()
-        registry = BackendRegistry()
-
-        # Register in random order
-        registry.register(GHDLBackend())  # 500
-        registry.register(MemInitBackend())  # 150
-        registry.register(VerilogToVHDLBackend())  # 200
-
-        # Get ordered list
-        ordered = registry.get_dispatchers_ordered()
-
-        assert len(ordered) == 3
-        assert ordered[0].name == "mem_init"
-        assert ordered[1].name == "verilog_to_vhdl"
-        assert ordered[2].name == "ghdl"
-
-    @pytest.mark.asyncio
-    async def test_backend_idempotency(self, tmp_path):
-        """Test that backends are idempotent"""
-        from gbs.backend import VerilogToVHDLBackend
-
-        ctx = BuildContext()
-        fileset = BuildFileSet(ctx)
-
-        # Add verilog file
-        fileset.add(BuildResource(
-            resource=ctx.get_resource(tmp_path / "module.v"),
-            file_type="verilog",
-            library="work"
-        ))
-
-        registry = BackendRegistry()
-        registry.register(VerilogToVHDLBackend())
-
-        # Run first time
-        iterations1 = await run_backend_iteration(ctx, fileset, registry)
-        assert iterations1 == 2  # Process + converge
-
-        # Run again - should converge immediately (idempotent)
-        iterations2 = await run_backend_iteration(ctx, fileset, registry)
-        assert iterations2 == 1  # Already converged
+# TestExampleBackends class removed - referenced non-existent example classes

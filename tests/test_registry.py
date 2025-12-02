@@ -9,9 +9,9 @@ from gbs.backend.registry import (
     get_backend_registry,
     reset_backend_registry,
 )
-from gbs.model.backend import BaseBackend, Backend
-from gbs.model.passes import Pass
-from gbs.model.dispatcher import Dispatcher
+from gbs.backend.protocol import BaseBackend, Backend
+from gbs.planner.passes import Pass
+from gbs.backend.dispatcher import Dispatcher
 
 
 # Mock passes for testing
@@ -55,7 +55,7 @@ class MockBackendA(BaseBackend):
         return passes
 
     def create_dispatcher(self, config):
-        from gbs.model.dispatcher import BaseDispatcher
+        from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def __init__(self):
@@ -82,7 +82,7 @@ class MockBackendB(BaseBackend):
         return []
 
     def create_dispatcher(self, config):
-        from gbs.model.dispatcher import BaseDispatcher
+        from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def __init__(self):

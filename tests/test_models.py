@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from gbs.models import (
+from gbs.repository.model import (
     SourceFile,
     FilterCondition,
     ConditionalGroup,

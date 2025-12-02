@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from gbs.resolver import (
+from gbs.repository.resolver import (
     DependencyResolver,
     PartitionRef,
     ResolvedPartition,
@@ -11,7 +11,7 @@ from gbs.resolver import (
     CyclicDependencyError,
     resolve_project,
 )
-from gbs.models import (
+from gbs.repository.model import (
     Library,
     Partition,
     Repository,

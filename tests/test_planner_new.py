@@ -4,9 +4,9 @@ import pytest
 from pathlib import Path
 
 from gbs.planner import BuildPlanner, BuildPlan, PlanningError, plan_project
-from gbs.model.passes import Pass
-from gbs.model.backend import BaseBackend
-from gbs.model.repository import (
+from gbs.planner.passes import Pass
+from gbs.backend.protocol import BaseBackend
+from gbs.repository.model import (
     Repository, Library, Partition, ConditionalGroup, FilterCondition,
     SourceFile, OutputGroup, OutputFile, Project
 )
@@ -63,7 +63,7 @@ class SimulatorBackend(BaseBackend):
         return []
 
     def create_dispatcher(self, config):
-        from gbs.model.dispatcher import BaseDispatcher
+        from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def get_filter_variables(self, context):
@@ -86,7 +86,7 @@ class TranspilerBackend(BaseBackend):
         return [VerilogToVhdlPass]
 
     def create_dispatcher(self, config):
-        from gbs.model.dispatcher import BaseDispatcher
+        from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def get_filter_variables(self, context):
@@ -113,7 +113,7 @@ class SynthesisBackend(BaseBackend):
         return passes
 
     def create_dispatcher(self, config):
-        from gbs.model.dispatcher import BaseDispatcher
+        from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def get_filter_variables(self, context):
@@ -351,7 +351,7 @@ class TestBuildPlanner:
                 return []
 
             def create_dispatcher(self, config):
-                from gbs.model.dispatcher import BaseDispatcher
+                from gbs.backend.dispatcher import BaseDispatcher
 
                 class TestDispatcher(BaseDispatcher):
                     def get_filter_variables(self, context):

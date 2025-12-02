@@ -3,9 +3,10 @@
 import pytest
 from pathlib import Path
 
-from gbs.backend_loader import BackendLoader, BackendLoadError, load_backends_from_project
-from gbs.backend import BaseBackend, BackendRegistry
-from gbs.tasks import BuildContext, BuildFileSet
+# from gbs.backend.loader import  # REMOVED BackendLoader, BackendLoadError, load_backends_from_project
+from gbs.backend.protocol import BaseBackend
+from gbs.backend.registry import BackendRegistry
+from gbs.build.context import BuildContext, BuildFileSet
 
 
 class TestBackendLoader:
@@ -171,7 +172,7 @@ class TestBackendLoader:
 
     def test_is_valid_backend(self):
         """Test backend validation"""
-        from gbs.backend import GHDLBackend, VerilogToVHDLBackend
+        from gbs.backend.protocol import Backend
 
         loader = BackendLoader()
 
@@ -233,7 +234,7 @@ class TestBackendLoaderIntegration:
     async def test_load_and_run_backends(self, tmp_path):
         """Test loading backends and running them"""
         from gbs.backend import run_backend_iteration
-        from gbs.tasks import BuildResource
+        from gbs.build import BuildResource
 
         # Create loader and load backends
         loader = BackendLoader()

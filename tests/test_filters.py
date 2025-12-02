@@ -1,7 +1,7 @@
 """Tests for filter expression parsing and evaluation"""
 
 import pytest
-from gbs.filters import (
+from gbs.repository.filters import (
     FilterLexer,
     FilterParser,
     TokenType,

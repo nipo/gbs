@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from gbs.loaders import (
+from gbs.repository.loader import (
     load_partition,
     load_library,
     load_repository,

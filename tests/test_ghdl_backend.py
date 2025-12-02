@@ -3,11 +3,11 @@
 import pytest
 from pathlib import Path
 
-from gbs.backend.ghdl import get_backend
-from gbs.backend.ghdl.backend import GHDLBackend
-from gbs.backend.ghdl.passes import GHDLSimulatePass
-from gbs.model.backend import Backend, BaseBackend
-from gbs.model.dispatcher import Dispatcher
+from gbs.builtin.ghdl import get_backend
+from gbs.builtin.ghdl.backend import GHDLBackend
+from gbs.builtin.ghdl.passes import GHDLSimulatePass
+from gbs.backend.protocol import Backend, BaseBackend
+from gbs.backend.dispatcher import Dispatcher
 
 
 def test_get_backend_returns_new_backend():

@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 import tempfile
 
-from gbs.tasks import (
+from gbs.build import (
     BuildContext,
     Resource,
     VirtualResource,

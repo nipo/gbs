@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from gbs.model.passes import Pass, PassMetadata
+from gbs.planner.passes import Pass, PassMetadata
 
 
 class MockPass(Pass):
