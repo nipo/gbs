@@ -16,14 +16,10 @@ from ..model.dispatcher import (
 
 # Re-export all concrete dispatchers (with backward compatible names)
 from .ghdl import GHDLDispatcher
-from .verilog_to_vhdl import VerilogToVHDLDispatcher
-from .mem_init import MemInitDispatcher
 from .gowin import GowinDispatcher
 
 # Backward compatibility aliases
 GHDLBackend = GHDLDispatcher
-VerilogToVHDLBackend = VerilogToVHDLDispatcher
-MemInitBackend = MemInitDispatcher
 GowinBackend = GowinDispatcher
 
 __all__ = [
@@ -34,13 +30,9 @@ __all__ = [
     "run_backend_iteration",
     # Concrete dispatchers (new names)
     "GHDLDispatcher",
-    "VerilogToVHDLDispatcher",
-    "MemInitDispatcher",
     "GowinDispatcher",
     # Backward compatible names
     "GHDLBackend",
-    "VerilogToVHDLBackend",
-    "MemInitBackend",
     "GowinBackend",
     # Plugin interface
     "register",
@@ -60,8 +52,6 @@ def register(plugin_registry):
 
     # Register dispatchers (using new names internally)
     plugin_registry.register_backend("GHDLBackend", GHDLDispatcher)
-    plugin_registry.register_backend("VerilogToVHDLBackend", VerilogToVHDLDispatcher)
-    plugin_registry.register_backend("MemInitBackend", MemInitDispatcher)
     plugin_registry.register_backend("GowinBackend", GowinDispatcher)
 
     # Contribute default tools

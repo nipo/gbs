@@ -260,15 +260,6 @@ async def _build_with_output_groups(
 
 
 @project.command()
-@click.pass_context
-async def status(ctx):
-    """Query build status"""
-    project_file = get_project_file(ctx)
-    click.echo(f"Status for project: {project_file}")
-    click.echo("Status command - not yet implemented")
-
-
-@project.command()
 @click.option(
     "-o", "--output-dir",
     type=click.Path(path_type=Path),
@@ -431,27 +422,60 @@ async def show(ctx):
 @project.command()
 @click.option("--repo", "-r", multiple=True, type=click.Path(exists=True, path_type=Path),
               help="Additional repository to load")
+@click.option("--output-group", "-g", type=str,
+              help="Output group to resolve for (default: first output group)")
 @click.pass_context
-async def fileset(ctx, repo: tuple[Path]):
-    """Show resolved build file set"""
+async def fileset(ctx, repo: tuple[Path], output_group: str | None):
+    """Show resolved build file set for an output group"""
+    from ..resolver import DependencyResolver
+    from ..model.repository import Repository, Library
+
     logger = get_logger()
     project_file = get_project_file(ctx)
 
     try:
         # Load project and its specified repositories
-        project, repositories = load_project_with_repositories(project_file)
+        gbs_config = ctx.obj.get("gbs_config")
+        click.echo(f"Loading project: {project_file}")
+        project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
 
         # Load additional repositories from command line
         for repo_path in repo:
             repositories.append(load_repository(repo_path))
 
-        # Resolve dependencies
-        build_set = resolve_project(project, repositories)
+        # Check if project has output groups
+        if not project.output_groups:
+            click.echo("Error: Project must define at least one output group", err=True)
+            sys.exit(1)
 
-        # Display results
+        # Select output group
+        if output_group:
+            selected_group = next((g for g in project.output_groups if g.name == output_group), None)
+            if not selected_group:
+                click.echo(f"Error: Output group '{output_group}' not found", err=True)
+                click.echo(f"Available: {', '.join(g.name for g in project.output_groups)}", err=True)
+                sys.exit(1)
+        else:
+            selected_group = project.output_groups[0]
+
         click.echo(f"Project: {project.name}")
+        click.echo(f"Output group: {selected_group.name}")
         click.echo()
 
+        # Create synthetic repository from project's root partition
+        project_repo = Repository(name=project.name, root=project_file.parent)
+        project_library = Library(name=project.root_library_name)
+        project_library.add_partition(project.root_partition)
+        project_repo.add_library(project_library)
+
+        # Include project repo in repositories
+        all_repositories = [project_repo] + repositories
+
+        # Resolve dependencies with output group's filter_vars
+        resolver = DependencyResolver(project, all_repositories, selected_group.filter_vars)
+        build_set = resolver.resolve()
+
+        # Display results
         click.echo(f"Build file set ({len(build_set.get_all_files())} files):")
         click.echo()
 
@@ -464,11 +488,19 @@ async def fileset(ctx, repo: tuple[Path]):
 
                 for source_file in files:
                     variant_str = f"-{source_file.variant}" if source_file.variant else ""
-                    click.echo(f"    - {source_file.path.name} ({source_file.file_type.value}{variant_str})")
+                    # Handle both enum and string for file_type
+                    file_type_str = source_file.file_type.value if hasattr(source_file.file_type, 'value') else str(source_file.file_type)
+                    click.echo(f"    - {source_file.path.name} ({file_type_str}{variant_str})")
 
             click.echo()
 
         click.echo(f"Build order: {' → '.join(build_set.libraries)}")
+
+        if selected_group.filter_vars:
+            click.echo()
+            click.echo("Filter variables:")
+            for key, value in sorted(selected_group.filter_vars.items()):
+                click.echo(f"  {key}: {value}")
 
     except LoadError as e:
         logger.error(f"Failed to load project or repository: {e}")

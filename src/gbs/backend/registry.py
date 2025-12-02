@@ -52,8 +52,6 @@ class BackendRegistry:
         builtin_modules = [
             "gbs.backend.ghdl",
             "gbs.backend.gowin",
-            "gbs.backend.verilog_to_vhdl",
-            "gbs.backend.mem_init",
         ]
 
         for module_path in builtin_modules:
