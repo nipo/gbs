@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from ..backend.protocol import Backend
 from ..logging import get_logger
 
-
 logger = get_logger(__name__)
 
+__all__ = ["BackendInfo", "BackendRegistry", "get_backend_registry"]
 
 @dataclass
 class BackendInfo:

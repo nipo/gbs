@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 
 from ..logging import get_logger
 
+__all__ = ["Backend", "BaseBackend"]
 
 @runtime_checkable
 class Backend(Protocol):

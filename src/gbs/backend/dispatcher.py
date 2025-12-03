@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from ..build.context import BuildContext, BuildFileSet
 from ..logging import get_logger
 
+__all__ = ["Dispatcher", "BaseDispatcher", "DispatcherRegistry", "run_dispatcher_iteration"]
 
 @runtime_checkable
 class Dispatcher(Protocol):
