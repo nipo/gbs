@@ -1,4 +1,5 @@
 """Build system"""
+
 from .task import (BuildError, PrerequisiteFailed, BuildStep, VirtualResource,
                    Resource, Task, ExecutorTask)
 from .context import BuildContext, BuildResource, BuildFileSet

@@ -48,10 +48,12 @@ class BackendRegistry:
         """Discover all backends (built-in and plugins)"""
         logger.info("Discovering backends...")
 
+        from .. import builtin
+        from pkg_util import iter_modules
+
         # Built-in backends
         builtin_modules = [
-            "gbs.builtin.ghdl",
-            "gbs.builtin.gowin",
+            f"gbs.builtin.{m.name}" for m in iter_modules(builtin.__path__)
         ]
 
         for module_path in builtin_modules:
