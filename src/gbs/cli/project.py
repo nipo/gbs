@@ -9,7 +9,7 @@ import sys
 
 from ..logging import get_logger
 from ..repository.loader import load_repository
-from ..cli import load_project_for_command, get_project_file
+from ..cli import get_project_file
 from .group import ReMatchGroup
 
 @click.group(invoke_without_command=False, cls = ReMatchGroup)
@@ -78,12 +78,11 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
             click.echo("See documentation for output group configuration", err=True)
             sys.exit(1)
 
-        # Show graph if requested (keeping old implementation for now)
+        # Show graph if requested
         if show_graph:
-            # Fall back to old implementation for --show-graph
-            await _build_with_output_groups(
-                proj.model, proj.repositories, gbs_config,
-                output_dir, max_iterations, show_graph, show_pb
+            await proj.show_graph(
+                output_dir=output_dir,
+                max_iterations=max_iterations
             )
             return
 
@@ -102,307 +101,6 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
         logger.exception("Build failed")
         click.echo(f"Build failed: {e}", err=True)
         sys.exit(1)
-
-
-def _show_task_graph(build_ctx, fileset):
-    """Display the build task graph
-
-    Args:
-        build_ctx: BuildContext with registered steps
-        fileset: BuildFileSet with build resources
-    """
-    # Organize steps by type
-    from ..build.task import Resource, VirtualResource, Task
-
-    resources = []
-    virtual_resources = []
-    tasks = []
-
-    for step in build_ctx.steps:
-        if isinstance(step, Resource):
-            resources.append(step)
-        elif isinstance(step, VirtualResource):
-            virtual_resources.append(step)
-        elif isinstance(step, Task):
-            tasks.append(step)
-
-    click.echo(f"    Resources ({len(resources)} files):")
-    for resource in sorted(resources, key=lambda r: r.name):
-        deps = [d.name for d in resource.depends_on if d in tasks]
-        if deps:
-            click.echo(f"      {resource.name}")
-            for dep_name in sorted(deps):
-                click.echo(f"        ← produced by: {dep_name}")
-        else:
-            click.echo(f"      {resource.name} (source)")
-
-    click.echo()
-    click.echo(f"    Tasks ({len(tasks)} tasks):")
-    for task in sorted(tasks, key=lambda t: t.name):
-        click.echo(f"      {task.name}")
-
-        # Show what this task depends on (inputs)
-        input_resources = [d for d in task.depends_on if isinstance(d, (Resource, VirtualResource))]
-        if input_resources:
-            for dep in sorted(input_resources, key=lambda r: r.name):
-                click.echo(f"        → reads: {dep.name}")
-
-        # Show what depends on this task (outputs)
-        output_resources = [e for e in task.expected_by if isinstance(e, (Resource, VirtualResource))]
-        if output_resources:
-            for exp in sorted(output_resources, key=lambda r: r.name):
-                click.echo(f"        ← produces: {exp.name}")
-
-    if virtual_resources:
-        click.echo()
-        click.echo(f"    Virtual resources ({len(virtual_resources)}):")
-        for vr in sorted(virtual_resources, key=lambda r: r.name):
-            click.echo(f"      {vr.name}")
-
-
-async def _build_with_output_groups(
-    project, repositories, gbs_config,
-    output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
-):
-    """Build using new planner + executor flow"""
-    from ..build import BuildContext, BuildFileSet
-    from ..planner.planner import plan_project
-    from ..backend.registry import get_backend_registry
-    from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
-    from ..repository.resolver import resolve_project
-
-    logger = get_logger()
-
-    # Create build context
-    build_ctx = BuildContext(project=project, gbs_config=gbs_config)
-
-    # Discover backends
-    click.echo("Discovering backends...")
-    backend_registry = get_backend_registry()
-    backend_names = backend_registry.list_backends()
-    click.echo(f"Discovered {len(backend_names)} backend(s):")
-    for backend_module in backend_names:
-        click.echo(f"  - {backend_module}")
-
-    # Plan build for all output groups
-    click.echo()
-    click.echo(f"Planning build for {len(project.output_groups)} output group(s)...")
-    backends = backend_registry.get_all_backends()
-
-    # Create synthetic repository from project's root partition for planning
-    from ..repository.model import Repository, Library
-    from pathlib import Path
-    project_repo = Repository(name=project.name, root=Path("."))
-    project_library = Library(name=project.root_library_name)
-    project_library.add_partition(project.root_partition)
-    project_repo.add_library(project_library)
-
-    # Include project repo in repositories for planning
-    all_repositories = [project_repo] + repositories
-
-    plans = plan_project(project, all_repositories, backends)
-
-    # Resolve sources for each plan
-    for plan in plans:
-        # Resolve dependencies for this output group's topcell
-        build_set = resolve_project(project, all_repositories)
-        plan.source_fileset = build_set
-
-        num_files = len(plan.source_fileset.get_all_files())
-        num_libs = len(plan.source_fileset.libraries)
-        click.echo(f"  Output group '{plan.output_group.name}':")
-        click.echo(f"    Topcell: {plan.output_group.topcell}")
-        click.echo(f"    Sources: {num_files} files in {num_libs} libraries")
-        click.echo(f"    Passes: {len(plan.passes)}")
-        click.echo(f"    Outputs: {len(plan.output_group.outputs)}")
-
-    # Show dependency graph if requested
-    if show_graph:
-        click.echo()
-        click.echo("Build dependency graph:")
-        click.echo()
-
-        for plan in plans:
-            click.echo(f"Output group: {plan.output_group.name}")
-            click.echo(f"  Topcell: {plan.output_group.topcell}")
-            click.echo()
-
-            # Show source files by library
-            click.echo(f"  Source files ({len(plan.source_fileset.get_all_files())} files):")
-            for lib_name in plan.source_fileset.libraries:
-                files = plan.source_fileset.files.get((lib_name, None), [])
-                if not files:
-                    # Try all partitions for this library
-                    for part_name in plan.source_fileset.partitions.get(lib_name, []):
-                        files.extend(plan.source_fileset.files.get((lib_name, part_name), []))
-
-                if files:
-                    click.echo(f"    Library {lib_name}:")
-                    for source_file in files:
-                        # Handle both enum and string for language
-                        lang_str = source_file.file_type.value if hasattr(source_file.file_type, 'value') else str(source_file.file_type)
-                        click.echo(f"      - {source_file.path.name} ({lang_str})")
-
-            click.echo()
-
-            # Show passes
-            click.echo(f"  Passes ({len(plan.passes)} passes):")
-            for pass_class in plan.passes:
-                click.echo(f"    - {pass_class.name}")
-                click.echo(f"        Input types: {', '.join(pass_class.input_types)}")
-                click.echo(f"        Output types: {', '.join(pass_class.output_types)}")
-
-            click.echo()
-
-            # Show expected outputs
-            click.echo(f"  Expected outputs ({len(plan.output_group.outputs)} files):")
-            for output_spec in plan.output_group.outputs:
-                click.echo(f"    - {output_spec.path} (type: {output_spec.type})")
-
-            click.echo()
-
-            # Build and show library dependency graph
-            # To get the graph, we need to create a fileset
-            fileset = BuildFileSet(build_ctx)
-            build_ctx.populate_fileset(plan.source_fileset, fileset)
-
-            lib_graph = fileset.library_dependency_graph()
-            if lib_graph:
-                click.echo(f"  Library dependencies:")
-                for lib_name in sorted(lib_graph.keys()):
-                    deps = lib_graph[lib_name]
-                    if deps:
-                        click.echo(f"    {lib_name} depends on:")
-                        for dep in sorted(deps):
-                            click.echo(f"      → {dep}")
-                    else:
-                        click.echo(f"    {lib_name} (no dependencies)")
-                click.echo()
-
-            # Now show the actual build task graph by running dispatchers
-            click.echo(f"  Build task graph:")
-            click.echo()
-
-            # Set output group context
-            build_ctx.set_output_group_context(
-                topcell=plan.output_group.topcell,
-                topcell_library=project.root_library_name
-            )
-
-            # Determine which backends to use (same logic as build)
-            backend_modules_used = set()
-
-            # Add backends that contributed passes
-            for pass_metadata in plan.passes:
-                for backend_module in backend_names:
-                    backend = backend_registry.get_backend(backend_module)
-                    contributed_passes = backend.contribute_passes(
-                        plan.output_group.backend_config.get(backend_module, {}),
-                        {output.type for output in plan.output_group.outputs}
-                    )
-                    if pass_metadata.pass_class in contributed_passes:
-                        backend_modules_used.add(backend_module)
-                        break
-
-            # Add backends explicitly configured in backend_config
-            for backend_module in plan.output_group.backend_config.keys():
-                if backend_module in backend_names:
-                    backend_modules_used.add(backend_module)
-
-            # Create dispatchers
-            dispatcher_registry = DispatcherRegistry()
-            for backend_module in backend_modules_used:
-                backend = backend_registry.get_backend(backend_module)
-                backend_config = plan.output_group.backend_config.get(backend_module, {})
-                backend_config['output_dir'] = str(output_dir)
-                dispatcher = backend.create_dispatcher(backend_config)
-                dispatcher_registry.register(dispatcher)
-
-            # Run dispatcher iteration to create tasks
-            iterations = await run_dispatcher_iteration(
-                build_ctx,
-                fileset,
-                dispatcher_registry,
-                max_iterations=max_iterations
-            )
-
-            # Now show the task graph from build_ctx.steps
-            _show_task_graph(build_ctx, fileset)
-
-        return  # Exit without building
-
-    # Create output directory
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Execute each build plan
-    click.echo()
-    click.echo("Executing build plans...")
-
-    for plan in plans:
-        click.echo(f"\nBuilding output group '{plan.output_group.name}'...")
-
-        # Set topcell and library for this output group
-        # This allows dispatchers to access the topcell via context.get_topcell()
-        build_ctx.set_output_group_context(
-            topcell=plan.output_group.topcell,
-            topcell_library=project.root_library_name
-        )
-
-        # Create BuildFileSet from plan's source fileset
-        fileset = BuildFileSet(build_ctx)
-        build_ctx.populate_fileset(plan.source_fileset, fileset)
-
-        # Determine which backends to use:
-        # 1. Backends that contributed passes (main backend doing the work)
-        # 2. Backends configured in backend_config (may be post-processors like NSL CDC)
-        backend_modules_used = set()
-
-        # Add backends that contributed passes
-        for pass_metadata in plan.passes:
-            for backend_module in backend_names:
-                backend = backend_registry.get_backend(backend_module)
-                contributed_passes = backend.contribute_passes(
-                    plan.output_group.backend_config.get(backend_module, {}),
-                    {output.type for output in plan.output_group.outputs}
-                )
-                if pass_metadata.pass_class in contributed_passes:
-                    backend_modules_used.add(backend_module)
-                    break
-
-        # Add backends explicitly configured in backend_config (e.g., post-processors)
-        for backend_module in plan.output_group.backend_config.keys():
-            if backend_module in backend_names:
-                backend_modules_used.add(backend_module)
-
-        # Create dispatcher registry for this plan
-        dispatcher_registry = DispatcherRegistry()
-        for backend_module in backend_modules_used:
-            backend = backend_registry.get_backend(backend_module)
-            backend_config = plan.output_group.backend_config.get(backend_module, {})
-            backend_config['output_dir'] = str(output_dir)
-            dispatcher = backend.create_dispatcher(backend_config)
-            dispatcher_registry.register(dispatcher)
-            click.echo(f"  Registered dispatcher: {dispatcher.name}")
-
-        # Run dispatcher iteration
-        iterations = await run_dispatcher_iteration(
-            build_ctx,
-            fileset,
-            dispatcher_registry,
-            max_iterations=max_iterations
-        )
-        click.echo(f"  Converged after {iterations} iteration(s)")
-
-        # Execute build tasks
-        click.echo(f"  Executing build tasks...")
-        num_files = await build_ctx.execute_build(
-            fileset,
-            show_progress=(sys.stdout.isatty() and show_pb)
-        )
-        click.echo(f"  Processed {num_files} files")
-
-    click.echo()
-    click.echo("Build complete!")
 
 
 @project.command()
@@ -430,12 +128,15 @@ async def clean(ctx, output_dir: Path, dry_run: bool, force: bool):
     """
     import shutil
 
+    from ..project import Project, LoadError
+
     logger = get_logger()
     project_file = get_project_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
 
     try:
-        # Load project configuration
-        project, repositories, gbs_config = load_project_for_command(ctx, project_file)
+        # Load project using new API
+        proj = Project.load_from_file(project_file, gbs_config=gbs_config)
 
         # Collect directories and files to clean
         dirs_to_clean = set()
@@ -447,7 +148,7 @@ async def clean(ctx, output_dir: Path, dry_run: bool, force: bool):
         dirs_to_clean.add(output_dir)
 
         # Get backends from raw_config for additional cleanup
-        backends = project.raw_config.get("backends", [])
+        backends = proj.model.raw_config.get("backends", [])
 
         for backend_config in backends:
             config = backend_config.get("config", {})
@@ -539,21 +240,24 @@ async def clean(ctx, output_dir: Path, dry_run: bool, force: bool):
 @click.pass_context
 async def show(ctx):
     """Show project configuration"""
+    from ..project import Project, LoadError
+
     logger = get_logger()
     project_file = get_project_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
 
     try:
-        # Load project
-        project = load_project(project_file)
+        # Load project using new API
+        proj = Project.load_from_file(project_file, gbs_config=gbs_config)
 
-        click.echo(f"Project: {project.name}")
-        if project.description:
-            click.echo(f"Description: {project.description}")
+        click.echo(f"Project: {proj.model.name}")
+        if proj.model.description:
+            click.echo(f"Description: {proj.model.description}")
         click.echo()
 
         click.echo("Root partition:")
-        click.echo(f"  Library: {project.root_library_name}")
-        click.echo(f"  Partition: {project.root_partition.name}")
+        click.echo(f"  Library: {proj.model.root_library_name}")
+        click.echo(f"  Partition: {proj.model.root_partition.name}")
 
     except LoadError as e:
         logger.error(f"Failed to load project: {e}")
@@ -573,52 +277,55 @@ async def show(ctx):
 @click.pass_context
 async def fileset(ctx, repo: tuple[Path], output_group: str | None):
     """Show resolved build file set for an output group"""
+    from ..project import Project, LoadError
     from ..repository.resolver import DependencyResolver
     from ..repository.model import Repository, Library
 
     logger = get_logger()
     project_file = get_project_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
 
     try:
-        # Load project and its specified repositories
-        gbs_config = ctx.obj.get("gbs_config")
+        # Load project using new API
         click.echo(f"Loading project: {project_file}")
-        project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
+        proj = Project.load_from_file(project_file, gbs_config=gbs_config)
 
         # Load additional repositories from command line
-        for repo_path in repo:
-            repositories.append(load_repository(repo_path))
+        if repo:
+            for repo_path in repo:
+                logger.info(f"Loading additional repository: {repo_path}")
+                proj.repositories.append(load_repository(repo_path))
 
         # Check if project has output groups
-        if not project.output_groups:
+        if not proj.model.output_groups:
             click.echo("Error: Project must define at least one output group", err=True)
             sys.exit(1)
 
         # Select output group
         if output_group:
-            selected_group = next((g for g in project.output_groups if g.name == output_group), None)
+            selected_group = next((g for g in proj.model.output_groups if g.name == output_group), None)
             if not selected_group:
                 click.echo(f"Error: Output group '{output_group}' not found", err=True)
-                click.echo(f"Available: {', '.join(g.name for g in project.output_groups)}", err=True)
+                click.echo(f"Available: {', '.join(g.name for g in proj.model.output_groups)}", err=True)
                 sys.exit(1)
         else:
-            selected_group = project.output_groups[0]
+            selected_group = proj.model.output_groups[0]
 
-        click.echo(f"Project: {project.name}")
+        click.echo(f"Project: {proj.model.name}")
         click.echo(f"Output group: {selected_group.name}")
         click.echo()
 
         # Create synthetic repository from project's root partition
-        project_repo = Repository(name=project.name, root=project_file.parent)
-        project_library = Library(name=project.root_library_name)
-        project_library.add_partition(project.root_partition)
+        project_repo = Repository(name=proj.model.name, root=project_file.parent)
+        project_library = Library(name=proj.model.root_library_name)
+        project_library.add_partition(proj.model.root_partition)
         project_repo.add_library(project_library)
 
         # Include project repo in repositories
-        all_repositories = [project_repo] + repositories
+        all_repositories = [project_repo] + proj.repositories
 
         # Resolve dependencies with output group's filter_vars
-        resolver = DependencyResolver(project, all_repositories, selected_group.filter_vars)
+        resolver = DependencyResolver(proj.model, all_repositories, selected_group.filter_vars)
         build_set = resolver.resolve()
 
         # Display results

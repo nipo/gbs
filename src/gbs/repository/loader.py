@@ -16,10 +16,8 @@ from .model import (
     Partition,
     Library,
     Repository,
-    Project,
-    OutputGroup,
-    OutputFile,
 )
+from ..project.model import ProjectModel as Project, OutputGroup, OutputFile
 from ..logging import get_logger
 
 

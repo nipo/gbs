@@ -14,12 +14,12 @@ from .model import (
     Partition,
     Library,
     Repository,
-    Project,
     SourceFileSet,
     SourceFile,
     ConditionalGroup,
     FilterCondition,
 )
+from ..project.model import ProjectModel as Project
 from .filters import evaluate_filter
 from ..logging import get_logger
 

@@ -22,7 +22,8 @@ from pathlib import Path
 
 from .passes import Pass, PassMetadata
 from ..backend.protocol import Backend
-from ..repository.model import Repository, OutputGroup, OutputFile, SourceFileSet
+from ..repository.model import Repository, SourceFileSet
+from ..project.model import OutputGroup, OutputFile
 from ..logging import get_logger
 
 

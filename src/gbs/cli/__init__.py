@@ -7,32 +7,8 @@ import asyncclick as click
 from pathlib import Path
 
 from ..logging import setup_logging, get_logger, get_log_file
-from ..repository.loader import load_repository, load_project, load_project_with_repositories, LoadError
 from ..config.model import GBSConfig
 from .group import ReMatchGroup
-
-def load_project_for_command(ctx, project_file: Path, additional_repos: tuple[Path] = ()):
-    """Load project with GBS config for CLI commands
-
-    Args:
-        ctx: Click context with gbs_config
-        project_file: Path to project file
-        additional_repos: Optional additional repositories to load
-
-    Returns:
-        (project, repositories, gbs_config) tuple
-    """
-    gbs_config = ctx.obj.get("gbs_config")
-
-    click.echo(f"Loading project: {project_file}")
-    project, repositories = load_project_with_repositories(project_file, gbs_config=gbs_config)
-
-    # Load additional repositories from command line
-    for repo_path in additional_repos:
-        click.echo(f"Loading additional repository: {repo_path}")
-        repositories.append(load_repository(repo_path))
-
-    return project, repositories, gbs_config
 
 
 def find_project_file() -> Path:

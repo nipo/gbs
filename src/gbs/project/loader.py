@@ -169,6 +169,34 @@ class Project:
             gbs_config=self.gbs_config
         )
 
+    async def show_graph(
+        self,
+        output_dir: Path = Path("build"),
+        max_iterations: int = 10
+    ):
+        """Show build dependency graph
+
+        Displays detailed information about the build plan including source files,
+        passes, outputs, library dependencies, and build task graph.
+
+        Args:
+            output_dir: Output directory for build artifacts (default: "build")
+            max_iterations: Maximum dispatcher iterations (default: 10)
+
+        Example:
+            >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
+            >>> await proj.show_graph()
+        """
+        from .builder import show_graph_for_project
+
+        await show_graph_for_project(
+            self.model,
+            self.repositories,
+            output_dir=output_dir,
+            max_iterations=max_iterations,
+            gbs_config=self.gbs_config
+        )
+
     def __str__(self) -> str:
         return f"Project({self.model.name}, {len(self.model.output_groups)} output groups, {len(self.repositories)} repositories)"
 

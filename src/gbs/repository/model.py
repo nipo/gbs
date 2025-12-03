@@ -7,9 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Any
 
-# Re-export project models from gbs.project.model for backward compatibility
-from ..project.model import ProjectModel as Project, OutputGroup, OutputFile
-
 
 @dataclass
 class SourceFile:
