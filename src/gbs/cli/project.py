@@ -86,6 +86,62 @@ async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, s
         sys.exit(1)
 
 
+def _show_task_graph(build_ctx, fileset):
+    """Display the build task graph
+
+    Args:
+        build_ctx: BuildContext with registered steps
+        fileset: BuildFileSet with build resources
+    """
+    # Organize steps by type
+    from ..build.task import Resource, VirtualResource, Task
+
+    resources = []
+    virtual_resources = []
+    tasks = []
+
+    for step in build_ctx.steps:
+        if isinstance(step, Resource):
+            resources.append(step)
+        elif isinstance(step, VirtualResource):
+            virtual_resources.append(step)
+        elif isinstance(step, Task):
+            tasks.append(step)
+
+    click.echo(f"    Resources ({len(resources)} files):")
+    for resource in sorted(resources, key=lambda r: r.name):
+        deps = [d.name for d in resource.depends_on if d in tasks]
+        if deps:
+            click.echo(f"      {resource.name}")
+            for dep_name in sorted(deps):
+                click.echo(f"        ← produced by: {dep_name}")
+        else:
+            click.echo(f"      {resource.name} (source)")
+
+    click.echo()
+    click.echo(f"    Tasks ({len(tasks)} tasks):")
+    for task in sorted(tasks, key=lambda t: t.name):
+        click.echo(f"      {task.name}")
+
+        # Show what this task depends on (inputs)
+        input_resources = [d for d in task.depends_on if isinstance(d, (Resource, VirtualResource))]
+        if input_resources:
+            for dep in sorted(input_resources, key=lambda r: r.name):
+                click.echo(f"        → reads: {dep.name}")
+
+        # Show what depends on this task (outputs)
+        output_resources = [e for e in task.expected_by if isinstance(e, (Resource, VirtualResource))]
+        if output_resources:
+            for exp in sorted(output_resources, key=lambda r: r.name):
+                click.echo(f"        ← produces: {exp.name}")
+
+    if virtual_resources:
+        click.echo()
+        click.echo(f"    Virtual resources ({len(virtual_resources)}):")
+        for vr in sorted(virtual_resources, key=lambda r: r.name):
+            click.echo(f"      {vr.name}")
+
+
 async def _build_with_output_groups(
     project, repositories, gbs_config,
     output_dir: Path, max_iterations: int, show_graph: bool, show_pb: bool
@@ -186,6 +242,67 @@ async def _build_with_output_groups(
                 click.echo(f"    - {output_spec.path} (type: {output_spec.type})")
 
             click.echo()
+
+            # Build and show library dependency graph
+            # To get the graph, we need to create a fileset
+            fileset = BuildFileSet(build_ctx)
+            build_ctx.populate_fileset(plan.source_fileset, fileset)
+
+            lib_graph = fileset.library_dependency_graph()
+            if lib_graph:
+                click.echo(f"  Library dependencies:")
+                for lib_name in sorted(lib_graph.keys()):
+                    deps = lib_graph[lib_name]
+                    if deps:
+                        click.echo(f"    {lib_name} depends on:")
+                        for dep in sorted(deps):
+                            click.echo(f"      → {dep}")
+                    else:
+                        click.echo(f"    {lib_name} (no dependencies)")
+                click.echo()
+
+            # Now show the actual build task graph by running dispatchers
+            click.echo(f"  Build task graph:")
+            click.echo()
+
+            # Set output group context
+            build_ctx.set_output_group_context(
+                topcell=plan.output_group.topcell,
+                topcell_library=project.root_library_name
+            )
+
+            # Determine which backends to use
+            backend_modules_used = set()
+            for pass_metadata in plan.passes:
+                for backend_module in backend_names:
+                    backend = backend_registry.get_backend(backend_module)
+                    contributed_passes = backend.contribute_passes(
+                        plan.output_group.backend_config.get(backend_module, {}),
+                        {output.type for output in plan.output_group.outputs}
+                    )
+                    if pass_metadata.pass_class in contributed_passes:
+                        backend_modules_used.add(backend_module)
+                        break
+
+            # Create dispatchers and run iteration (but don't execute)
+            dispatcher_registry = DispatcherRegistry()
+            for backend_module in backend_modules_used:
+                backend = backend_registry.get_backend(backend_module)
+                backend_config = plan.output_group.backend_config.get(backend_module, {})
+                backend_config['output_dir'] = str(output_dir)
+                dispatcher = backend.create_dispatcher(backend_config)
+                dispatcher_registry.register(dispatcher)
+
+            # Run dispatcher iteration to create tasks
+            iterations = await run_dispatcher_iteration(
+                build_ctx,
+                fileset,
+                dispatcher_registry,
+                max_iterations=max_iterations
+            )
+
+            # Now show the task graph from build_ctx.steps
+            _show_task_graph(build_ctx, fileset)
 
         return  # Exit without building
 
