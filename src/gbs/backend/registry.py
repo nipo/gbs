@@ -1,16 +1,16 @@
 """Backend Registry for Build Planning
 
 This module provides the global registry for discovering and loading backends.
-Backends are discovered from built-in modules and entry points.
+Backends are discovered via the unified plugin system.
 """
 
 from __future__ import annotations
-import importlib
 from typing import Optional
 from dataclasses import dataclass
 
 from ..backend.protocol import Backend
 from ..logging import get_logger
+from ..plugins import get_plugin_registry
 
 logger = get_logger(__name__)
 
@@ -31,9 +31,8 @@ class BackendInfo:
 class BackendRegistry:
     """Global registry of backends
 
-    The registry discovers backends from:
-    1. Built-in backend modules (hardcoded list)
-    2. Third-party backends via entry points
+    The registry discovers backends via the unified plugin system.
+    Provides backward-compatible API by mapping plugin names to backends.
 
     Backends implement the Backend Protocol with:
     - contribute_passes(config, output_types) -> list[type[Pass]]
@@ -45,100 +44,39 @@ class BackendRegistry:
         self._backends: dict[str, BackendInfo] = {}  # module_path -> BackendInfo
 
     def discover_backends(self):
-        """Discover all backends (built-in and plugins)"""
-        logger.info("Discovering backends...")
+        """Discover all backends via the unified plugin system"""
+        logger.info("Discovering backends via plugin system...")
 
-        from .. import builtin
-        from pkg_util import iter_modules
+        # Get the plugin registry (which auto-discovers plugins)
+        plugin_registry = get_plugin_registry()
 
-        # Built-in backends
-        builtin_modules = [
-            f"gbs.builtin.{m.name}" for m in iter_modules(builtin.__path__)
-        ]
-
-        for module_path in builtin_modules:
+        # Iterate over each plugin and get its backends
+        for plugin in plugin_registry.get_all_plugins():
             try:
-                self._load_backend_module(module_path)
+                # Get backends provided by this plugin
+                backends = plugin.enumerate_backends()
+
+                # Register each backend
+                for backend in backends:
+                    # Use the plugin name as the module path for backward compatibility
+                    # For built-in plugins, this is "gbs.builtin.ghdl", etc.
+                    module_path = plugin.name
+
+                    # Create BackendInfo
+                    backend_info = BackendInfo(
+                        backend=backend,
+                        module_path=module_path
+                    )
+
+                    self._backends[module_path] = backend_info
+                    logger.debug(f"Registered backend: {backend.name} from {module_path}")
+
             except Exception as e:
-                logger.warning(f"Failed to load built-in backend {module_path}: {e}")
-
-        # Plugin backends via entry points
-        try:
-            from importlib.metadata import entry_points
-
-            # Handle both Python 3.9 and 3.10+ API
-            try:
-                eps = entry_points(group='gbs.backends')
-            except TypeError:
-                # Python 3.9 style
-                eps = entry_points().get('gbs.backends', [])
-
-            for ep in eps:
-                try:
-                    module_path = ep.value
-                    logger.info(f"Loading plugin backend: {ep.name} from {module_path}")
-                    self._load_backend_module(module_path)
-                except Exception as e:
-                    logger.warning(f"Failed to load plugin backend {ep.name}: {e}")
-        except ImportError:
-            logger.debug("importlib.metadata not available, skipping entry points")
+                logger.error(f"Error enumerating backends from plugin {plugin.name}: {e}")
 
         logger.info(
             f"Backend discovery complete: {len(self._backends)} backends"
         )
-
-    def _load_backend_module(self, module_path: str):
-        """Load a backend from a module path
-
-        Args:
-            module_path: Python module path (e.g., "gbs.builtin.ghdl")
-
-        Raises:
-            ImportError: If module cannot be imported
-            AttributeError: If module doesn't have get_backend() function
-            TypeError: If get_backend() doesn't return a Backend instance
-        """
-        logger.debug(f"Loading backend module: {module_path}")
-
-        # Import the module
-        module = importlib.import_module(module_path)
-
-        # Get the backend via get_backend() function
-        if not hasattr(module, 'get_backend'):
-            raise AttributeError(
-                f"Backend module {module_path} must define get_backend() function"
-            )
-
-        backend = module.get_backend()
-
-        # Verify it's a Backend instance
-        if not isinstance(backend, Backend):
-            raise TypeError(
-                f"get_backend() in {module_path} must return a Backend instance, "
-                f"got {type(backend)}"
-            )
-
-        # Register the backend
-        self._register_backend(module_path, backend)
-
-    def _register_backend(self, module_path: str, backend: Backend):
-        """Register a backend instance
-
-        Args:
-            module_path: Module path (e.g., "gbs.builtin.ghdl")
-            backend: The Backend instance
-        """
-        if module_path in self._backends:
-            logger.warning(f"Backend {module_path} already registered, replacing")
-
-        backend_info = BackendInfo(
-            backend=backend,
-            module_path=module_path
-        )
-
-        self._backends[module_path] = backend_info
-
-        logger.info(f"Registered backend: {module_path}")
 
     def get_backend(self, module_path: str) -> Optional[Backend]:
         """Get backend instance by module path

@@ -103,73 +103,6 @@ def test_registry_creation():
     assert registry.list_backends() == []
 
 
-def test_register_backend_manually():
-    """Test manually registering a backend"""
-    registry = BackendRegistry()
-    backend = MockBackendA()
-    registry._register_backend("test.backend.a", backend)
-
-    # Check backend was registered
-    backends = registry.list_backends()
-    assert len(backends) == 1
-    assert "test.backend.a" in backends
-
-
-def test_get_backend():
-    """Test getting a backend by module path"""
-    registry = BackendRegistry()
-    backend_a = MockBackendA()
-    registry._register_backend("test.backend.a", backend_a)
-
-    backend = registry.get_backend("test.backend.a")
-    assert backend is backend_a
-
-    backend = registry.get_backend("test.backend.nonexistent")
-    assert backend is None
-
-
-def test_get_backend_info():
-    """Test getting backend info"""
-    registry = BackendRegistry()
-    backend_a = MockBackendA()
-    registry._register_backend("test.backend.a", backend_a)
-
-    backend_info = registry.get_backend_info("test.backend.a")
-    assert backend_info is not None
-    assert backend_info.backend is backend_a
-    assert backend_info.module_path == "test.backend.a"
-
-
-def test_register_multiple_backends():
-    """Test registering multiple backends"""
-    registry = BackendRegistry()
-    backend_a = MockBackendA()
-    backend_b = MockBackendB()
-    registry._register_backend("test.backend.a", backend_a)
-    registry._register_backend("test.backend.b", backend_b)
-
-    backends = registry.list_backends()
-    assert len(backends) == 2
-    assert "test.backend.a" in backends
-    assert "test.backend.b" in backends
-
-
-def test_replace_existing_backend():
-    """Test replacing an already registered backend"""
-    registry = BackendRegistry()
-    backend_a1 = MockBackendA()
-    backend_a2 = MockBackendB()
-    registry._register_backend("test.backend.a", backend_a1)
-    registry._register_backend("test.backend.a", backend_a2)  # Replace
-
-    backends = registry.list_backends()
-    assert len(backends) == 1
-
-    # Should have the second backend
-    backend = registry.get_backend("test.backend.a")
-    assert backend is backend_a2
-
-
 def test_global_registry_singleton():
     """Test that get_backend_registry returns a singleton"""
     reset_backend_registry()  # Clear any previous state
@@ -192,23 +125,6 @@ def test_reset_backend_registry():
     assert registry1 is not registry2
 
 
-def test_load_backend_module_missing():
-    """Test loading a nonexistent backend module"""
-    registry = BackendRegistry()
-
-    with pytest.raises(ImportError):
-        registry._load_backend_module("nonexistent.backend.module")
-
-
-def test_load_backend_module_no_get_backend():
-    """Test loading a module without get_backend() function"""
-    registry = BackendRegistry()
-
-    # Try to load a module that exists but doesn't have get_backend()
-    with pytest.raises(AttributeError, match="must define get_backend"):
-        registry._load_backend_module("sys")
-
-
 def test_backend_info_dataclass():
     """Test BackendInfo dataclass"""
     backend = MockBackendA()
@@ -219,20 +135,6 @@ def test_backend_info_dataclass():
 
     assert backend_info.backend is backend
     assert backend_info.module_path == "test.backend"
-
-
-def test_get_all_backends():
-    """Test getting all backend instances"""
-    registry = BackendRegistry()
-    backend_a = MockBackendA()
-    backend_b = MockBackendB()
-    registry._register_backend("test.backend.a", backend_a)
-    registry._register_backend("test.backend.b", backend_b)
-
-    all_backends = registry.get_all_backends()
-    assert len(all_backends) == 2
-    assert backend_a in all_backends
-    assert backend_b in all_backends
 
 
 def test_backend_contribute_passes():

@@ -1,6 +1,12 @@
+"""This module defines tools for handling subprocesses in the context
+of gbs using asyncio.
+"""
+
 from __future__ import annotations
 from pathlib import Path
 import asyncio
+
+__all__ = ["MessageSubprocess"]
 
 class MessageSubprocess:
     """
