@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import click
+
 from ..logging import get_logger
 from ..build import BuildContext, BuildFileSet
 from ..backend.registry import get_backend_registry
@@ -179,38 +181,38 @@ def _show_task_graph(build_ctx):
         elif isinstance(step, Task):
             tasks.append(step)
 
-    logger.info(f"    Resources ({len(resources)} files):")
+    click.echo(f"    Resources ({len(resources)} files):")
     for resource in sorted(resources, key=lambda r: r.name):
         deps = [d.name for d in resource.depends_on if d in tasks]
         if deps:
-            logger.info(f"      {resource.name}")
+            click.echo(f"      {resource.name}")
             for dep_name in sorted(deps):
-                logger.info(f"        ← produced by: {dep_name}")
+                click.echo(f"        ← produced by: {dep_name}")
         else:
-            logger.info(f"      {resource.name} (source)")
+            click.echo(f"      {resource.name} (source)")
 
-    logger.info("")
-    logger.info(f"    Tasks ({len(tasks)} tasks):")
+    click.echo("")
+    click.echo(f"    Tasks ({len(tasks)} tasks):")
     for task in sorted(tasks, key=lambda t: t.name):
-        logger.info(f"      {task.name}")
+        click.echo(f"      {task.name}")
 
         # Show what this task depends on (inputs)
         input_resources = [d for d in task.depends_on if isinstance(d, (Resource, VirtualResource))]
         if input_resources:
             for dep in sorted(input_resources, key=lambda r: r.name):
-                logger.info(f"        → reads: {dep.name}")
+                click.echo(f"        → reads: {dep.name}")
 
         # Show what depends on this task (outputs)
         output_resources = [e for e in task.expected_by if isinstance(e, (Resource, VirtualResource))]
         if output_resources:
             for exp in sorted(output_resources, key=lambda r: r.name):
-                logger.info(f"        ← produces: {exp.name}")
+                click.echo(f"        ← produces: {exp.name}")
 
     if virtual_resources:
-        logger.info("")
-        logger.info(f"    Virtual resources ({len(virtual_resources)}):")
+        click.echo("")
+        click.echo(f"    Virtual resources ({len(virtual_resources)}):")
         for vr in sorted(virtual_resources, key=lambda r: r.name):
-            logger.info(f"      {vr.name}")
+            click.echo(f"      {vr.name}")
 
 
 async def show_graph_for_project(
@@ -239,16 +241,16 @@ async def show_graph_for_project(
     build_ctx = BuildContext(project=project_model, gbs_config=gbs_config)
 
     # Discover backends
-    logger.info("Discovering backends...")
+    click.echo("Discovering backends...")
     backend_registry = get_backend_registry()
     backend_names = backend_registry.list_backends()
-    logger.info(f"Discovered {len(backend_names)} backend(s):")
+    click.echo(f"Discovered {len(backend_names)} backend(s):")
     for backend_module in backend_names:
-        logger.info(f"  - {backend_module}")
+        click.echo(f"  - {backend_module}")
 
     # Plan build for all output groups
-    logger.info("")
-    logger.info(f"Planning build for {len(project_model.output_groups)} output group(s)...")
+    click.echo("")
+    click.echo(f"Planning build for {len(project_model.output_groups)} output group(s)...")
     backends = backend_registry.get_all_backends()
 
     # Create synthetic repository from project's root partition for planning
@@ -270,24 +272,24 @@ async def show_graph_for_project(
 
         num_files = len(plan.source_fileset.get_all_files())
         num_libs = len(plan.source_fileset.libraries)
-        logger.info(f"  Output group '{plan.output_group.name}':")
-        logger.info(f"    Topcell: {plan.output_group.topcell}")
-        logger.info(f"    Sources: {num_files} files in {num_libs} libraries")
-        logger.info(f"    Passes: {len(plan.passes)}")
-        logger.info(f"    Outputs: {len(plan.output_group.outputs)}")
+        click.echo(f"  Output group '{plan.output_group.name}':")
+        click.echo(f"    Topcell: {plan.output_group.topcell}")
+        click.echo(f"    Sources: {num_files} files in {num_libs} libraries")
+        click.echo(f"    Passes: {len(plan.passes)}")
+        click.echo(f"    Outputs: {len(plan.output_group.outputs)}")
 
     # Show detailed dependency graph
-    logger.info("")
-    logger.info("Build dependency graph:")
-    logger.info("")
+    click.echo("")
+    click.echo("Build dependency graph:")
+    click.echo("")
 
     for plan in plans:
-        logger.info(f"Output group: {plan.output_group.name}")
-        logger.info(f"  Topcell: {plan.output_group.topcell}")
-        logger.info("")
+        click.echo(f"Output group: {plan.output_group.name}")
+        click.echo(f"  Topcell: {plan.output_group.topcell}")
+        click.echo("")
 
         # Show source files by library
-        logger.info(f"  Source files ({len(plan.source_fileset.get_all_files())} files):")
+        click.echo(f"  Source files ({len(plan.source_fileset.get_all_files())} files):")
         for lib_name in plan.source_fileset.libraries:
             files = plan.source_fileset.files.get((lib_name, None), [])
             if not files:
@@ -296,29 +298,29 @@ async def show_graph_for_project(
                     files.extend(plan.source_fileset.files.get((lib_name, part_name), []))
 
             if files:
-                logger.info(f"    Library {lib_name}:")
+                click.echo(f"    Library {lib_name}:")
                 for source_file in files:
                     # Handle both enum and string for language
                     lang_str = source_file.file_type.value if hasattr(source_file.file_type, 'value') else str(source_file.file_type)
-                    logger.info(f"      - {source_file.path.name} ({lang_str})")
+                    click.echo(f"      - {source_file.path.name} ({lang_str})")
 
-        logger.info("")
+        click.echo("")
 
         # Show passes
-        logger.info(f"  Passes ({len(plan.passes)} passes):")
+        click.echo(f"  Passes ({len(plan.passes)} passes):")
         for pass_class in plan.passes:
-            logger.info(f"    - {pass_class.name}")
-            logger.info(f"        Input types: {', '.join(pass_class.input_types)}")
-            logger.info(f"        Output types: {', '.join(pass_class.output_types)}")
+            click.echo(f"    - {pass_class.name}")
+            click.echo(f"        Input types: {', '.join(pass_class.input_types)}")
+            click.echo(f"        Output types: {', '.join(pass_class.output_types)}")
 
-        logger.info("")
+        click.echo("")
 
         # Show expected outputs
-        logger.info(f"  Expected outputs ({len(plan.output_group.outputs)} files):")
+        click.echo(f"  Expected outputs ({len(plan.output_group.outputs)} files):")
         for output_spec in plan.output_group.outputs:
-            logger.info(f"    - {output_spec.path} (type: {output_spec.type})")
+            click.echo(f"    - {output_spec.path} (type: {output_spec.type})")
 
-        logger.info("")
+        click.echo("")
 
         # Build and show library dependency graph
         fileset = BuildFileSet(build_ctx)
@@ -326,20 +328,20 @@ async def show_graph_for_project(
 
         lib_graph = fileset.library_dependency_graph()
         if lib_graph:
-            logger.info(f"  Library dependencies:")
+            click.echo(f"  Library dependencies:")
             for lib_name in sorted(lib_graph.keys()):
                 deps = lib_graph[lib_name]
                 if deps:
-                    logger.info(f"    {lib_name} depends on:")
+                    click.echo(f"    {lib_name} depends on:")
                     for dep in sorted(deps):
-                        logger.info(f"      → {dep}")
+                        click.echo(f"      → {dep}")
                 else:
-                    logger.info(f"    {lib_name} (no dependencies)")
-            logger.info("")
+                    click.echo(f"    {lib_name} (no dependencies)")
+            click.echo("")
 
         # Show the actual build task graph by running dispatchers
-        logger.info(f"  Build task graph:")
-        logger.info("")
+        click.echo(f"  Build task graph:")
+        click.echo("")
 
         # Set output group context
         build_ctx.set_output_group_context(
