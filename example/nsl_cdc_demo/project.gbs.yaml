@@ -21,8 +21,10 @@ output:
       vendor: gowin
       target: synthesis
     backend_config:
-      gbs.backend.gowin:
+      gbs.builtin.gowin:
         part: GW5AT-LV60PG484AC1/I0
+      gbs.plugin.nsl:
+        output_dir: build
     outputs:
       - type: gowin-fs
         path: build/nsl_cdc_demo.fs

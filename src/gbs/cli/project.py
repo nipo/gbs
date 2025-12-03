@@ -271,8 +271,10 @@ async def _build_with_output_groups(
                 topcell_library=project.root_library_name
             )
 
-            # Determine which backends to use
+            # Determine which backends to use (same logic as build)
             backend_modules_used = set()
+
+            # Add backends that contributed passes
             for pass_metadata in plan.passes:
                 for backend_module in backend_names:
                     backend = backend_registry.get_backend(backend_module)
@@ -284,7 +286,12 @@ async def _build_with_output_groups(
                         backend_modules_used.add(backend_module)
                         break
 
-            # Create dispatchers and run iteration (but don't execute)
+            # Add backends explicitly configured in backend_config
+            for backend_module in plan.output_group.backend_config.keys():
+                if backend_module in backend_names:
+                    backend_modules_used.add(backend_module)
+
+            # Create dispatchers
             dispatcher_registry = DispatcherRegistry()
             for backend_module in backend_modules_used:
                 backend = backend_registry.get_backend(backend_module)
@@ -327,16 +334,15 @@ async def _build_with_output_groups(
         fileset = BuildFileSet(build_ctx)
         build_ctx.populate_fileset(plan.source_fileset, fileset)
 
-        # Determine which backends contributed to this plan
-        # We need to create dispatchers for these backends
+        # Determine which backends to use:
+        # 1. Backends that contributed passes (main backend doing the work)
+        # 2. Backends configured in backend_config (may be post-processors like NSL CDC)
         backend_modules_used = set()
+
+        # Add backends that contributed passes
         for pass_metadata in plan.passes:
-            # Each pass knows which backend it came from
-            # For now, we need to match passes to backends
-            # The planner should track this, but we can infer it from pass names
             for backend_module in backend_names:
                 backend = backend_registry.get_backend(backend_module)
-                # Check if this backend provides this pass
                 contributed_passes = backend.contribute_passes(
                     plan.output_group.backend_config.get(backend_module, {}),
                     {output.type for output in plan.output_group.outputs}
@@ -344,6 +350,11 @@ async def _build_with_output_groups(
                 if pass_metadata.pass_class in contributed_passes:
                     backend_modules_used.add(backend_module)
                     break
+
+        # Add backends explicitly configured in backend_config (e.g., post-processors)
+        for backend_module in plan.output_group.backend_config.keys():
+            if backend_module in backend_names:
+                backend_modules_used.add(backend_module)
 
         # Create dispatcher registry for this plan
         dispatcher_registry = DispatcherRegistry()
