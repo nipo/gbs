@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ..logging import setup_logging, get_logger, get_log_file
 from ..repository.loader import load_repository, load_project, load_project_with_repositories, LoadError
-from ..plugins.registry import get_plugin_registry
 from ..config.model import GBSConfig
 from .group import ReMatchGroup
 
@@ -114,10 +113,7 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
 
     # Load GBS configuration
     logger.debug("Loading GBS configuration...")
-    plugin_registry = get_plugin_registry()
-    plugin_registry.discover_plugins()
-    default_tools = plugin_registry.get_default_tools()
-    gbs_config = GBSConfig.load(plugin_defaults=default_tools)
+    gbs_config = GBSConfig.load()
 
     # Store in context for subcommands
     ctx.ensure_object(dict)
