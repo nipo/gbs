@@ -8,8 +8,7 @@ from pathlib import Path
 import sys
 
 from ..logging import get_logger
-from ..repository.loader import load_project, load_project_with_repositories, load_repository, LoadError
-from ..repository.resolver import resolve_project
+from ..repository.loader import load_repository
 from ..cli import load_project_for_command, get_project_file
 from .group import ReMatchGroup
 
