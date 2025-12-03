@@ -1,7 +1,20 @@
-"""Project model"""
-from .model import ProjectModel as Project, OutputGroup, OutputFile
+"""GBS Project module
 
-__all__ = ["Project", "ProjectModel", "OutputGroup", "OutputFile"]
+Provides project data models and execution functionality.
+"""
 
-# Alias for backward compatibility
-ProjectModel = Project
+# Data models
+from .model import ProjectModel, OutputGroup, OutputFile
+
+# Project execution and loading
+from .loader import Project, LoadError
+
+__all__ = [
+    # Data models
+    "ProjectModel",
+    "OutputGroup",
+    "OutputFile",
+    # Execution
+    "Project",
+    "LoadError",
+]
