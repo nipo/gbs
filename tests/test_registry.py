@@ -169,8 +169,9 @@ def test_discover_backends_loads_builtins():
     reset_backend_registry()
     registry = get_backend_registry()
 
-    # Should have loaded the 2 built-in backends (ghdl, gowin)
+    # Should have loaded at least the 2 built-in backends (ghdl, gowin)
+    # May also discover plugins if available
     backends = registry.list_backends()
-    assert len(backends) == 2
+    assert len(backends) >= 2
     assert "gbs.builtin.ghdl" in backends
     assert "gbs.builtin.gowin" in backends
