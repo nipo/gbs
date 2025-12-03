@@ -32,7 +32,7 @@ class BackendRegistry:
     """Global registry of backends
 
     The registry discovers backends via the unified plugin system.
-    Provides backward-compatible API by mapping plugin names to backends.
+    Maps plugin names (module paths) to backend instances.
 
     Backends implement the Backend Protocol with:
     - contribute_passes(config, output_types) -> list[type[Pass]]
@@ -58,7 +58,7 @@ class BackendRegistry:
 
                 # Register each backend
                 for backend in backends:
-                    # Use the plugin name as the module path for backward compatibility
+                    # Use the plugin name as the module path
                     # For built-in plugins, this is "gbs.builtin.ghdl", etc.
                     module_path = plugin.name
 

@@ -27,11 +27,5 @@ def gbs_register():
     return GowinPlugin()
 
 
-# Legacy compatibility
-def get_backend():
-    """Legacy function for backwards compatibility"""
-    return GowinBackend()
-
-
-__all__ = ["GowinPlugin", "GowinBackend", "gbs_register", "get_backend"]
+__all__ = ["GowinPlugin", "GowinBackend", "gbs_register"]
 

@@ -27,11 +27,5 @@ def gbs_register():
     return GHDLPlugin()
 
 
-# Legacy compatibility
-def get_backend():
-    """Legacy function for backwards compatibility"""
-    return GHDLBackend()
-
-
-__all__ = ["GHDLPlugin", "GHDLBackend", "gbs_register", "get_backend"]
+__all__ = ["GHDLPlugin", "GHDLBackend", "gbs_register"]
 

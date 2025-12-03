@@ -3,16 +3,15 @@
 import pytest
 from pathlib import Path
 
-from gbs.builtin.ghdl import get_backend
 from gbs.builtin.ghdl.backend import GHDLBackend
 from gbs.builtin.ghdl.passes import GHDLSimulatePass
 from gbs.backend.protocol import Backend, BaseBackend
 from gbs.backend.dispatcher import Dispatcher
 
 
-def test_get_backend_returns_new_backend():
-    """Test that get_backend returns new Backend instance"""
-    backend = get_backend()
+def test_backend_creation():
+    """Test that GHDLBackend can be instantiated"""
+    backend = GHDLBackend()
 
     assert isinstance(backend, GHDLBackend)
     assert isinstance(backend, BaseBackend)
@@ -21,7 +20,7 @@ def test_get_backend_returns_new_backend():
 
 def test_backend_implements_protocol():
     """Test that GHDLBackend implements Backend Protocol"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     # Check that it has the required methods
     assert hasattr(backend, 'contribute_passes')
@@ -32,7 +31,7 @@ def test_backend_implements_protocol():
 
 def test_contribute_passes_with_simulator_output():
     """Test that backend contributes simulation pass when simulator is requested"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     config = {"vhdl_standard": "2008"}
     output_types = {"ghdl-simulator"}
@@ -45,7 +44,7 @@ def test_contribute_passes_with_simulator_output():
 
 def test_contribute_passes_with_generic_simulator():
     """Test that backend contributes pass for generic 'simulator' output"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     config = {}
     output_types = {"simulator"}
@@ -58,7 +57,7 @@ def test_contribute_passes_with_generic_simulator():
 
 def test_contribute_passes_no_matching_output():
     """Test that backend returns empty list when no matching output"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     config = {}
     output_types = {"netlist", "bitstream"}
@@ -70,7 +69,7 @@ def test_contribute_passes_no_matching_output():
 
 def test_create_dispatcher():
     """Test that backend creates dispatcher correctly"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     config = {
         "vhdl_standard": "2008",
@@ -89,7 +88,7 @@ def test_create_dispatcher():
 
 def test_create_dispatcher_with_defaults():
     """Test that dispatcher creation uses default config"""
-    backend = get_backend()
+    backend = GHDLBackend()
 
     config = {}
 
