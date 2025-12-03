@@ -136,6 +136,39 @@ class Project:
 
         raise LoadError(f"No project.gbs.yaml found in {start_path} or parent directories")
 
+    async def build(
+        self,
+        output_dir: Path = Path("build"),
+        max_iterations: int = 10,
+        show_progress: bool = True
+    ):
+        """Build the project
+
+        Executes the build for all output groups.
+
+        Args:
+            output_dir: Output directory for build artifacts (default: "build")
+            max_iterations: Maximum dispatcher iterations (default: 10)
+            show_progress: Whether to show progress bars (default: True)
+
+        Raises:
+            Exception: If build fails
+
+        Example:
+            >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
+            >>> await proj.build()
+        """
+        from .builder import build_project
+
+        await build_project(
+            self.model,
+            self.repositories,
+            output_dir=output_dir,
+            max_iterations=max_iterations,
+            show_progress=show_progress,
+            gbs_config=self.gbs_config
+        )
+
     def __str__(self) -> str:
         return f"Project({self.model.name}, {len(self.model.output_groups)} output groups, {len(self.repositories)} repositories)"
 

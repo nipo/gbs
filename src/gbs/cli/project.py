@@ -55,25 +55,44 @@ async def project(ctx, project_file: Path | None):
 @click.pass_context
 async def build(ctx, repo: tuple[Path], output_dir: Path, max_iterations: int, show_graph: bool):
     """Build a project"""
-    from ..build import BuildContext, BuildFileSet
+    from ..project import Project, LoadError
 
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
     project_file = get_project_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
 
     try:
-        # Load project configuration
-        project, repositories, gbs_config = load_project_for_command(ctx, project_file, repo)
+        # Load project using new API
+        proj = Project.load_from_file(project_file, gbs_config=gbs_config)
 
-        #Verify project has output groups
-        if not project.output_groups:
+        # Load additional repositories from command line
+        if repo:
+            from ..repository.loader import load_repository
+            for repo_path in repo:
+                logger.info(f"Loading additional repository: {repo_path}")
+                proj.repositories.append(load_repository(repo_path))
+
+        # Verify project has output groups
+        if not proj.model.output_groups:
             click.echo("Error: Project must define at least one output group", err=True)
             click.echo("See documentation for output group configuration", err=True)
             sys.exit(1)
 
-        await _build_with_output_groups(
-            project, repositories, gbs_config,
-            output_dir, max_iterations, show_graph, show_pb
+        # Show graph if requested (keeping old implementation for now)
+        if show_graph:
+            # Fall back to old implementation for --show-graph
+            await _build_with_output_groups(
+                proj.model, proj.repositories, gbs_config,
+                output_dir, max_iterations, show_graph, show_pb
+            )
+            return
+
+        # Build using new API
+        await proj.build(
+            output_dir=output_dir,
+            max_iterations=max_iterations,
+            show_progress=show_pb
         )
 
     except LoadError as e:
