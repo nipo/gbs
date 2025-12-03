@@ -1,23 +1,23 @@
 // NSL CDC Demo Pin Constraints
 
 // Clock
-IO_LOC  "clk" H11;
+IO_LOC  "clk" Y18;
 IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
 // Reset
-IO_LOC  "rst_n" G11;
+IO_LOC  "rst_n" Y19;
 IO_PORT "rst_n" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // Test inputs
-IO_LOC  "async_input" F11;
+IO_LOC  "async_input" AB21;
 IO_PORT "async_input" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
-IO_LOC  "cross_domain_input" E11;
+IO_LOC  "cross_domain_input" AB22;
 IO_PORT "cross_domain_input" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
 // Test outputs
-IO_LOC  "test_output" D11;
+IO_LOC  "test_output" M15;
 IO_PORT "test_output" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
-IO_LOC  "tig_output" C11;
+IO_LOC  "tig_output" M16;
 IO_PORT "tig_output" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
