@@ -4,3 +4,5 @@ doc/plan
 __pycache__
 *.pyc
 .gbs/
+*.o
+*.cf
