@@ -24,7 +24,7 @@ class GowinBackend(BaseBackend):
     """
 
     def __init__(self):
-        super().__init__("gbs.backend.gowin")
+        super().__init__("gbs.builtin.gowin")
 
     def contribute_passes(
         self,
@@ -42,9 +42,7 @@ class GowinBackend(BaseBackend):
         """
         passes = []
 
-        # If any output type is gowin-fs, gowin-netlist, or generic bitstream/netlist,
-        # contribute the Gowin synthesis pass
-        if any(t in output_types for t in ["gowin-fs", "gowin-netlist", "bitstream", "netlist"]):
+        if any(t in output_types for t in ["gowin-fs"]):
             passes.append(GowinSynthesizePass)
 
         return passes

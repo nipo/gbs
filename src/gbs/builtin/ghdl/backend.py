@@ -22,7 +22,7 @@ class GHDLBackend(BaseBackend):
     """
 
     def __init__(self):
-        super().__init__("gbs.backend.ghdl")
+        super().__init__("gbs.builtin.ghdl")
 
     def contribute_passes(
         self,

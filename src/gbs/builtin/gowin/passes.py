@@ -24,7 +24,7 @@ class GowinSynthesizePass(Pass):
     but they are optional and don't need to be present for planning.
     """
     name = "gowin-synthesize"
-    input_types = {"vhdl"}
+    input_types = {"vhdl", "verilog", "gowin-cst", "gowin-sdc"}
     output_types = {"gowin-fs", "gowin-netlist"}
 
     def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:

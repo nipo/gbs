@@ -70,6 +70,9 @@ class PartitionRef:
     def __hash__(self) -> int:
         return hash((self.library, self.partition))
 
+    def __lt__(self, other):
+        return self.library < other.library \
+            or self.partition < other.partition
 
 @dataclass
 class ResolvedPartition:
@@ -311,6 +314,46 @@ class DependencyResolver:
         """
         logger.debug("Performing topological sort")
 
+        inter_libs = {}
+
+        for p in graph.values():
+            deps = set(x.library for x in p.deps if x.library != p.ref.library)
+            inter_libs[p.ref.library] = inter_libs.get(p.ref.library, set()) | deps
+
+        ordered_libs = []
+        tbd = set(inter_libs.keys())
+        while tbd:
+            resolved = set(ordered_libs)
+            available = set(x for x in tbd if inter_libs[x] <= resolved)
+            if not available:
+                raise CyclicDependencyError(
+                    f"Cyclic dependency detected in libraries {tbd}"
+                )
+            ordered_libs += list(sorted(available))
+            tbd = tbd - available
+
+        tbd = set(graph.keys())
+        partitions_in_order = []
+
+        while tbd:
+            resolved = set(partitions_in_order)
+            available = set(x for x in tbd if set(graph[x].deps) <= resolved)
+            if not available:
+                raise CyclicDependencyError(
+                    f"Cyclic dependency detected. Unresolved partitions: {tbd}"
+                )
+
+            for a in sorted(available):
+                partitions_in_order.append(a)
+                tbd.remove(a)
+
+        ret = []
+        for l in ordered_libs:
+            in_lib = [pr for pr in partitions_in_order if pr.library == l]
+            ret += in_lib
+                
+        return ret
+
         # Calculate in-degrees (number of dependencies)
         in_degree = {ref: 0 for ref in graph}
         for resolved in graph.values():
@@ -397,22 +440,3 @@ class DependencyResolver:
 
         return build_set
 
-
-def resolve_project(
-    project: Project,
-    repositories: list[Repository]
-) -> SourceFileSet:
-    """Resolve project dependencies and create build file set
-
-    Args:
-        project: Project to resolve
-        repositories: Available repositories
-
-    Returns:
-        SourceFileSet with ordered partitions and files
-
-    Raises:
-        ResolutionError: If resolution fails
-    """
-    resolver = DependencyResolver(project, repositories)
-    return resolver.resolve()

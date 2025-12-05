@@ -6,7 +6,7 @@ Project-specific data structures for build configuration and output specificatio
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Any
-
+from ..repository.model import Repository, SourceFileSet
 
 @dataclass
 class OutputFile:
@@ -61,7 +61,7 @@ class OutputGroup:
         ...     name="simulation",
         ...     topcell="testbench",
         ...     filter_vars={"sim": 1, "vendor": "generic"},
-        ...     backend_config={"gbs.backend.ghdl": {"vhdl_standard": "2008"}},
+        ...     backend_config={"gbs.builtin.ghdl": {"vhdl_standard": "2008"}},
         ...     outputs=[OutputFile(type="simulator", path=Path("sim.exe"))]
         ... )
         >>>
@@ -70,7 +70,7 @@ class OutputGroup:
         ...     name="gowin_synth",
         ...     topcell="top",
         ...     filter_vars={"vendor": "gowin"},
-        ...     require_backends=["gbs.backend.gowin"],
+        ...     require_backends=["gbs.builtin.gowin"],
         ...     outputs=[
         ...         OutputFile(type="gowin-fs", path=Path("bitstream.fs")),
         ...         OutputFile(type="gowin-bin", path=Path("flash.bin"))
@@ -115,11 +115,32 @@ class ProjectModel:
 
     @property
     def root_library_name(self) -> str:
-        """The root library is always 'work' for synthesis tools"""
+        """Root library name. Sometimes, synthesis tools do not give a choice"""
         return "work"
 
     def __str__(self) -> str:
         return f"ProjectModel({self.name}, {len(self.output_groups)} output groups)"
+
+    def resolve(
+            self,
+            repositories: list[Repository],
+            filter_vars: dict[str, str | int] | None = None,
+    ) -> SourceFileSet:
+        """Resolve project dependencies and create build file set
+
+        Args:
+            project: Project to resolve
+            repositories: Available repositories
+
+        Returns:
+            SourceFileSet with ordered partitions and files
+
+        Raises:
+            ResolutionError: If resolution fails
+        """
+        from ..repository.resolver import DependencyResolver
+        resolver = DependencyResolver(self, repositories, filter_vars)
+        return resolver.resolve()
 
 
 __all__ = [

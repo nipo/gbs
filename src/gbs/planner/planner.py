@@ -34,8 +34,6 @@ class PlanningError(Exception):
     """Raised when build planning fails"""
     pass
 
-
-@dataclass
 class BuildPlan:
     """Result of build planning for one OutputGroup
 
@@ -46,23 +44,41 @@ class BuildPlan:
         output_group: The OutputGroup this plan is for
         passes: Ordered list of PassMetadata (planning order, not execution order!)
         combined_filter_vars: Merged filter variables from all passes + output_group
-        source_fileset: Resolved source files (populated after planning)
         repositories: List of repositories to search for sources
     """
     output_group: OutputGroup
     passes: list[PassMetadata]
-    combined_filter_vars: dict[str, Any]
+    filter_vars: dict[str, Any]
     repositories: list[Repository]
-    source_fileset: SourceFileSet | None = None
 
+    def __init__(self,
+                 output_group: OutputGroup,
+                 passes: list[PassMetadata],
+                 filter_vars: dict[str, Any],
+                 repositories: list[Repository]):
+        self.output_group = output_group
+        self.passes = passes
+        self.filter_vars = filter_vars
+        self.repositories = repositories
+    
     def __str__(self) -> str:
         return (
             f"BuildPlan("
             f"output_group={self.output_group.name}, "
             f"{len(self.passes)} passes, "
-            f"{len(self.combined_filter_vars)} filter_vars)"
+            f"{len(self.filter_vars)} filter_vars)"
         )
 
+@dataclass
+class PartialPlan:
+    outputs: set[str]
+    passes: list[str]
+
+    def __hash__(self):
+        return hash((
+            tuple(sorted(self.outputs)),
+            tuple(sorted(p.name for p in self.passes)),
+        ))
 
 class BuildPlanner:
     """Type-based iterative build planner
@@ -75,7 +91,7 @@ class BuildPlanner:
         planner = BuildPlanner(repositories, backends)
         plan = planner.plan(output_group)
         print(f"Selected passes: {[p.name for p in plan.passes]}")
-        print(f"Filter variables: {plan.combined_filter_vars}")
+        print(f"Filter variables: {plan.filter_vars}")
     """
 
     def __init__(
@@ -125,7 +141,7 @@ class BuildPlanner:
             ...     name="simulation",
             ...     topcell="testbench",
             ...     filter_vars={"target-usage": "simulation"},
-            ...     backend_config={"gbs.backend.ghdl": {"vhdl_standard": "2008"}},
+            ...     backend_config={"gbs.builtin.ghdl": {"vhdl_standard": "2008"}},
             ...     outputs=[OutputFile(type="ghdl-simulator", path=Path("sim"))]
             ... )
             >>> plan = planner.plan(og)
@@ -133,54 +149,71 @@ class BuildPlanner:
         self.logger.info(f"Planning build for output group: {output_group.name}")
 
         # Extract desired output types
-        desired_outputs = {output.type for output in output_group.outputs}
-        self.logger.debug(f"Desired output types: {sorted(desired_outputs)}")
+        output_types = {output.type for output in output_group.outputs}
 
-        # Query backends for candidate passes
-        candidate_passes = self._query_backends(output_group, desired_outputs)
-        self.logger.debug(
-            f"Found {len(candidate_passes)} candidate passes from backends"
-        )
+        # Get source types
+        source_types = set(self.available_source_types)
+        
+        self.logger.debug(f"Planning path {sorted(source_types)} -> {sorted(output_types)}")
 
-        if not candidate_passes:
-            raise PlanningError(
-                f"No passes found that can produce outputs: {desired_outputs}"
-            )
+        initial_plan = PartialPlan(output_types, [])
+        
+        possibilities = self._progress_to_sources(output_group, source_types, initial_plan)
 
-        # Find transformation path
-        selected_passes = self._find_transformation_path(
-            desired_outputs,
-            candidate_passes
-        )
+        selected = []
+        for pp in possibilities:
+            names = set(p.name for p in pp.passes)
+            if set(output_group.require_passes) - names:
+                continue
+            if set(output_group.exclude_passes) & names:
+                continue
 
-        if not selected_passes:
-            raise PlanningError(
-                f"No transformation path found from available sources "
-                f"{self.available_source_types} to desired outputs {desired_outputs}"
-            )
+            selected.append(pp)
+        
+        if not selected:
+            raise PlanningError(f"Cannot find passes from {source_types} to {output_types}")
 
-        self.logger.info(
-            f"Selected {len(selected_passes)} passes: "
-            f"{[p.name for p in selected_passes]}"
-        )
-
-        # Combine filter variables
-        combined_filter_vars = self._combine_filter_vars(
-            output_group,
-            selected_passes
-        )
-
-        self.logger.debug(
-            f"Combined filter variables: {combined_filter_vars}"
-        )
+        if len(selected) != 1:
+            raise PlanningError(f"Too many possibilities from {source_types} to {output_types}: {selected}")
 
         return BuildPlan(
-            output_group=output_group,
-            passes=selected_passes,
-            combined_filter_vars=combined_filter_vars,
-            repositories=self.repositories
-        )
+            output_group = output_group,
+            passes = selected[0].passes,
+            filter_vars = self._combine_filter_vars(output_group, selected[0].passes),
+            repositories = self.repositories)
+        
+    def _progress_to_sources(self,
+                             output_group: OutputGroup,
+                             target_inputs: set(str),
+                             partial_plan: PartialPlan) -> list[PartialPlan]:
+        candidates = self._query_backends(output_group, partial_plan.outputs)
 
+        if not candidates:
+            return []
+        
+        self.logger.debug(
+            f"{' '*len(partial_plan.passes)} to go: {partial_plan.outputs} with {partial_plan.passes}"
+        )
+        self.logger.debug(f"{' '*len(partial_plan.passes)} candidates: {candidates}")
+
+        ret = []
+        for p in candidates:
+            if p in partial_plan.passes:
+                continue
+
+            outputs_left = partial_plan.outputs - p.output_types
+            outputs_left = outputs_left | p.input_types
+
+            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, outputs left: {outputs_left}")
+
+            n = PartialPlan(outputs_left, partial_plan.passes + [p])
+            if outputs_left >= target_inputs:
+                ret.append(n)
+            else:
+                for sub in self._progress_to_sources(output_group, target_inputs, n):
+                    ret.append(sub)
+        return ret
+    
     def _query_backends(
         self,
         output_group: OutputGroup,
@@ -219,95 +252,10 @@ class BuildPlanner:
 
         return candidates
 
-    def _find_transformation_path(
-        self,
-        desired_outputs: set[str],
-        candidates: list[PassMetadata]
-    ) -> list[PassMetadata]:
-        """Find transformation path from sources to outputs
-
-        Uses iterative deepening to find shortest path.
-
-        Args:
-            desired_outputs: Set of desired output types
-            candidates: List of candidate passes
-
-        Returns:
-            List of selected PassMetadata in planning order
-        """
-        self.logger.debug(
-            f"Finding transformation path for outputs: {sorted(desired_outputs)}"
-        )
-
-        # Try to satisfy all output types
-        selected = []
-        satisfied_types = set(self.available_source_types)
-
-        # Iteratively select passes that move us closer to outputs
-        max_iterations = 10
-        for iteration in range(max_iterations):
-            self.logger.debug(
-                f"Iteration {iteration + 1}: satisfied types = {sorted(satisfied_types)}"
-            )
-
-            # Check if we've satisfied all output types
-            if desired_outputs.issubset(satisfied_types):
-                self.logger.info("All output types satisfied!")
-                return selected
-
-            # Find passes whose inputs are satisfied
-            available_passes = [
-                p for p in candidates
-                if p.input_types.issubset(satisfied_types)
-            ]
-
-            if not available_passes:
-                self.logger.error(
-                    f"No more passes available. Cannot satisfy: "
-                    f"{desired_outputs - satisfied_types}"
-                )
-                return []
-
-            # Select pass that provides needed outputs
-            # Priority: passes that provide desired outputs first
-            needed_outputs = desired_outputs - satisfied_types
-            best_pass = None
-
-            # First, look for passes that directly provide needed outputs
-            for pass_meta in available_passes:
-                if pass_meta.output_types & needed_outputs:
-                    if pass_meta not in selected:
-                        best_pass = pass_meta
-                        break
-
-            # If no pass directly provides needed outputs, look for intermediate types
-            if not best_pass:
-                # Find passes that provide types needed by other passes
-                for pass_meta in available_passes:
-                    if pass_meta not in selected:
-                        best_pass = pass_meta
-                        break
-
-            if not best_pass:
-                self.logger.error("No suitable pass found for next step")
-                return []
-
-            # Add pass to plan
-            selected.append(best_pass)
-            satisfied_types.update(best_pass.output_types)
-
-            self.logger.debug(
-                f"Selected pass: {best_pass.name} "
-                f"(inputs: {best_pass.input_types}, outputs: {best_pass.output_types})"
-            )
-
-        self.logger.error(f"Max iterations ({max_iterations}) exceeded")
-        return []
-
     def _combine_filter_vars(
         self,
         output_group: OutputGroup,
-        selected_passes: list[PassMetadata]
+        passes: set[PassMetadata]
     ) -> dict[str, Any]:
         """Combine filter variables from output group and all passes
 
@@ -316,14 +264,14 @@ class BuildPlanner:
 
         Args:
             output_group: Output group with base filter_vars
-            selected_passes: Selected passes that contribute filter_vars
+            passes: Passes that contribute filter_vars
 
         Returns:
             Combined dictionary of filter variables
         """
         combined = dict(output_group.filter_vars)
 
-        for pass_meta in selected_passes:
+        for pass_meta in passes:
             # Pass filter_vars override output_group filter_vars
             combined.update(pass_meta.filter_vars)
 
@@ -334,39 +282,3 @@ class BuildPlanner:
                 )
 
         return combined
-
-
-def plan_project(
-    project,
-    repositories: list[Repository],
-    backends: list[Backend]
-) -> list[BuildPlan]:
-    """Plan build for all output groups in a project
-
-    Convenience function that creates a planner and plans all output groups.
-
-    Args:
-        project: Project with output_groups
-        repositories: List of source repositories
-        backends: List of backends
-
-    Returns:
-        List of BuildPlan, one per output group
-
-    Raises:
-        PlanningError: If any output group cannot be planned
-
-    Example:
-        >>> plans = plan_project(project, repositories, backends)
-        >>> for plan in plans:
-        ...     print(f"Output group: {plan.output_group.name}")
-        ...     print(f"  Passes: {[p.name for p in plan.passes]}")
-    """
-    planner = BuildPlanner(repositories, backends)
-    plans = []
-
-    for output_group in project.output_groups:
-        plan = planner.plan(output_group)
-        plans.append(plan)
-
-    return plans

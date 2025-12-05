@@ -155,7 +155,7 @@ class PassMetadata:
         Args:
             pass_class: The Pass class
             config: Backend configuration
-            backend_name: Backend module name (e.g., "gbs.backend.ghdl")
+            backend_name: Backend module name (e.g., "gbs.builtin.ghdl")
         """
         self.pass_class = pass_class
         self.config = config

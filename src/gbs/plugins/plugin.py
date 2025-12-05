@@ -63,6 +63,15 @@ class Plugin(ABC):
         """
         return []
 
+    def generic_dispatchers(self) -> list['Dispatcher']:
+        """Enumerate generic dispatchers that can provide useful
+        behavior with any backend
+
+        Returns:
+            List of Dispatcher instances
+        """
+        return []
+
     def enumerate_repository_parsers(self) -> list:  # list['RepositoryParser']:
         """Enumerate repository parser instances provided by this plugin
 

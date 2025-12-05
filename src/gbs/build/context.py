@@ -537,7 +537,10 @@ class BuildContext:
             self._semaphore = asyncio.Semaphore(self._max_parallel)
         return self._semaphore
 
-    def get_resource(self, path: Path) -> 'Resource':
+    def get_resource(self,
+                     path: Path,
+                     metadata: dict[str, str] = {},
+                     generated: bool = True) -> 'Resource':
         """Get or create a Resource for a file path (singleton)
 
         Args:
@@ -548,7 +551,9 @@ class BuildContext:
         """
         path = path.resolve()  # Normalize path
         if path not in self._resources:
-            self._resources[path] = Resource(self, path)
+            r = Resource(self, path)
+            r.metadata.update(metadata)
+            self._resources[path] = r
         return self._resources[path]
 
     def get_virtual_resource(self, name: str) -> 'VirtualResource':
@@ -612,6 +617,8 @@ class BuildContext:
             >>> ctx.get_tool("gcc")  # Any variant
             {'executable': 'gcc'}
         """
+        from .task import BuildError
+
         if self.gbs_config is None:
             if required:
                 raise BuildError(f"Tool '{identifier}' requested but no GBS config loaded")
@@ -708,15 +715,22 @@ class BuildContext:
                     if source_file.variant:
                         file_type = f"{file_type}_{source_file.variant}"
 
-                    res = self.get_resource(source_file.path)
-                    res.metadata["file_type"] = source_file.file_type
-                    res.metadata["library"] = lib_name
+                    res = self.get_resource(
+                        source_file.path,
+                        metadata = {
+                            "file_type": source_file.file_type,
+                            "library": lib_name,
+                            },
+                        generated = False,
+                    )
+
                     # Create BuildResource
                     br = BuildResource(
                         resource=res,
                         file_type=file_type,
                         library=lib_name,
                     )
+
                     partition_to_resources[partition_key].append(br)
                     fileset.add(br)
 
@@ -767,6 +781,16 @@ class BuildContext:
     def build(self):
         return ContextBuildManager(self)
 
+    def to_clean(self) -> set(Path):
+        from ..build.task import Task, Resource
+        ret = set()
+        for step in self.steps:
+            if isinstance(step, Task):
+                for o in step.outputs:
+                    if isinstance(o, Resource):
+                        ret.add(o.path)
+        return ret
+    
 class ContextBuildManager:
     def __init__(self, context):
         self.context = context

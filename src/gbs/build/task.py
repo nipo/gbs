@@ -404,6 +404,12 @@ class Task(BuildStep):
         """
         ...
 
+    def inputs_of_type(self, type : str) -> List[Resource]:
+        return list(filter(lambda x: x.metadata.get("file_type") == type, self.inputs))
+
+    def outputs_of_type(self, type : str) -> List[Resource]:
+        return list(filter(lambda x: x.metadata.get("file_type") == type, self.outputs))
+        
 # Type for task executor function
 TaskExecutor = Callable[['BuildContext', list[Any]], Awaitable[list[Any]]]
 

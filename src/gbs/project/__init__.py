@@ -7,7 +7,7 @@ Provides project data models and execution functionality.
 from .model import ProjectModel, OutputGroup, OutputFile
 
 # Project execution and loading
-from .loader import Project, LoadError
+from .project import Project, LoadError, PlanRealization
 
 __all__ = [
     # Data models
@@ -17,4 +17,5 @@ __all__ = [
     # Execution
     "Project",
     "LoadError",
+    "PlanRealization",
 ]
