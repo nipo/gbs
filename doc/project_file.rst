@@ -268,6 +268,20 @@ The ``outputs`` entries specify which files to copy from the build directory
 to user-specified locations. This is handled by the output-copy pass which
 runs after all other build steps complete.
 
+**Compression**
+
+Output types can include compression suffixes to automatically compress files:
+
+.. code-block:: yaml
+
+   outputs:
+     - type: ise-bitstream+gzip
+       path: firmware.bit.gz
+
+Supported compression suffixes:
+
+- ``+gzip`` - Standard gzip compression
+
 **Output types** depend on the backend:
 
 **GHDL:**

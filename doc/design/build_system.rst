@@ -476,53 +476,51 @@ The ``outputs`` section in the project file specifies where to copy final
 outputs from the build directory to user-specified locations using the
 output-copy pass.
 
-Output Copy Pass
-----------------
+Output Goal Resolution
+----------------------
 
-The output-copy pass is a built-in pass that runs late (priority 900) to
-copy generated files from the build directory to user-specified paths.
+GBS uses a demand-driven (pull-based) approach for output resolution.
+Desired outputs are added to the BuildFileSet as "goals" that dispatchers
+work backwards from to create the necessary tasks.
 
 How It Works
 ~~~~~~~~~~~~
 
-1. **Planning**: The ``OutputCopyBackend`` contributes an ``OutputCopyPass``
-   for any requested output types
+1. **Output Goals**: When building, each ``output`` entry from the project
+   is added to the BuildFileSet with ``is_output=True`` and no producer
 
-2. **Execution**: The ``OutputCopyDispatcher`` runs after other dispatchers:
+2. **Backward Resolution**: Dispatchers scan for unsatisfied outputs
+   (``is_output=True`` with no producing task) and work backwards:
 
-   - Reads the ``output_group.outputs`` list from project configuration
-   - For each output entry, finds matching files in the BuildFileSet by type
-   - Creates ``CopyTask`` instances to copy files to destination paths
+   - Find the output type needed (e.g., ``ise-bitstream+gzip``)
+   - Determine what source type is required (e.g., ``ise-bitstream``)
+   - Either find the source in fileset, or create an intermediate goal
+   - Create a task connecting source to output
 
-Configuration
-~~~~~~~~~~~~~
+3. **Iteration**: The dispatcher loop runs until all outputs are satisfied
+   or no progress can be made
 
-Output copying is configured in the project file's ``outputs`` section:
+This allows natural chaining of transforms. For ``ise-bitstream+gzip+base64``:
 
-.. code-block:: yaml
+1. First iteration: base64 dispatcher sees unsatisfied output, needs
+   ``ise-bitstream+gzip``, creates intermediate goal
+2. Second iteration: gzip dispatcher sees unsatisfied ``ise-bitstream+gzip``,
+   needs ``ise-bitstream``, creates intermediate goal
+3. Third iteration: output-copy sees unsatisfied ``ise-bitstream``,
+   finds source in fileset, creates copy task
+4. All goals now have producers, build can execute
 
-   output:
-     - name: synthesis
-       topcell: top
-       outputs:
-         - type: gowin-fs
-           path: bitstream/design.fs
-         - type: gowin-bin
-           path: bitstream/design.bin
+Output Copy Dispatcher
+~~~~~~~~~~~~~~~~~~~~~~
 
-Each entry specifies:
+The output-copy dispatcher (priority 900) copies files from the build
+fileset to user-specified output paths:
 
-- ``type``: The file type to look for in the build fileset
-- ``path``: Where to copy the matching file
+1. Finds unsatisfied outputs (``is_output=True``, no producer)
+2. For each output, searches fileset for matching ``file_type``
+3. Creates ``CopyTask`` from source to output
 
-The dispatcher searches the BuildFileSet for files matching each type and
-copies them to the specified paths. If multiple files match a type, only
-the first is copied (with a warning).
-
-Example
-~~~~~~~
-
-Given this configuration:
+Configuration in project file:
 
 .. code-block:: yaml
 
@@ -532,14 +530,71 @@ Given this configuration:
          - type: gowin-fs
            path: release/firmware.fs
 
-The build process:
+Example flow:
 
 1. Gowin backend generates ``gbs-build/synthesis/design.fs`` (type: gowin-fs)
-2. OutputCopyDispatcher finds the gowin-fs file in the fileset
-3. CopyTask copies it to ``release/firmware.fs``
+2. OutputCopyDispatcher finds unsatisfied output ``gowin-fs`` at ``release/firmware.fs``
+3. Matches with source in fileset, creates CopyTask
+4. Build executes, file is copied
 
-This separates the stable internal build structure from user-facing output
-locations.
+Compression Dispatcher
+~~~~~~~~~~~~~~~~~~~~~~
+
+The compression dispatcher (priority 850) handles type suffixes like ``+gzip``.
+It works backwards from unsatisfied outputs, stripping one transform at a time.
+
+Type Suffix Syntax
+^^^^^^^^^^^^^^^^^^
+
+Output types can include compression suffixes:
+
+.. code-block:: yaml
+
+   outputs:
+     - type: ise-bitstream+gzip
+       path: firmware.bit.gz
+
+The syntax is: ``<base-type>+<transform>[+<transform>...]``
+
+Multiple transforms can be chained:
+
+.. code-block:: yaml
+
+   outputs:
+     - type: gowin-fs+gzip+base64
+       path: design.fs.gz.b64
+
+How It Works
+^^^^^^^^^^^^
+
+The dispatcher handles **one transform at a time** (the rightmost/outermost):
+
+1. Finds unsatisfied outputs with transform suffixes
+2. Strips the last transform (e.g., ``+gzip``) to get source type
+3. If source exists in fileset, creates compression task
+4. If source doesn't exist, creates intermediate output goal
+5. Next iteration handles the next transform level
+
+Example with chained transforms (``ise-bitstream+gzip``):
+
+.. code-block:: text
+
+   Iteration 1:
+     - CompressDispatcher sees unsatisfied "ise-bitstream+gzip"
+     - Strips "+gzip", needs "ise-bitstream"
+     - "ise-bitstream" exists in fileset (from ISE backend)
+     - Creates GzipTask: ise-bitstream -> ise-bitstream+gzip
+
+   Iteration 2:
+     - OutputCopyDispatcher sees unsatisfied output at release/firmware.bit.gz
+     - Type "ise-bitstream+gzip" now exists (from GzipTask)
+     - Creates CopyTask to final location
+
+Supported Compressions
+^^^^^^^^^^^^^^^^^^^^^^
+
+``+gzip``
+    Standard gzip compression. Adds ``.gz`` extension.
 
 Tool Messages
 -------------
