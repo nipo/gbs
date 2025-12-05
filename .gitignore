@@ -6,3 +6,5 @@ __pycache__
 .gbs/
 *.o
 *.cf
+_build
+_mgmt
