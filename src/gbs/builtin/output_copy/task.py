@@ -4,16 +4,31 @@ Copies a file from source to destination.
 """
 
 from __future__ import annotations
+import asyncio
 import shutil
+from pathlib import Path
 
 from ...build.task import Task, Resource
 from ...build.context import BuildContext
 
 
+def _copy_file(source_path: Path, dest_path: Path) -> None:
+    """Synchronous file copy (runs in thread pool).
+
+    Args:
+        source_path: Source file path
+        dest_path: Destination file path
+    """
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    dest_path.unlink(missing_ok=True)
+    shutil.copy2(source_path, dest_path)
+
+
 class CopyTask(Task):
     """Task that copies a file from source to destination
 
-    Uses shutil.copy2 to preserve metadata.
+    Uses shutil.copy2 to preserve metadata, running in a thread pool
+    to avoid blocking the event loop.
     """
 
     def __init__(
@@ -43,13 +58,12 @@ class CopyTask(Task):
         destination, = self.outputs
         self.logger.info(f"Copying {source.path} -> {destination.path}")
 
-        # Ensure destination directory exists
-        destination.path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Ensure no file is at output
-        destination.path.unlink(missing_ok = True)
-        
-        # Copy file with metadata preservation
-        shutil.copy2(source.path, destination.path)
+        # Run copy in thread pool to avoid blocking event loop
+        async with self.context.semaphore:
+            await asyncio.to_thread(
+                _copy_file,
+                source.path,
+                destination.path
+            )
 
         self.logger.info(f"Copied to {destination.path}")
