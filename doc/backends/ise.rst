@@ -40,11 +40,6 @@ Configuration Options
     - ``xc6slx9-2tqg144`` - Spartan-6 LX9, -2 speed, TQG144 package
     - ``xc3s500e-4fg320`` - Spartan-3E 500K, -4 speed, FG320 package
 
-``output_dir``
-    Directory for build artifacts.
-
-    Default: ``"ise-build"``
-
 ``tool``
     Tool identifier for ISE lookup.
 
@@ -52,6 +47,9 @@ Configuration Options
 
 ``output_base_name``
     Base name for output files. If not specified, derived from project name.
+
+Build artifacts are placed in ``gbs-build/<output_group_name>/``.
+Use the ``outputs`` section to copy final files to desired locations.
 
 Tool Configuration
 ------------------
@@ -197,6 +195,11 @@ Example Project
          - type: ise-bitstream
            path: blink.bit
 
+This produces:
+
+- Build artifacts in ``gbs-build/synthesis/``
+- Bitstream copied to ``blink.bit``
+
 Build:
 
 .. code-block:: bash
@@ -250,7 +253,7 @@ Generates final bitstream for FPGA configuration.
 Output Files
 ------------
 
-The ISE backend produces these files in the output directory:
+The ISE backend produces these files in ``gbs-build/<output_group>/``:
 
 =============== ==========================================
 File            Description
@@ -263,6 +266,9 @@ File            Description
 ``*.bit``       Configuration bitstream
 ``*.bin``       Binary bitstream (for flash)
 =============== ==========================================
+
+Use the ``outputs`` section in your project file to copy specific files
+(like ``*.bit``) to your desired locations.
 
 Troubleshooting
 ---------------

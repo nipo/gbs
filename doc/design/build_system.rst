@@ -206,7 +206,8 @@ Dispatcher Protocol
 - 100-299: Preprocessing (transpilers, code generators)
 - 300-499: Intermediate processing
 - 500-699: Main compilation
-- 700-999: Post-processing
+- 700-899: Post-processing
+- 900+: Output extraction (output-copy)
 
 Dispatcher Iteration
 ~~~~~~~~~~~~~~~~~~~~
@@ -439,6 +440,106 @@ Tasks report progress for UI feedback:
 
 The BuildContext notifies watchers when progress updates, allowing
 progress bars and status displays.
+
+Build Output Directory
+----------------------
+
+GBS uses a stable, predictable output directory structure for all build
+artifacts:
+
+.. code-block:: text
+
+   gbs-build/
+   └── <output_group_name>/
+       ├── <intermediate files>
+       └── <backend-specific outputs>
+
+Each output group gets its own subdirectory under ``gbs-build/``. For example,
+a project with output groups named ``simulation`` and ``synthesis`` would
+produce:
+
+.. code-block:: text
+
+   gbs-build/
+   ├── simulation/
+   │   └── <GHDL work library, simulator executable, etc.>
+   └── synthesis/
+       └── <netlist, bitstream files, etc.>
+
+This structure ensures:
+
+- **Predictability**: Output locations are always ``gbs-build/<output_group>/``
+- **Isolation**: Multiple output groups don't interfere with each other
+- **Easy cleanup**: ``rm -rf gbs-build/`` removes all build artifacts
+
+The ``outputs`` section in the project file specifies where to copy final
+outputs from the build directory to user-specified locations using the
+output-copy pass.
+
+Output Copy Pass
+----------------
+
+The output-copy pass is a built-in pass that runs late (priority 900) to
+copy generated files from the build directory to user-specified paths.
+
+How It Works
+~~~~~~~~~~~~
+
+1. **Planning**: The ``OutputCopyBackend`` contributes an ``OutputCopyPass``
+   for any requested output types
+
+2. **Execution**: The ``OutputCopyDispatcher`` runs after other dispatchers:
+
+   - Reads the ``output_group.outputs`` list from project configuration
+   - For each output entry, finds matching files in the BuildFileSet by type
+   - Creates ``CopyTask`` instances to copy files to destination paths
+
+Configuration
+~~~~~~~~~~~~~
+
+Output copying is configured in the project file's ``outputs`` section:
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       topcell: top
+       outputs:
+         - type: gowin-fs
+           path: bitstream/design.fs
+         - type: gowin-bin
+           path: bitstream/design.bin
+
+Each entry specifies:
+
+- ``type``: The file type to look for in the build fileset
+- ``path``: Where to copy the matching file
+
+The dispatcher searches the BuildFileSet for files matching each type and
+copies them to the specified paths. If multiple files match a type, only
+the first is copied (with a warning).
+
+Example
+~~~~~~~
+
+Given this configuration:
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       outputs:
+         - type: gowin-fs
+           path: release/firmware.fs
+
+The build process:
+
+1. Gowin backend generates ``gbs-build/synthesis/design.fs`` (type: gowin-fs)
+2. OutputCopyDispatcher finds the gowin-fs file in the fileset
+3. CopyTask copies it to ``release/firmware.fs``
+
+This separates the stable internal build structure from user-facing output
+locations.
 
 Tool Messages
 -------------

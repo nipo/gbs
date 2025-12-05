@@ -44,15 +44,13 @@ Configuration Options
 
     Default: ``"93c"``
 
-``output_dir``
-    Directory for build artifacts.
-
-    Default: ``"build"``
-
 ``ghdl_tool``
     Tool identifier for GHDL lookup in ``name:variant`` format.
 
     Default: ``"ghdl"``
+
+Build artifacts are placed in ``gbs-build/<output_group_name>/``.
+Use the ``outputs`` section to copy final files to desired locations.
 
 Tool Configuration
 ------------------
@@ -139,7 +137,7 @@ Library Handling
 
 GHDL processes libraries in dependency order:
 
-1. Each library gets its own work directory: ``build/library_name/``
+1. Each library gets its own work directory: ``gbs-build/<output_group>/library_name/``
 2. Library configuration is stored in ``.cf`` files
 3. Inter-library dependencies are resolved using ``-P`` flags
 
@@ -170,14 +168,19 @@ Example Project
            ghdl_tool: ghdl:llvm
        outputs:
          - type: ghdl-simulator
-           path: build/tb_uart
+           path: tb_uart
+
+This produces:
+
+- Build artifacts in ``gbs-build/simulation/``
+- Simulator executable copied to ``tb_uart``
 
 Build and run:
 
 .. code-block:: bash
 
    gbs project build
-   ./build/tb_uart
+   ./tb_uart
 
 Troubleshooting
 ---------------

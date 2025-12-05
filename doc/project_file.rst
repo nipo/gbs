@@ -229,7 +229,7 @@ See backend documentation for available options:
 output[].outputs
 ~~~~~~~~~~~~~~~~
 
-List of desired output files:
+List of desired output files to extract from the build:
 
 .. code-block:: yaml
 
@@ -237,16 +237,38 @@ List of desired output files:
      - name: simulation
        outputs:
          - type: ghdl-simulator
-           path: build/sim
+           path: sim/testbench
 
      - name: synthesis
        outputs:
          - type: gowin-fs
-           path: build/design.fs
+           path: release/design.fs
          - type: gowin-bin
-           path: build/design.bin
+           path: release/design.bin
 
-Output types depend on the backend:
+Each output entry specifies:
+
+- ``type``: The file type to look for in the build output
+- ``path``: Where to copy the file (relative to project directory)
+
+**Build Directory Structure**
+
+GBS uses a stable internal build directory structure:
+
+.. code-block:: text
+
+   gbs-build/
+   └── <output_group_name>/
+       └── <intermediate and final build artifacts>
+
+For example, with an output group named ``synthesis``, all build artifacts
+are placed in ``gbs-build/synthesis/``.
+
+The ``outputs`` entries specify which files to copy from the build directory
+to user-specified locations. This is handled by the output-copy pass which
+runs after all other build steps complete.
+
+**Output types** depend on the backend:
 
 **GHDL:**
 
@@ -294,7 +316,12 @@ Simulation Project
            ghdl_tool: ghdl:system
        outputs:
          - type: ghdl-simulator
-           path: build/tb_uart
+           path: tb_uart
+
+This produces:
+
+- Build artifacts in ``gbs-build/simulation/``
+- Simulator executable copied to ``tb_uart``
 
 Gowin Synthesis Project
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -332,7 +359,12 @@ Gowin Synthesis Project
            part: GW5AT-LV60PG484AC1/I0
        outputs:
          - type: gowin-fs
-           path: build/blink.fs
+           path: blink.fs
+
+This produces:
+
+- Build artifacts in ``gbs-build/synthesis/``
+- Bitstream copied to ``blink.fs``
 
 Xilinx ISE Project
 ~~~~~~~~~~~~~~~~~~
@@ -364,6 +396,11 @@ Xilinx ISE Project
          - type: ise-bitstream
            path: blink.bit
 
+This produces:
+
+- Build artifacts in ``gbs-build/synthesis/``
+- Bitstream copied to ``blink.bit``
+
 Multiple Output Groups
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -391,7 +428,7 @@ Multiple Output Groups
            vhdl_standard: "2008"
        outputs:
          - type: simulator
-           path: build/sim/tb_top
+           path: sim/tb_top
 
      # Gowin synthesis
      - name: gowin
@@ -403,7 +440,7 @@ Multiple Output Groups
            part: GW5AT-LV60PG484AC1/I0
        outputs:
          - type: gowin-fs
-           path: build/gowin/design.fs
+           path: release/gowin.fs
 
      # Xilinx ISE synthesis
      - name: ise
@@ -416,4 +453,13 @@ Multiple Output Groups
              part: xc6slx9-2tqg144
        outputs:
          - type: ise-bitstream
-           path: build/ise/design.bit
+           path: release/ise.bit
+
+This produces:
+
+- ``gbs-build/simulation/`` - GHDL work library and intermediate files
+- ``gbs-build/gowin/`` - Gowin synthesis artifacts
+- ``gbs-build/ise/`` - Xilinx ISE project files and reports
+- ``sim/tb_top`` - Simulator executable (copied from build)
+- ``release/gowin.fs`` - Gowin bitstream (copied from build)
+- ``release/ise.bit`` - ISE bitstream (copied from build)

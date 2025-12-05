@@ -24,7 +24,6 @@ Backend configuration in project file:
    backend_config:
      gbs.builtin.gowin:
        gowin_tool: gowin:V1.9.12
-       output_dir: build
        output_base_name: design
 
 Configuration Options
@@ -35,13 +34,11 @@ Configuration Options
 
     Default: ``"gowin"``
 
-``output_dir``
-    Directory for build artifacts.
-
-    Default: ``"build"``
-
 ``output_base_name``
     Base name for output files. If not specified, derived from project name.
+
+Build artifacts are placed in ``gbs-build/<output_group_name>/``.
+Use the ``outputs`` section to copy final files to desired locations.
 
 Target Configuration
 ~~~~~~~~~~~~~~~~~~~~
@@ -209,7 +206,12 @@ Example Project
            gowin_tool: gowin:V1.9.12
        outputs:
          - type: gowin-fs
-           path: build/blink.fs
+           path: blink.fs
+
+This produces:
+
+- Build artifacts in ``gbs-build/synthesis/``
+- Bitstream copied to ``blink.fs``
 
 Build:
 
@@ -221,7 +223,7 @@ Program (using Gowin Programmer):
 
 .. code-block:: bash
 
-   programmer_cli --device GW5AT-60 --fsFile build/blink.fs
+   programmer_cli --device GW5AT-60 --fsFile blink.fs
 
 Supported Devices
 -----------------
