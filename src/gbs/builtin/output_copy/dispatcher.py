@@ -2,80 +2,72 @@
 
 Copies files from the build fileset to the output paths specified
 in the OutputGroup configuration.
+
+Works backwards from unsatisfied outputs: finds outputs that have no
+producer yet, locates matching source files in the fileset (by type),
+and creates copy tasks.
 """
 
 from __future__ import annotations
-from typing import Any
 from pathlib import Path
 
 from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext, BuildFileSet, BuildResource
 from .task import CopyTask
 
+
 class OutputCopyDispatcher(BaseDispatcher):
-    """Dispatcher that copies build outputs to specified paths
+    """Dispatcher that copies build outputs to specified paths.
 
     This dispatcher runs late (high priority number) to ensure all
-    other backends have generated their outputs. It finds files in
-    the fileset matching the requested output types and creates
-    copy tasks to move them to the paths specified in OutputGroup.outputs.
+    other backends have generated their outputs. It works backwards
+    from unsatisfied output goals:
 
-    Priority: 900 (runs after main compilation)
+    1. Find outputs marked is_output=True with no producer
+    2. Look for source files in fileset matching the output's file_type
+    3. Create copy task from source to output
+
+    Priority: 900 (runs after compression and main compilation)
     """
 
     def __init__(self):
-        """Initialize output copy dispatcher
-        """
         super().__init__("output-copy", priority=900)
 
     def get_filter_variables(self):
         return {}
-        
+
     async def process(
         self,
         context: BuildContext,
         fileset: BuildFileSet
     ) -> None:
-        """Copy matching files to output paths
+        """Copy matching files to output paths.
 
-        Finds files in the fileset matching the requested output types
-        and creates copy tasks to their destination paths.
+        Works backwards: finds unsatisfied outputs, locates sources
+        by file_type, creates copy tasks.
 
         Args:
-            context: Build context with output_group info
-            fileset: BuildFileSet containing generated files
+            context: Build context
+            fileset: BuildFileSet containing sources and output goals
         """
-        output_group = context.get_output_group()
-        if output_group is None:
-            self.logger.warning("No output group set in context, skipping output copy")
-            return
+        # Get outputs that need producers
+        unsatisfied = fileset.get_unsatisfied_outputs()
 
-        # Build a mapping from file_type to destination path
-        type_to_path: dict[str, Path] = {}
-        for output in output_group.outputs:
-            type_to_path[output.type] = output.path.resolve()
+        for output_br in unsatisfied:
+            file_type = output_br.file_type
+            dest_path = output_br.path
+            dest_resource = output_br.resource
 
-        self.logger.debug(f"Output mappings: {type_to_path}")
-
-        # Find files matching each output type
-        for file_type, dest_path in type_to_path.items():
-            # Create destination resource
-            dest_resource = context.get_resource(dest_path, metadata = {
-                "file_type": file_type,
-            })
-
-            if dest_resource.depends_on:
-                self.logger.debug(
-                    f"Destination {dest_path} has creator, skip"
-                )
-                continue
-
-            matching = fileset.filter(file_type=file_type)
+            # Find source file with matching type (excluding the output itself)
+            matching = [
+                br for br in fileset.filter(file_type=file_type)
+                if br.path != dest_path
+            ]
 
             if not matching:
-                self.logger.warning(
-                    f"No files of type '{file_type}' found in fileset "
-                    f"for output path '{dest_path}'"
+                self.logger.debug(
+                    f"No source files of type '{file_type}' found "
+                    f"for output '{dest_path}'"
                 )
                 continue
 
@@ -94,8 +86,16 @@ class OutputCopyDispatcher(BaseDispatcher):
                     f"Source and destination are the same: {dest_path}, skip"
                 )
                 continue
-            self.logger.debug(
-                f"Will copy {source_resource.path} to {dest_resource.path}"
+
+            # Skip if already has a producer (shouldn't happen for unsatisfied)
+            if dest_resource.depends_on:
+                self.logger.debug(
+                    f"Destination {dest_path} already has producer, skip"
+                )
+                continue
+
+            self.logger.info(
+                f"Copying {file_type}: {source_resource.path} -> {dest_path}"
             )
 
             # Create copy task
@@ -105,12 +105,5 @@ class OutputCopyDispatcher(BaseDispatcher):
                 destination=dest_resource,
             )
 
-            # Add destination to fileset
-            dest_br = BuildResource(
-                resource=dest_resource,
-                file_type=file_type,
-                library=source_br.library,
-                is_source=False,
-                generated_by=self.name,
-            )
-            fileset.add(dest_br)
+            # Update the BuildResource to reflect it now has a producer
+            output_br.generated_by = self.name

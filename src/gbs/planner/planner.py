@@ -27,6 +27,31 @@ from ..logging import get_logger
 logger = get_logger(__name__)
 
 
+def strip_type_suffixes(type_str: str) -> str:
+    """Strip transform suffixes from a type string.
+
+    Removes suffixes like "+gzip", "+base64" that are handled by
+    post-processing dispatchers, not by the planner.
+
+    Args:
+        type_str: Type string like "ise-bitstream+gzip" or "gowin-fs"
+
+    Returns:
+        Base type without suffixes (e.g., "ise-bitstream")
+
+    Examples:
+        >>> strip_type_suffixes("ise-bitstream")
+        "ise-bitstream"
+        >>> strip_type_suffixes("ise-bitstream+gzip")
+        "ise-bitstream"
+        >>> strip_type_suffixes("gowin-fs+gzip+base64")
+        "gowin-fs"
+    """
+    if '+' not in type_str:
+        return type_str
+    return type_str.split('+')[0]
+
+
 class PlanningError(Exception):
     """Raised when build planning fails"""
     pass
@@ -145,12 +170,20 @@ class BuildPlanner:
         """
         self.logger.info(f"Planning build for output group: {output_group.name}")
 
-        # Extract desired output types
-        output_types = {output.type for output in output_group.outputs}
+        # Extract desired output types, stripping transform suffixes
+        # (e.g., "ise-bitstream+gzip" -> "ise-bitstream")
+        # The suffixes are handled by post-processing dispatchers, not the planner
+        raw_output_types = {output.type for output in output_group.outputs}
+        output_types = {strip_type_suffixes(t) for t in raw_output_types}
+
+        if output_types != raw_output_types:
+            self.logger.debug(
+                f"Stripped transform suffixes: {sorted(raw_output_types)} -> {sorted(output_types)}"
+            )
 
         # Get source types
         source_types = set(self.available_source_types)
-        
+
         self.logger.debug(f"Planning path {sorted(source_types)} -> {sorted(output_types)}")
 
         initial_plan = PartialPlan(output_types, [])

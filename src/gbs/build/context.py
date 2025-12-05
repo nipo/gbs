@@ -22,6 +22,7 @@ class BuildResource:
         library: Library name for HDL files (None for non-HDL)
         file_type_version: File type version (e.g., '2008' for VHDL, '2005' for Verilog)
         is_source: True if source file, False if generated
+        is_output: True if this is a desired output (goal) that needs a producer
         depends_on: Set of BuildResources this file depends on (for dep tracking)
         generated_by: Backend name that generated this file (None for source files)
         metadata: Additional backend-specific metadata
@@ -31,6 +32,7 @@ class BuildResource:
     library: str | None = None
     file_type_version: str | None = None
     is_source: bool = True
+    is_output: bool = False
     depends_on: set['BuildResource'] = None
     generated_by: str | None = None
     metadata: dict[str, Any] = None
@@ -449,6 +451,22 @@ class BuildFileSet:
             Set of BuildResources that depend on this path
         """
         return self._dependents.get(path.resolve(), set()).copy()
+
+    def get_unsatisfied_outputs(self) -> list[BuildResource]:
+        """Get output goals that don't have producers yet.
+
+        An output is unsatisfied if:
+        - is_output=True (it's a desired output goal)
+        - The underlying Resource has no dependencies (no task produces it)
+
+        Returns:
+            List of BuildResources that are outputs without producers
+        """
+        unsatisfied = []
+        for br in self:
+            if br.is_output and not br.resource.depends_on:
+                unsatisfied.append(br)
+        return unsatisfied
 
 class BuildContext:
     """Shared build context passed to all tasks and resources

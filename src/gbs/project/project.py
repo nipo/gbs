@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from .model import ProjectModel
 from ..logging import get_logger
-from ..build import BuildContext, BuildFileSet
+from ..build import BuildContext, BuildFileSet, BuildResource
 from ..backend.protocol import Backend
 from ..backend.registry import get_backend_registry
 from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
@@ -281,6 +281,23 @@ class PlanRealization:
         # Create BuildFileSet from plan's source fileset
         self.fileset = BuildFileSet(self.build_ctx)
         self.build_ctx.populate_fileset(self.source_fileset, self.fileset)
+
+        # Add output goals to fileset
+        # These are the desired outputs that dispatchers will work backwards from
+        for output in self.plan.output_group.outputs:
+            output_path = output.path.resolve()
+            output_resource = self.build_ctx.get_resource(output_path, metadata={
+                "file_type": output.type,
+            })
+            output_br = BuildResource(
+                resource=output_resource,
+                file_type=output.type,
+                is_source=False,
+                is_output=True,
+                generated_by=None,  # No producer yet
+            )
+            self.fileset.add(output_br)
+            logger.debug(f"  Added output goal: {output.type} -> {output_path}")
 
         # Determine which backends to use:
         # 1. Backends that contributed passes (main backend doing the work)
