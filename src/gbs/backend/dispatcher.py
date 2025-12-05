@@ -254,6 +254,18 @@ async def run_dispatcher_iteration(
                 f"Converged after {iteration} iterations "
                 f"(serial={serial_after}, files={len(fileset)})"
             )
+
+            # Verify all outputs have producers
+            unsatisfied = fileset.get_unsatisfied_outputs()
+            if unsatisfied:
+                unsatisfied_info = [
+                    f"  - {br.file_type} at {br.path}" for br in unsatisfied
+                ]
+                raise RuntimeError(
+                    f"Build planning failed: {len(unsatisfied)} output(s) have no producer:\n"
+                    + "\n".join(unsatisfied_info)
+                )
+
             return iteration
 
         logger.debug(
