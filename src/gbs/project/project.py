@@ -273,7 +273,7 @@ class PlanRealization:
         logger.info(f"  Output group '{self.plan.output_group.name}':")
         logger.info(f"    Topcell: {self.plan.output_group.topcell}")
         logger.info(f"    Sources: {num_files} files in {num_libs} libraries")
-        logger.info(f"    Passes: {len(self.plan.passes)}")
+        logger.info(f"    Passes: {self.plan.passes}")
         logger.info(f"    Outputs: {len(self.plan.output_group.outputs)}")
         logger.info(f"Dispatching output group '{self.plan.output_group.name}'...")
         
@@ -292,31 +292,13 @@ class PlanRealization:
         # 2. Backends configured in backend_config (may be post-processors like NSL CDC)
         backend_modules_used = set()
 
-        # Add backends that contributed passes
-        for pass_metadata in self.plan.passes:
-            for backend_module in backend_names:
-                backend = backend_registry.get_backend(backend_module)
-                contributed_passes = backend.contribute_passes(
-                    self.plan.output_group.backend_config.get(backend_module, {}),
-                    {output.type for output in self.plan.output_group.outputs}
-                )
-                if pass_metadata.pass_class in contributed_passes:
-                    backend_modules_used.add(backend_module)
-                    break
-
-        # Add backends explicitly configured in backend_config (e.g., post-processors)
-        for backend_module in self.plan.output_group.backend_config.keys():
-            if backend_module in backend_names:
-                backend_modules_used.add(backend_module)
-
         # Create dispatcher registry for this plan
         self.dispatcher_registry = DispatcherRegistry()
-        for backend_module in backend_modules_used:
-            backend = backend_registry.get_backend(backend_module)
-            backend_config = self.plan.output_group.backend_config.get(backend_module, {})
-            dispatcher = backend.create_dispatcher(backend_config)
-            self.dispatcher_registry.register(dispatcher)
-            logger.info(f"  Registered dispatcher: {dispatcher.name}")
+        for pass_metadata in self.plan.passes:
+            contributed_dispatchers = pass_metadata.pass_obj.dispatchers()
+            for dispatcher in contributed_dispatchers:
+                self.dispatcher_registry.register(dispatcher)
+                logger.info(f"  Registered dispatcher: {dispatcher.name}")
 
         from ..plugins import get_plugin_registry
         plugin_registry = get_plugin_registry()
@@ -368,7 +350,7 @@ class PlanRealization:
                 for dep_name in sorted(deps):
                     print_func(f"        ← produced by: {dep_name}")
             else:
-                print_func(f"      {resource.name} (source)")
+                print_func(f"      {resource.name} ({resource.metadata.get('file_type')} source in {resource.metadata.get('library')})")
 
         print_func("")
         print_func(f"    Tasks ({len(tasks)} tasks):")

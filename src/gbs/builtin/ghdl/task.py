@@ -55,7 +55,7 @@ class Import(Task):
         ] + p_flags + sources)
 
         async for msg in import_process:
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
 
         if import_process.returncode != 0:
             raise RuntimeError(f"ghdl -i failed for {self.library_name}: {import_process.returncode}")
@@ -68,7 +68,7 @@ class Import(Task):
         ] + p_flags + sources)
 
         async for msg in analyze_process:
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
 
         if analyze_process.returncode != 0:
             raise RuntimeError(f"ghdl -i failed for {self.library_name}: {analyze_process.returncode}")
@@ -120,7 +120,7 @@ class CompileLink(Task):
         ])
 
         async for msg in process:
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
 
         if process.returncode != 0:
             raise RuntimeError(f"ghdl -c failed: {process.returncode}")
@@ -174,7 +174,7 @@ class MakeElab(Task):
         ])
 
         async for msg in process:
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
 
         if process.returncode != 0:
             raise RuntimeError(f"ghdl -m failed: {process.returncode}")
@@ -189,7 +189,7 @@ class MakeElab(Task):
         ])
 
         async for msg in process:
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
 
         if process.returncode != 0:
             raise RuntimeError(f"ghdl -e failed: {process.returncode}")

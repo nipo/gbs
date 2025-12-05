@@ -201,17 +201,17 @@ class BuildPlanner:
             if p in partial_plan.passes:
                 continue
 
-            outputs_left = partial_plan.outputs - p.output_types
-            outputs_left = outputs_left | p.input_types
+            inputs_handled = partial_plan.outputs | p.input_types
+            inputs_left = target_inputs - inputs_handled
 
-            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, outputs left: {outputs_left}")
+            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, inputs: {inputs_handled}, unsatisfied: {inputs_left}")
 
-            n = PartialPlan(outputs_left, partial_plan.passes + [p])
-            if outputs_left >= target_inputs:
-                ret.append(n)
-            else:
+            n = PartialPlan(inputs_handled, partial_plan.passes + [p])
+            if inputs_left:
                 for sub in self._progress_to_sources(output_group, target_inputs, n):
                     ret.append(sub)
+            else:
+                ret.append(n)
         return ret
     
     def _query_backends(
@@ -235,19 +235,19 @@ class BuildPlanner:
             backend_config = output_group.backend_config.get(backend.name, {})
 
             # Ask backend for passes it can contribute
-            pass_classes = backend.contribute_passes(backend_config, desired_outputs)
+            passes = backend.contribute_passes(backend_config, desired_outputs)
 
             # Wrap in PassMetadata
-            for pass_class in pass_classes:
+            for pass_obj in passes:
                 metadata = PassMetadata(
-                    pass_class=pass_class,
+                    pass_obj=pass_obj,
                     config=backend_config,
                     backend_name=backend.name
                 )
                 candidates.append(metadata)
 
                 self.logger.debug(
-                    f"Backend {backend.name} contributed pass: {pass_class.name}"
+                    f"Backend {backend.name} contributed pass: {pass_obj.name}"
                 )
 
         return candidates

@@ -3,7 +3,6 @@
 from __future__ import annotations
 import asyncio
 import random
-import re
 from pathlib import Path
 
 from ...build.context import BuildContext
@@ -11,51 +10,10 @@ from ...build.task import Task
 from ...build.message import MessageSeverity, ToolMessage
 from ...build.subprocess import MessageSubprocess
 
+
 class IseSubprocess(MessageSubprocess):
-    def __init__(self,
-                 settings_sh: Path,
-                 argv: list[str],
-                 cwd: Path = Path(".")):
-        import shlex
-        prepare = shlex.join([".", str(settings_sh)])
-        to_run = shlex.join(argv)
-        cmd = ["bash", "-c", f"{prepare} > /dev/null ; {to_run}"]
-        super().__init__(cmd, cwd)
+    pass
 
-    message_format = re.compile(r'^(?P<level>INFO|ERROR|WARNING):(?P<tool>[^:]+):(?P<code>[0-9]+) - (?P<message>.*)$')
-
-    level_map = {
-        "INFO": MessageSeverity.INFO,
-        "WARNING": MessageSeverity.WARNING,
-        "ERROR": MessageSeverity.ERROR,
-    }
-
-    async def stdout_transform(self, lines):
-        multiline = None
-        async for line in lines:
-            if multiline and line.startswith("   ") and not line.startswith("    "):
-                multiline.message += line[2:]
-                continue
-
-            if multiline:
-                yield multiline
-                multiline = None
-                
-            m = self.message_format.match(line)
-            if not m:
-                yield ToolMessage(severity = MessageSeverity.INFO,
-                                  message = line)
-                continue
-
-            severity = self.level_map.get(m.group("level"))
-            multiline = ToolMessage(severity = severity,
-                                    identifier = m.group("code"),
-                                    origin = m.group("tool"),
-                                    message = m.group("message"))
-
-        if multiline:
-            yield multiline
-            
 class IseTask(Task):
     """Base class for ISE tasks
 
@@ -74,10 +32,7 @@ class IseTask(Task):
         """
         self.logger.info(f"Running: {' '.join(cmd)}")
 
-        settings, = self.inputs_of_type("ise-settings-sh")
-        
         process = IseSubprocess(
-            settings_sh = settings.path,
             argv = cmd,
             cwd = cwd,
         )
@@ -91,7 +46,7 @@ class IseTask(Task):
         self.logger.info("complete")
 
 
-class Xst(IseTask):
+class XstSourceList(Task):
     """Generate XST source file list
 
     Creates a file listing all HDL sources with their language and library.
@@ -101,46 +56,69 @@ class Xst(IseTask):
     def __init__(
         self,
         context: BuildContext,
-        device: str,
         inputs: list,
         outputs: list,
     ):
         super().__init__(
             context=context,
-            name="ise_xst_synth",
+            name="ise_generate_prj",
             inputs=inputs,
             outputs=outputs,
-            description="Synthesize",
+            description="Generate XST project file",
         )
-        self.device = device
 
     async def work(self) -> None:
-        """Call XST"""
+        """Generate the .prj file from HDL sources"""
+        prj_file = self.outputs[0].path
+
         lines = []
         for resource in self.inputs:
-            file_type = resource.metadata.get('file_type', 'unknown')
+            language = resource.metadata.get('language', 'vhdl')
             library = resource.metadata.get('library', 'work')
             file_path = resource.path
 
-            if file_type == "ise-settings-sh":
-                continue
-            
-            # XST expects file_type names in lowercase
-            lang = file_type.lower()
+            # XST expects language names in lowercase
+            lang = language.lower()
 
             if lang not in ["vhdl", "verilog"]:
                 raise ValueError(f"Unsupported language for XST: {lang}")
 
             lines.append(f"{lang} {library} {file_path}")
 
-        netlist_rsrc, = self.outputs_of_type("ise-netlist-xst")
-        output_dir = netlist_rsrc.path.parent
+        prj_file.parent.mkdir(parents=True, exist_ok=True)
+        prj_file.write_text('\n'.join(lines) + '\n')
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        proj_file = output_dir / "command.xst"
-        srclist_path = output_dir / "source_list.txt"
-        srclist_path.write_text('\n'.join(lines) + '\n')
+        self.logger.info(f"Generated {prj_file} with {len(lines)} sources")
+
+
+class XstRun(IseTask):
+    """Run XST from a source file list
+    """
+
+    def __init__(
+        self,
+        context: BuildContext,
+        device: str,
+        topcell: str,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            context=context,
+            name="ise_generate_xst",
+            inputs=inputs,
+            outputs=outputs,
+            description="Generate XST command file",
+        )
+        self.device = device
+        self.topcell = topcell
+
+    async def work(self) -> None:
+        """Generate the .xst command file"""
+        srclist_rsrc, = self.inputs_of_type("ise-xst-sourcelist")
+        netlist_rsrc, = self.outputs_of_type("ise-netlist")
+        output_dir = netlist_rsrc.path.parent
+        xst_file = output_dir / "command.xst"
 
         # Build XST command content
         lines = [
@@ -148,8 +126,8 @@ class Xst(IseTask):
             f"set -xsthdpdir {output_dir}",
             "run",
             f"-p {self.device}",
-            f"-top {self.context.get_topcell()}",
-            f"-ifn {srclist_path}",
+            f"-top {self.topcell}",
+            f"-ifn {srclist_rsrc.path}",
             f"-ofn {netlist_rsrc.path}",
             "-max_fanout 15",
             "-keep_hierarchy soft",
@@ -157,19 +135,20 @@ class Xst(IseTask):
             "-equivalent_register_removal no",
         ]
 
-        proj_file.write_text('\n'.join(lines) + '\n')
+        xst_file.parent.mkdir(parents=True, exist_ok=True)
+        xst_file.write_text('\n'.join(lines) + '\n')
 
-        self.logger.info(f"Generated {proj_file}")
+        self.logger.info(f"Generated {xst_file}")
 
         log_file = output_dir / "xst_run.log"
 
         cmd = [
             "xst",
-            "-ifn", str(proj_file),
+            "-ifn", str(xst_file),
             "-ofn", str(log_file),
         ]
 
-        await self.run_command(cmd, output_dir)
+        await self.run_command(cmd, xst_file.parent)
 
 class BmmGenerate(Task):
     """Generate placeholder BMM file
@@ -180,12 +159,13 @@ class BmmGenerate(Task):
     def __init__(
         self,
         context: BuildContext,
+        inputs: list,
         outputs: list,
     ):
         super().__init__(
             context=context,
             name="ise_generate_bmm",
-            inputs=[],
+            inputs=inputs,
             outputs=outputs,
             description="Generate placeholder BMM file",
         )
@@ -199,38 +179,6 @@ class BmmGenerate(Task):
 
         self.logger.info(f"Generated placeholder {bmm_file}")
 
-
-class EdifConvert(IseTask):
-    """Run ngc2edif to convert XST output netlist to EDIF.
-    """
-
-    def __init__(
-        self,
-        context: BuildContext,
-        inputs: list,
-        outputs: list,
-    ):
-        super().__init__(
-            context=context,
-            name="ise_ngc2edif",
-            inputs=inputs,
-            outputs=outputs,
-            description="Netlist Conversion to EDIF",
-        )
-
-    async def work(self) -> None:
-        """Run NGDBUILD"""
-
-        ngc_rsrc, = self.inputs_of_type("ise-netlist-xst")
-        edf_rsrc, = self.outputs_of_type("ise-netlist")
-
-        cmd = [
-            "ngc2edif",
-            "-w", str(ngc_rsrc.path),
-            str(edf_rsrc.path),
-        ]
-
-        await self.run_command(cmd, edf_rsrc.path.parent)
 
 class NetlistConvert(IseTask):
     """Run NGDBUILD to convert XST output netlist to functional netlist for MAP.
@@ -256,7 +204,7 @@ class NetlistConvert(IseTask):
     async def work(self) -> None:
         """Run NGDBUILD"""
 
-        ngc_rsrc, = self.inputs_of_type("ise-netlist-xst")
+        ngc_rsrc, = self.inputs_of_type("ise-netlist")
         ucf_rsrcs = self.inputs_of_type("xilinx-ucf")
         bmm_rsrc, = self.inputs_of_type("ise-bmm")
 
@@ -332,15 +280,6 @@ class Map(IseTask):
         output_dir.mkdir(parents=True, exist_ok=True)
         await self.run_command(cmd, output_dir)
 
-    progress_re = re.compile(r"Phase +(?P<phase>[0-9]+)\.[0-9]+  +(?P<state>.+)$")
-    async def add_message_obj(self, msg):
-        m = self.progress_re.match(msg.message)
-        if m:
-            ph = m.group("phase")
-            st = m.group("state")
-            await self.update_progress(int(ph) / 13)
-        await super().add_message_obj(msg)
-
 
 class Par(IseTask):
     """Run PAR (Place and Route)
@@ -381,15 +320,6 @@ class Par(IseTask):
         output_dir.mkdir(parents=True, exist_ok=True)
         await self.run_command(cmd, output_dir)
 
-    progress_re = re.compile(r"Phase +(?P<phase>[0-9]+) *: (?P<state>[^;]+);.*$")
-    async def add_message_obj(self, msg):
-        m = self.progress_re.match(msg.message)
-        if m:
-            ph = m.group("phase")
-            st = m.group("state")
-            await self.update_progress(int(ph) / 12)
-        await super().add_message_obj(msg)
-            
 class Trce(IseTask):
     """Run TRCE (Timing Report)
 

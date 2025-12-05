@@ -4,8 +4,6 @@ from __future__ import annotations
 from typing import Any
 import re
 from ...planner.passes import Pass
-from ...backend.dispatcher import Dispatcher
-from .dispatcher import IseDispatcher
 
 
 class IseSynthesizePass(Pass):
@@ -53,21 +51,3 @@ class IseSynthesizePass(Pass):
             "part_speed": m.group("speed"),
             "part_package": m.group("package"),
         }
-
-    def dispatchers(self) -> list[Dispatcher]:
-        """Create ISE dispatcher for execution
-
-        Returns:
-            IseDispatcher singleton
-        """
-        output_dir = self.config.get("output_dir", "ise-build")
-        tool = self.config.get("tool", "ise")
-        output_base_name = self.config.get("output_base_name")
-        target = self.config["target"]
-
-        return [IseDispatcher(
-            output_dir=output_dir,
-            output_base_name=output_base_name,
-            target=target,
-            tool = tool,
-        )]

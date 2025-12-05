@@ -5,7 +5,8 @@ from typing import Any
 from pathlib import Path
 
 from ...planner.passes import Pass
-
+from ...backend.dispatcher import Dispatcher
+from .dispatcher import GowinDispatcher
 
 class GowinSynthesizePass(Pass):
     """Pass that synthesizes HDL to Gowin FPGA bitstream
@@ -27,17 +28,11 @@ class GowinSynthesizePass(Pass):
     input_types = {"vhdl", "verilog", "gowin-cst", "gowin-sdc"}
     output_types = {"gowin-fs", "gowin-netlist"}
 
-    def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:
+    def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for Gowin synthesis
 
         Sets target-usage=synthesis to allow conditional source filtering.
         Also provides device characteristics if device is configured.
-
-        Args:
-            config: Backend configuration dict with optional:
-                - device: Target device string (e.g., "GW1NR-9")
-                - output_dir: Output directory path
-                - gowin_tool: Tool identifier for lookup
 
         Returns:
             Dictionary with filter variables
@@ -52,3 +47,26 @@ class GowinSynthesizePass(Pass):
         # For planning, we just provide the base variables
 
         return filter_vars
+
+    def dispatchers(self) -> list[Dispatcher]:
+        """Create Gowin dispatcher for execution
+
+        Args:
+            config: Backend configuration with optional:
+                - device: Target device string
+                - output_dir: Output directory path
+                - gowin_tool: Tool identifier
+                - output_base_name: Base name for outputs
+
+        Returns:
+            GowinDispatcher instance
+        """
+        output_dir = self.config.get("output_dir", "build")
+        gowin_tool = self.config.get("gowin_tool", "gowin")
+        output_base_name = self.config.get("output_base_name")
+
+        return [GowinDispatcher(
+            output_dir=output_dir,
+            gowin_tool=gowin_tool,
+            output_base_name=output_base_name
+        )]

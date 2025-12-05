@@ -210,7 +210,7 @@ class GwShCommand(Task):
             if isinstance(msg, ProgressIndication):
                 await self.update_progress(msg.percent / 100, msg.message)
                 continue
-            self.add_message_obj(msg)
+            await self.add_message_obj(msg)
             yield msg
 
     async def command_run(self, tcl_command: str) -> None:

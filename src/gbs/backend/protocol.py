@@ -64,31 +64,6 @@ class Backend(Protocol):
         """
         ...
 
-    def create_dispatcher(
-        self,
-        config: dict[str, Any]
-    ) -> 'Dispatcher':
-        """Create a Dispatcher for executing this backend's transformations
-
-        Called after planning is complete. The dispatcher will be registered
-        and participate in the iterative BuildFileSet transformation.
-
-        Args:
-            config: Backend-specific configuration
-
-        Returns:
-            Dispatcher instance
-
-        Example:
-            return GHDLDispatcher(
-                output_dir=config.get("output_dir", Path("build")),
-                vhdl_std=config.get("vhdl_standard", "93c"),
-                ghdl_tool=config.get("ghdl_tool", "ghdl")
-            )
-        """
-        ...
-
-
 class BaseBackend(ABC):
     """Base class for backends
 
@@ -110,19 +85,8 @@ class BaseBackend(ABC):
         self,
         config: dict[str, Any],
         output_types: set[str]
-    ) -> list[type['Pass']]:
+    ) -> list['Pass']:
         """Contribute Pass classes for build planning
-
-        Must be implemented by subclasses.
-        """
-        ...
-
-    @abstractmethod
-    def create_dispatcher(
-        self,
-        config: dict[str, Any]
-    ) -> 'Dispatcher':
-        """Create a Dispatcher for execution
 
         Must be implemented by subclasses.
         """

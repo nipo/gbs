@@ -103,7 +103,10 @@ class IseDispatcher(BaseDispatcher):
         fileset: BuildFileSet,
     ) -> None:
         # Add HDL input resources
-        for source in list(fileset.filter(file_type=["vhdl", "verilog"])):
+        sources = list(fileset.filter(file_type=["vhdl", "verilog"]))
+        if sources:
+            self.logger.debug(f"Adding {len(sources)} XST sources")
+        for source in sources:
             for d in fileset.remove(source.path):
                 self.xst_task.dependency_add(d)
             
@@ -115,7 +118,14 @@ class IseDispatcher(BaseDispatcher):
             self.xst_task.inputs.append(resource)
 
         # Add UCF input resources
-        for source in fileset.filter(file_type="xilinx-ucf"):
+        sources = list(fileset.filter(file_type=["xilinx-ucf"]))
+        if sources:
+            self.logger.debug(f"Adding {len(sources)} UCF sources")
+        for source in sources:
+            for d in fileset.remove(source.path):
+                self.net_task.dependency_add(d)
+
+            self.logger.debug(f"Adding netlister UCF: {source}")
             resource = context.get_resource(source.path, metadata = {
                 'file_type': "xilinx-ucf",
             })
@@ -217,8 +227,14 @@ class IseDispatcher(BaseDispatcher):
         # Add outputs to fileset
         fileset.add(BuildResource(
             resource=ngc_resource,
+            file_type="ise-netlist-xst",
+            is_source=False,
+            generated_by=self.name
+        ))
+
+        fileset.add(BuildResource(
+            resource=edif_resource,
             file_type="ise-netlist",
-            library="work",
             is_source=False,
             generated_by=self.name
         ))
@@ -226,7 +242,6 @@ class IseDispatcher(BaseDispatcher):
         fileset.add(BuildResource(
             resource=ngd_resource,
             file_type="ise-netlist-functional",
-            library="work",
             is_source=False,
             generated_by=self.name
         ))

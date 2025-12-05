@@ -5,11 +5,8 @@ from typing import Any
 from pathlib import Path
 
 from ...backend.protocol import BaseBackend
-from ...backend.dispatcher import Dispatcher
 from ...planner.passes import Pass
 from .passes import GowinSynthesizePass
-from .dispatcher import GowinDispatcher
-
 
 class GowinBackend(BaseBackend):
     """Gowin FPGA synthesis backend
@@ -46,26 +43,3 @@ class GowinBackend(BaseBackend):
             passes.append(GowinSynthesizePass)
 
         return passes
-
-    def create_dispatcher(self, config: dict[str, Any]) -> Dispatcher:
-        """Create Gowin dispatcher for execution
-
-        Args:
-            config: Backend configuration with optional:
-                - device: Target device string
-                - output_dir: Output directory path
-                - gowin_tool: Tool identifier
-                - output_base_name: Base name for outputs
-
-        Returns:
-            GowinDispatcher instance
-        """
-        output_dir = config.get("output_dir", "build")
-        gowin_tool = config.get("gowin_tool", "gowin")
-        output_base_name = config.get("output_base_name")
-
-        return GowinDispatcher(
-            output_dir=output_dir,
-            gowin_tool=gowin_tool,
-            output_base_name=output_base_name
-        )

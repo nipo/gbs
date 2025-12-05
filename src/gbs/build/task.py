@@ -63,7 +63,6 @@ class BuildStep(asyncio.Future):
         self.name = name
         self._log_name = f"{self.__class__.__name__}({name})"
         self.logger = get_logger(self._log_name)
-        self.logger.debug("created")
         self.task = None
 
         # Progress tracking
@@ -117,7 +116,7 @@ class BuildStep(asyncio.Future):
         # Notify watchers
         await self.context.notify_progress_update()
 
-    def add_message(
+    async def add_message(
         self,
         severity: MessageSeverity,
         message: str,
@@ -153,10 +152,10 @@ class BuildStep(asyncio.Future):
             line=line,
             column=column,
         )
-        self.add_message_obj(msg)
+        await self.add_message_obj(msg)
         return msg
 
-    def add_message_obj(self, msg: ToolMessage) -> None:
+    async def add_message_obj(self, msg: ToolMessage) -> None:
         """Add a pre-constructed ToolMessage
 
         Adds an existing ToolMessage to this step's message collection.

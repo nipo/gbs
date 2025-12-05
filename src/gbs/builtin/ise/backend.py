@@ -5,11 +5,8 @@ from typing import Any
 from pathlib import Path
 
 from ...backend.protocol import BaseBackend
-from ...backend.dispatcher import Dispatcher
 from ...planner.passes import Pass
 from .passes import IseSynthesizePass
-from .dispatcher import IseDispatcher
-
 
 class IseBackend(BaseBackend):
     """Xilinx ISE FPGA synthesis backend
@@ -52,29 +49,6 @@ class IseBackend(BaseBackend):
             if not part:
                 self.logger.warning("ISE backend skipped: no part selected")
                 return []
-            passes.append(IseSynthesizePass)
+            passes.append(IseSynthesizePass(config))
 
         return passes
-
-    def create_dispatcher(self, config: dict[str, Any]) -> Dispatcher:
-        """Create ISE dispatcher for execution
-
-        Args:
-            config: Backend configuration with optional:
-                - output_dir: Output directory path
-                - output_base_name: Base name for outputs
-
-        Returns:
-            IseDispatcher instance
-        """
-        output_dir = config.get("output_dir", "ise-build")
-        tool = config.get("tool", "ise")
-        output_base_name = config.get("output_base_name")
-        target = config["target"]
-
-        return IseDispatcher(
-            output_dir=output_dir,
-            output_base_name=output_base_name,
-            target=target,
-            tool = tool,
-        )

@@ -480,7 +480,6 @@ class BuildContext:
         self.steps = set()
         self.running = set()
         self.logger = get_logger("BuildContext")
-        self.logger.debug("created")
         self.__messages: list[ToolMessage] = []
 
         # Output group context (set when building a specific output group)

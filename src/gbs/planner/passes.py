@@ -18,7 +18,7 @@ from abc import ABC
 from typing import Any
 
 
-class Pass(ABC):
+class Pass:
     """Planning metadata describing a file type transformation
 
     Pass is PURE PLANNING METADATA. It does NOT execute build tools.
@@ -28,7 +28,7 @@ class Pass(ABC):
     - name: Human-readable identifier
     - input_types: Set of required input file types
     - output_types: Set of produced output file types
-    - contribute_filter_vars(): Optional filter variables for source selection
+    - filter_vars(): Optional filter variables for source selection
 
     The build planner queries backends for Passes, then uses them to find
     transformation chains from available sources to desired outputs.
@@ -47,23 +47,10 @@ class Pass(ABC):
         ...     input_types = {"vhdl"}
         ...     output_types = {"ghdl-simulator"}
         ...
-        ...     def contribute_filter_vars(self, config):
+        ...     def filter_vars(self):
         ...         return {
         ...             "target-usage": "simulation",
-        ...             "vhdl-version": config.get("vhdl_standard", "93"),
-        ...         }
-
-        >>> class GowinSynthesisPass(Pass):
-        ...     '''Gowin synthesis: VHDL/Verilog → netlist'''
-        ...     name = "gowin-synthesize"
-        ...     input_types = {"vhdl", "verilog", "systemverilog"}
-        ...     output_types = {"gowin-netlist"}
-        ...     can_fork = True  # Multiple HDL input types
-        ...
-        ...     def contribute_filter_vars(self, config):
-        ...         return {
-        ...             "target-usage": "synthesis",
-        ...             "vendor": "gowin",
+        ...             "vhdl-version": self.config.get("vhdl_standard", "93"),
         ...         }
     """
 
@@ -76,7 +63,11 @@ class Pass(ABC):
     can_fork: bool = False
     priority: int = 100
 
-    def contribute_filter_vars(self, config: dict[str, Any]) -> dict[str, Any]:
+    def __init__(self,
+                 config: dict[str, Any]):
+        self.config = config
+    
+    def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for source enumeration
 
         Passes can provide filter variables that will be merged with the
@@ -87,35 +78,21 @@ class Pass(ABC):
         before enumerating sources. This ensures the source set matches
         what all passes expect.
 
-        Args:
-            config: Backend-specific configuration from OutputGroup.backend_config
-                   (e.g., {"vhdl_standard": "2008", "optimization": "2"})
-
         Returns:
             Dictionary of filter variable name -> value
-
-        Examples:
-            >>> # GHDL simulation pass wants simulation sources
-            >>> def contribute_filter_vars(self, config):
-            ...     return {
-            ...         "target-usage": "simulation",
-            ...         "compiler": "ghdl",
-            ...         "vhdl-version": config.get("vhdl_standard", "93"),
-            ...     }
-
-            >>> # Gowin synthesis pass wants synthesis sources
-            >>> def contribute_filter_vars(self, config):
-            ...     return {
-            ...         "target-usage": "synthesis",
-            ...         "vendor": "gowin",
-            ...         "family": config.get("device_family", "GW1N"),
-            ...     }
-
-            >>> # Memory initialization pass contributes no variables
-            >>> def contribute_filter_vars(self, config):
-            ...     return {}
         """
         return {}
+
+    def dispatchers(self) -> list['Dispatcher']:
+        """Create a Dispatcher for executing this pass transformations
+
+        Args:
+            config: Backend-specific configuration
+
+        Returns:
+            Dispatcher instance list
+        """
+        return []
 
     def __repr__(self) -> str:
         return (
@@ -138,52 +115,53 @@ class PassMetadata:
     This is separate from the Pass class itself to keep Pass immutable.
 
     Attributes:
-        pass_class: The Pass class
+        pass_obj: The Pass class
         config: Backend-specific configuration for this pass
-        filter_vars: Cached filter variables from contribute_filter_vars()
         backend_name: Name of backend that provided this pass
     """
 
     def __init__(
         self,
-        pass_class: type[Pass],
+        pass_obj: Pass,
         config: dict[str, Any],
         backend_name: str
     ):
         """Initialize pass metadata
 
         Args:
-            pass_class: The Pass class
+            pass_obj: The Pass object
             config: Backend configuration
             backend_name: Backend module name (e.g., "gbs.builtin.ghdl")
         """
-        self.pass_class = pass_class
+        self.pass_obj = pass_obj
         self.config = config
         self.backend_name = backend_name
 
-        # Create a temporary instance to get filter vars
-        # (Pass classes should not have __init__ requirements)
-        pass_instance = pass_class()
-        self.filter_vars = pass_instance.contribute_filter_vars(config)
+    def __eq__(self, other):
+        return type(self.pass_obj) == type(other.pass_obj)
 
+    @property
+    def filter_vars(self) -> dict:
+        return self.pass_obj.filter_vars()
+    
     @property
     def name(self) -> str:
         """Pass name"""
-        return self.pass_class.name
+        return self.pass_obj.name
 
     @property
     def input_types(self) -> set[str]:
         """Input file types"""
-        return self.pass_class.input_types
+        return self.pass_obj.input_types
 
     @property
     def output_types(self) -> set[str]:
         """Output file types"""
-        return self.pass_class.output_types
+        return self.pass_obj.output_types
 
     def __repr__(self) -> str:
         return (
             f"PassMetadata("
-            f"pass={self.pass_class.__name__}, "
+            f"pass={self.pass_obj}, "
             f"backend={self.backend_name})"
         )
