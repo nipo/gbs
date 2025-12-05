@@ -15,7 +15,7 @@ def test_backend_creation():
 
     assert isinstance(backend, GHDLBackend)
     assert isinstance(backend, BaseBackend)
-    assert backend.name == "gbs.backend.ghdl"
+    assert backend.name == "gbs.builtin.ghdl"
 
 
 def test_backend_implements_protocol():
@@ -24,9 +24,7 @@ def test_backend_implements_protocol():
 
     # Check that it has the required methods
     assert hasattr(backend, 'contribute_passes')
-    assert hasattr(backend, 'create_dispatcher')
     assert callable(backend.contribute_passes)
-    assert callable(backend.create_dispatcher)
 
 
 def test_contribute_passes_with_simulator_output():
@@ -39,7 +37,7 @@ def test_contribute_passes_with_simulator_output():
     passes = backend.contribute_passes(config, output_types)
 
     assert len(passes) == 1
-    assert passes[0] == GHDLSimulatePass
+    assert isinstance(passes[0], GHDLSimulatePass)
 
 
 def test_contribute_passes_with_generic_simulator():
@@ -52,7 +50,7 @@ def test_contribute_passes_with_generic_simulator():
     passes = backend.contribute_passes(config, output_types)
 
     assert len(passes) == 1
-    assert passes[0] == GHDLSimulatePass
+    assert isinstance(passes[0], GHDLSimulatePass)
 
 
 def test_contribute_passes_no_matching_output():
@@ -67,18 +65,19 @@ def test_contribute_passes_no_matching_output():
     assert passes == []
 
 
-def test_create_dispatcher():
-    """Test that backend creates dispatcher correctly"""
-    backend = GHDLBackend()
-
+def test_pass_creates_dispatcher():
+    """Test that pass creates dispatcher correctly"""
     config = {
         "vhdl_standard": "2008",
         "output_dir": "build/ghdl",
         "ghdl_tool": "ghdl"
     }
 
-    dispatcher = backend.create_dispatcher(config)
+    pass_obj = GHDLSimulatePass(config)
+    dispatchers = pass_obj.dispatchers()
 
+    assert len(dispatchers) == 1
+    dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
     assert dispatcher.name == "ghdl"
     assert dispatcher.output_dir == Path("build/ghdl")
@@ -86,14 +85,15 @@ def test_create_dispatcher():
     assert dispatcher.ghdl_tool == "ghdl"
 
 
-def test_create_dispatcher_with_defaults():
-    """Test that dispatcher creation uses default config"""
-    backend = GHDLBackend()
-
+def test_pass_creates_dispatcher_with_defaults():
+    """Test that pass creates dispatcher with default config"""
     config = {}
 
-    dispatcher = backend.create_dispatcher(config)
+    pass_obj = GHDLSimulatePass(config)
+    dispatchers = pass_obj.dispatchers()
 
+    assert len(dispatchers) == 1
+    dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
     assert dispatcher.output_dir == Path("build")
     assert dispatcher.vhdl_std == "93c"
@@ -109,10 +109,10 @@ def test_ghdl_simulate_pass_metadata():
 
 def test_ghdl_simulate_pass_filter_vars():
     """Test GHDLSimulatePass filter variables"""
-    pass_instance = GHDLSimulatePass()
-
     config = {"vhdl_standard": "2008"}
-    filter_vars = pass_instance.contribute_filter_vars(config)
+    pass_instance = GHDLSimulatePass(config)
+
+    filter_vars = pass_instance.filter_vars()
 
     assert filter_vars["target-usage"] == "simulation"
     assert filter_vars["compiler"] == "ghdl"
@@ -121,10 +121,10 @@ def test_ghdl_simulate_pass_filter_vars():
 
 def test_ghdl_simulate_pass_filter_vars_default():
     """Test GHDLSimulatePass filter variables with defaults"""
-    pass_instance = GHDLSimulatePass()
-
     config = {}
-    filter_vars = pass_instance.contribute_filter_vars(config)
+    pass_instance = GHDLSimulatePass(config)
+
+    filter_vars = pass_instance.filter_vars()
 
     assert filter_vars["target-usage"] == "simulation"
     assert filter_vars["compiler"] == "ghdl"
