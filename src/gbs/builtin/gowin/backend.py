@@ -15,9 +15,7 @@ class GowinBackend(BaseBackend):
 
     Configuration options:
         - device: Target device (e.g., "GW1NR-9")
-        - output_dir: Build output directory
         - gowin_tool: Tool identifier for lookup (default: "gowin")
-        - output_base_name: Base name for output files
     """
 
     def __init__(self):

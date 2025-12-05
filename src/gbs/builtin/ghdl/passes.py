@@ -49,12 +49,10 @@ class GHDLSimulatePass(Pass):
         Returns:
             GHDLDispatcher singleton
         """
-        output_dir = self.config.get("output_dir", "build")
         vhdl_std = self.config.get("vhdl_standard", "93c")
         ghdl_tool = self.config.get("ghdl_tool", "ghdl")
 
         return [GHDLDispatcher(
-            output_dir=output_dir,
             vhdl_std=vhdl_std,
             ghdl_tool=ghdl_tool
         )]

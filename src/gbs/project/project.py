@@ -203,8 +203,6 @@ class Project:
         Executes the build for all output groups.
 
         Args:
-            output_dir: Output directory for build artifacts (default: "build")
-            max_iterations: Maximum dispatcher iterations (default: 10)
             show_progress: Whether to show progress bars (default: True)
 
         Raises:
@@ -235,10 +233,6 @@ class Project:
 
         Displays detailed information about the build plan including source files,
         passes, outputs, library dependencies, and build task graph.
-
-        Args:
-            output_dir: Output directory for build artifacts (default: "build")
-            max_iterations: Maximum dispatcher iterations (default: 10)
 
         Example:
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
@@ -280,7 +274,8 @@ class PlanRealization:
         # Set topcell and library for this output group
         self.build_ctx.set_output_group_context(
             topcell = self.plan.output_group.topcell,
-            topcell_library = self.project.model.root_library_name
+            topcell_library = self.project.model.root_library_name,
+            output_group = self.plan.output_group
         )
 
         # Create BuildFileSet from plan's source fileset

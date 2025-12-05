@@ -60,14 +60,10 @@ class IseSynthesizePass(Pass):
         Returns:
             IseDispatcher singleton
         """
-        output_dir = self.config.get("output_dir", "ise-build")
         tool = self.config.get("tool", "ise")
-        output_base_name = self.config.get("output_base_name")
         target = self.config["target"]
 
         return [IseDispatcher(
-            output_dir=output_dir,
-            output_base_name=output_base_name,
             target=target,
             tool = tool,
         )]

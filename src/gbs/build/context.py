@@ -485,6 +485,8 @@ class BuildContext:
         # Output group context (set when building a specific output group)
         self._topcell: Optional[str] = None
         self._topcell_library: Optional[str] = None
+        self._output_group: Optional[Any] = None  # OutputGroup instance
+        self.output_path = Path("gbs-build") / "undefined_yet"
 
         # Progress tracking
         self._progress_condition: Optional[asyncio.Condition] = None
@@ -571,15 +573,18 @@ class BuildContext:
     def step_register(self, step: "BuildStep") -> None:
         self.steps.add(step)
 
-    def set_output_group_context(self, topcell: str, topcell_library: Optional[str] = None):
+    def set_output_group_context(self, topcell: str, topcell_library: Optional[str] = None, output_group: Optional[Any] = None):
         """Set the current output group build context
 
         Args:
             topcell: Top-level entity/module name for this output group
             topcell_library: Library containing topcell (defaults to 'work')
+            output_group: The OutputGroup being built (for output path resolution)
         """
         self._topcell = topcell
         self._topcell_library = topcell_library or (self.project.root_library_name if self.project else "work")
+        self._output_group = output_group
+        self.output_path = Path("gbs-build") / output_group.name
 
     def get_topcell(self) -> Optional[str]:
         """Get the current output group topcell name
@@ -596,6 +601,14 @@ class BuildContext:
             Topcell library name or None if not set
         """
         return self._topcell_library
+
+    def get_output_group(self) -> Optional[Any]:
+        """Get the current output group being built
+
+        Returns:
+            OutputGroup instance or None if not set
+        """
+        return self._output_group
 
     def get_tool(self, identifier: str, required: bool = True) -> Optional[dict[str, Any]]:
         """Get tool configuration by identifier

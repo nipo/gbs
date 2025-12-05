@@ -32,14 +32,11 @@ class GowinDispatcher(BaseDispatcher):
 
     def __init__(
         self,
-        output_dir: Path | str = "build",
         gowin_tool: str = "gowin",
-        output_base_name: str | None = None,
     ):
         super().__init__("gowin", priority=600)
-        self.output_dir = Path(output_dir)
         self.gowin_tool = gowin_tool
-        self.output_base_name = output_base_name
+        self.output_base_name = "project"
         self._session: Session | None = None
         self._device_info: dict[str, str] | None = None  # Cached device characteristics
 
@@ -57,7 +54,7 @@ class GowinDispatcher(BaseDispatcher):
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
-            self._session = Session(gw_sh, self.output_dir, self.logger)
+            self._session = Session(gw_sh, context.output_path, self.logger)
 
         return self._session
 
@@ -194,7 +191,7 @@ class GowinDispatcher(BaseDispatcher):
         session = self._get_session(context)
 
         # Define resource paths
-        netlist_file = self.output_dir / "impl" / "gwsynthesis" / f"{output_base_name}.vg"
+        netlist_file = context.output_path / "impl" / "gwsynthesis" / f"{output_base_name}.vg"
         netlist_resource = context.get_resource(netlist_file)
 
         # Virtual resource that indicates project has been initialized in gw_sh session
@@ -210,14 +207,16 @@ class GowinDispatcher(BaseDispatcher):
         sdc_sources = list(fileset.filter(file_type="gowin-sdc"))
 
         # Define constraint file paths
-        pin_cst_file = self.output_dir / "aggregate_pins.cst"
-        timing_sdc_file = self.output_dir / "aggregate_timing.sdc"
+        pin_cst_file = context.output_path / "aggregate_pins.cst"
+        timing_sdc_file = context.output_path / "aggregate_timing.sdc"
         pin_cst_resource = context.get_resource(pin_cst_file)
         timing_sdc_resource = context.get_resource(timing_sdc_file)
 
         # Define bitstream output
-        bitstream_file = self.output_dir / "impl" / "pnr" / f"{output_base_name}.fs"
+        bitstream_file = context.output_path / "impl" / "pnr" / f"{output_base_name}.fs"
+        bitstream_bin_file = context.output_path / "impl" / "pnr" / f"{output_base_name}.bin"
         bitstream_resource = context.get_resource(bitstream_file)
+        bitstream_bin_resource = context.get_resource(bitstream_bin_file)
 
         # Create HDL input resources with metadata
         hdl_input_resources = []
@@ -236,7 +235,7 @@ class GowinDispatcher(BaseDispatcher):
             session=session,
             gowin_tool=self.gowin_tool,
             output_base_name=output_base_name,
-            output_dir=self.output_dir,
+            output_dir=context.output_path,
             inputs=hdl_input_resources,
             outputs=[init_marker_resource]
         )
@@ -300,18 +299,27 @@ class GowinDispatcher(BaseDispatcher):
             context=context,
             session=session,
             inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
-            outputs=[bitstream_resource]
+            outputs=[bitstream_resource, bitstream_bin_resource]
         )
 
         # Add bitstream to fileset
         bitstream_br = BuildResource(
             resource=bitstream_resource,
-            file_type="bitstream",
+            file_type="gowin-fs",
             library=None,
             is_source=False,
             generated_by=self.name
         )
         fileset.add(bitstream_br)
+
+        bitstream_bin_br = BuildResource(
+            resource=bitstream_bin_resource,
+            file_type="gowin-bin",
+            library=None,
+            is_source=False,
+            generated_by=self.name
+        )
+        fileset.add(bitstream_bin_br)
 
     async def _update_constraint_inputs(
         self,

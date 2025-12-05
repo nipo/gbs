@@ -40,6 +40,9 @@ class ProjectInit(GwShCommand):
             device = target.get("part")
             topcell = self.context.get_topcell()
 
+            # Prepare paths
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
             # Get Gowin tool config and parse device CSV
             gowin_config = self.context.get_tool(self.gowin_tool)
             gowin_path = Path(gowin_config["path"])
@@ -148,6 +151,7 @@ class Synthesis(LongRunningCommand):
         
     async def work(self) -> None:
         """Run synthesis via gw_sh (project already initialized)"""
+        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
         return await super().work("run syn")
         
 class PnR(LongRunningCommand):
@@ -171,6 +175,7 @@ class PnR(LongRunningCommand):
 
     async def work(self) -> None:
         """Run place & route via gw_sh (project already initialized)"""
+        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
         return await super().work("run pnr")
 
 class AggregateConstraints(Task):

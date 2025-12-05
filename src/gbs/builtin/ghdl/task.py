@@ -43,9 +43,11 @@ class Import(Task):
             if i.metadata["file_type"] == "vhdl":
                 sources.append(i.path.resolve())
             elif i.metadata["file_type"] == "ghdl-cf":
+                i.path.parent.mkdir(parents=True, exist_ok=True)
                 p_flags.append(f"-P{i.path.parent.resolve()}")
             else:
                 raise ValueError(f"Unknown input type {i}")
+        self.workdir.mkdir(parents=True, exist_ok=True)
 
         import_process = GhdlInvocation(argv = [
             self.ghdl_executable, "-i",
@@ -109,6 +111,7 @@ class CompileLink(Task):
         for res in self.inputs:
             if res.metadata.get("file_type") == "ghdl-cf":
                 p_flags.append(f"-P{res.path.parent.resolve()}")
+        self.root_workdir.mkdir(parents=True, exist_ok=True)
 
         process = GhdlInvocation(argv = [
             self.ghdl_executable, "-c", "-O2",

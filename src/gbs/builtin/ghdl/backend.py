@@ -15,7 +15,6 @@ class GHDLBackend(BaseBackend):
 
     Configuration options:
         - vhdl_standard: VHDL standard (e.g., "93c", "08", "2008")
-        - output_dir: Build output directory
         - ghdl_tool: Tool identifier for lookup (default: "ghdl")
     """
 

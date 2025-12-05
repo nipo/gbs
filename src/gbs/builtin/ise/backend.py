@@ -12,10 +12,6 @@ class IseBackend(BaseBackend):
     """Xilinx ISE FPGA synthesis backend
 
     Provides ISE synthesis pass and dispatcher for executing FPGA builds.
-
-    Configuration options:
-        - output_dir: Build output directory
-        - output_base_name: Base name for output files
     """
 
     def __init__(self):

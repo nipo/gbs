@@ -54,19 +54,13 @@ class GowinSynthesizePass(Pass):
         Args:
             config: Backend configuration with optional:
                 - device: Target device string
-                - output_dir: Output directory path
                 - gowin_tool: Tool identifier
-                - output_base_name: Base name for outputs
 
         Returns:
             GowinDispatcher instance
         """
-        output_dir = self.config.get("output_dir", "build")
         gowin_tool = self.config.get("gowin_tool", "gowin")
-        output_base_name = self.config.get("output_base_name")
 
         return [GowinDispatcher(
-            output_dir=output_dir,
             gowin_tool=gowin_tool,
-            output_base_name=output_base_name
         )]

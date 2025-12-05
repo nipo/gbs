@@ -45,13 +45,10 @@ class IseDispatcher(BaseDispatcher):
     def __init__(
         self,
         tool: str,
-        output_dir: Path | str = "build",
-        output_base_name: str | None = None,
         target: dict[str, str] = {},
     ):
         super().__init__("ise", priority=600)
-        self.output_dir = Path(output_dir)
-        self.output_base_name = output_base_name
+        self.output_base_name = "project"
         self.target = target
         self.device = target["part"]
         self.tool = tool
@@ -93,7 +90,7 @@ class IseDispatcher(BaseDispatcher):
         output_base_name = self.output_base_name or context.get_topcell()
 
         if not self.xst_task:
-            await self._task_graph_create(context, fileset, output_base_name)
+            await self._task_graph_create(context, fileset)
 
         await self._sources_hookup(context, fileset)
 
@@ -135,7 +132,6 @@ class IseDispatcher(BaseDispatcher):
         self,
         context: BuildContext,
         fileset: BuildFileSet,
-        output_base_name: str
     ) -> None:
         """Create all ISE build tasks
 
@@ -148,15 +144,15 @@ class IseDispatcher(BaseDispatcher):
                                             dict(file_type = "ise-settings-sh"))
 
         # Define intermediate file paths
-        ngc_path = self.output_dir / "syn" / f"project.ngc"
-        edif_path = self.output_dir / "syn" / f"project.edif"
-        bmm_path = self.output_dir / "func" / f"project.bmm"
-        ngd_path = self.output_dir / "func" / f"project.ngd"
-        map_path = self.output_dir / "map" / f"project.map.ncd"
-        pcf_path = self.output_dir / "map" / f"project.map.pcf"
-        par_path = self.output_dir / "par" / f"project.par.ncd"
-        twr_path = self.output_dir / "par" / f"project.twr"
-        bit_path = self.output_dir / f"project.bit"
+        ngc_path = context.output_path / "syn" / f"project.ngc"
+        edif_path = context.output_path / "syn" / f"project.edif"
+        bmm_path = context.output_path / "func" / f"project.bmm"
+        ngd_path = context.output_path / "func" / f"project.ngd"
+        map_path = context.output_path / "map" / f"project.map.ncd"
+        pcf_path = context.output_path / "map" / f"project.map.pcf"
+        par_path = context.output_path / "par" / f"project.par.ncd"
+        twr_path = context.output_path / "par" / f"project.twr"
+        bit_path = context.output_path / f"project.bit"
 
         # Create resources for all files
         ngc_resource = context.get_resource(ngc_path, dict(file_type = "ise-netlist-xst"))

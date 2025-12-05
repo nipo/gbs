@@ -22,12 +22,10 @@ class GHDLDispatcher(BaseDispatcher):
 
     def __init__(
         self,
-        output_dir: Path | str | None = None,
         vhdl_std: str = "93c",
         ghdl_tool: str = "ghdl"
     ):
         super().__init__("ghdl", priority=500)
-        self.output_dir = Path(output_dir) if output_dir is not None else Path("build")
         self.vhdl_std = vhdl_std
         self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
         self._ghdl_executable: str | None = None  # Cached executable path
@@ -180,9 +178,6 @@ class GHDLDispatcher(BaseDispatcher):
         # Get GHDL configuration (cached after first call)
         ghdl_executable, backend_type = self._get_ghdl_config(context)
 
-        # Ensure output directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
         # Get VHDL version suffix for .cf files
         vhdl_version = "93" if "93" in self.vhdl_std else "08"
 
@@ -213,9 +208,7 @@ class GHDLDispatcher(BaseDispatcher):
 
             self.logger.info(f"Processing library {library_name} ({len(vhdl_files)} files)")
 
-            # Create workdir for this library
-            workdir = self.output_dir / library_name
-            workdir.mkdir(parents=True, exist_ok=True)
+            workdir = context.output_path / library_name
 
             # .cf file that will be generated
             cf_path = workdir / f"{library_name}-obj{vhdl_version}.cf"
@@ -299,7 +292,7 @@ class GHDLDispatcher(BaseDispatcher):
         """
         import subprocess
 
-        root_workdir = self.output_dir / root_library
+        root_workdir = context.output_path / root_library
 
         if backend_type in ["gcc", "llvm"]:
             final_task_class = task.CompileLink
