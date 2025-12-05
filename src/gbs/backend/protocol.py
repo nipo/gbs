@@ -1,15 +1,16 @@
 """Backend System for GBS
 
-This module defines the Backend interface for build planning and dispatcher creation.
+This module defines the Backend interface for build planning.
 
-Backends have two roles:
-1. Planning: Contribute Pass objects that declare file type transformations
-2. Execution: Create Dispatcher instances that build the actual task graph
+Backends contribute Pass objects for build planning. Each Pass can then
+create Dispatchers for execution. This creates a hierarchical structure:
+
+    Backend -> Pass -> Dispatcher -> Task
 
 Key concepts:
-- Backend: Provides planning metadata and creates dispatchers
-- Pass: Planning metadata describing file type transformations (input/output types)
-- Dispatcher: Creates BuildSteps/Tasks graph from sources (execution)
+- Backend: Top-level plugin that contributes passes based on desired outputs
+- Pass: Planning metadata describing file type transformations, creates dispatchers
+- Dispatcher: Execution engine that processes BuildFileSet and creates tasks
 """
 
 from __future__ import annotations
@@ -24,13 +25,11 @@ __all__ = ["Backend", "BaseBackend"]
 class Backend(Protocol):
     """Protocol for backends that participate in build planning
 
-    Backends provide two key capabilities:
-    1. contribute_passes(): Return Pass objects for build planning
-    2. create_dispatcher(): Create a Dispatcher for execution
+    Backends contribute Pass instances for build planning. Each Pass
+    declares input/output file types and can create Dispatchers for execution.
 
     The build planner queries backends to find transformation paths from
-    source file types to desired output file types. Once a plan is selected,
-    the backend creates a dispatcher to execute the plan.
+    source file types to desired output file types.
     """
 
     name: str
@@ -39,28 +38,25 @@ class Backend(Protocol):
         self,
         config: dict[str, Any],
         output_types: set[str]
-    ) -> list[type['Pass']]:
-        """Contribute Pass classes for build planning
+    ) -> list['Pass']:
+        """Contribute Pass instances for build planning
 
         Backends examine the requested output types and configuration,
-        then return Pass classes they can provide. Passes may fork
-        (provide multiple alternatives) or chain (require intermediate types).
+        then return Pass instances they can provide.
 
         Args:
             config: Backend-specific configuration from OutputGroup.backend_config
             output_types: Set of desired output file types
 
         Returns:
-            List of Pass classes this backend can contribute
+            List of Pass instances this backend can contribute
 
         Example:
-            # GHDL backend for simulation
-            if "ghdl-simulator" in output_types:
-                return [GhdlSimulatePass]
-
-            # Gowin backend for synthesis (provides multiple passes)
-            if any(t in output_types for t in ["gowin-fs", "gowin-bin"]):
-                return [GowinSynthesisPass, GowinBitstreamPass]
+            def contribute_passes(self, config, output_types):
+                passes = []
+                if "ghdl-simulator" in output_types:
+                    passes.append(GHDLSimulatePass(config))
+                return passes
         """
         ...
 
@@ -68,7 +64,7 @@ class BaseBackend(ABC):
     """Base class for backends
 
     Provides common functionality and enforces the Backend protocol.
-    Subclasses must implement contribute_passes() and create_dispatcher().
+    Subclasses must implement contribute_passes().
     """
 
     def __init__(self, name: str):

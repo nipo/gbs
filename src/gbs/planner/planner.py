@@ -1,18 +1,15 @@
 """Type-Based Build Planner
 
-This module implements the iterative type-based build planner that finds
-transformation paths from source file types to desired output file types.
+This module implements the type-based build planner that finds transformation
+paths from source file types to desired output file types.
 
 The planner works backwards from outputs:
+
 1. Query backends for passes that produce desired outputs
-2. For each pass, check if inputs are satisfied by:
-   - Available source file types, OR
-   - Output types from other passes
+2. For each pass, check if inputs are satisfied by available source file types
 3. Recursively plan for unsatisfied input types
 4. Combine filter_vars from all selected passes
 5. Return BuildPlan with pass chain and combined filter variables
-
-The planner uses iterative deepening to find the shortest path.
 """
 
 from __future__ import annotations
@@ -42,8 +39,8 @@ class BuildPlan:
 
     Attributes:
         output_group: The OutputGroup this plan is for
-        passes: Ordered list of PassMetadata (planning order, not execution order!)
-        combined_filter_vars: Merged filter variables from all passes + output_group
+        passes: Ordered list of PassMetadata (in planning order)
+        filter_vars: Merged filter variables from all passes + output_group
         repositories: List of repositories to search for sources
     """
     output_group: OutputGroup

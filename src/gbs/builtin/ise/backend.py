@@ -25,7 +25,7 @@ class IseBackend(BaseBackend):
         self,
         config: dict[str, Any],
         output_types: set[str]
-    ) -> list[type[Pass]]:
+    ) -> list[Pass]:
         """Contribute ISE passes based on desired outputs
 
         Args:
@@ -33,7 +33,7 @@ class IseBackend(BaseBackend):
             output_types: Set of desired output types
 
         Returns:
-            List of Pass classes that can help produce the outputs
+            List of Pass instances that can help produce the outputs
         """
         passes = []
 
