@@ -119,16 +119,22 @@ class BuildPlanner:
     def __init__(
         self,
         repositories: list[Repository],
-        backends: list[Backend]
+        backends: list[Backend],
+        project_config: dict[str, Any] | None = None,
+        gbs_config: 'GBSConfig | None' = None
     ):
         """Initialize planner
 
         Args:
             repositories: List of source repositories
             backends: List of backends that provide passes
+            project_config: Project-level configuration (raw_config)
+            gbs_config: GBS configuration (tools, etc.)
         """
         self.repositories = repositories
         self.backends = backends
+        self.project_config = project_config or {}
+        self.gbs_config = gbs_config
         self.logger = get_logger(f"{__name__}.BuildPlanner")
 
         # Compute available source file types
@@ -265,7 +271,7 @@ class BuildPlanner:
             backend_config = output_group.backend_config.get(backend.name, {})
 
             # Ask backend for passes it can contribute
-            passes = backend.contribute_passes(backend_config, desired_outputs)
+            passes = backend.contribute_passes(backend_config, desired_outputs, self.project_config, self.gbs_config)
 
             # Wrap in PassMetadata
             for pass_obj in passes:

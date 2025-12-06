@@ -1,5 +1,7 @@
 from __future__ import annotations
 import logging
+import shutil
+from importlib.resources import files, as_file
 from typing import Any
 from pathlib import Path
 
@@ -7,6 +9,7 @@ from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext, BuildFileSet, BuildResource
 from . import task
 from .gw_sh import Session
+from .device_info import get_device_info
 
 class GowinDispatcher(BaseDispatcher):
     """Gowin FPGA synthesis backend
@@ -58,6 +61,31 @@ class GowinDispatcher(BaseDispatcher):
 
         return self._session
 
+    def _copy_bundled_ieee_files(self, context: BuildContext) -> list[tuple[Path, str]]:
+        """Copy bundled IEEE library files to build directory
+
+        Gowin doesn't ship ieee.math_real, so we provide synthesizable versions.
+        Files are copied to build dir and returned as (path, library) tuples.
+
+        Returns:
+            List of (file_path, library_name) for injected files
+        """
+        injected = []
+        ieee_dir = context.output_path / "ieee"
+        ieee_dir.mkdir(parents=True, exist_ok=True)
+
+        pkg_resources = files("gbs.builtin.gowin.resources.ieee")
+
+        for filename in ["math_real.vhdl", "math_real-body.vhdl"]:
+            dest_path = ieee_dir / filename
+            if not dest_path.exists():
+                with as_file(pkg_resources / filename) as src_path:
+                    shutil.copy(src_path, dest_path)
+                self.logger.debug(f"Copied bundled {filename} to {dest_path}")
+            injected.append((dest_path, "ieee"))
+
+        return injected
+
     def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
         """Provide filter variables for Gowin synthesis
 
@@ -73,7 +101,8 @@ class GowinDispatcher(BaseDispatcher):
 
         # Parse device info if not already cached and device is configured
         if self._device_info is None and context.project:
-            device = context.project.raw_config.get("device")
+            target = context.project.raw_config.get("target", {})
+            device = target.get("part")
             if device:
                 try:
                     gowin_config = context.get_tool(self.gowin_tool, required=False)
@@ -87,6 +116,8 @@ class GowinDispatcher(BaseDispatcher):
         # Add device characteristics if available
         if self._device_info:
             filter_vars.update({
+                "target_part": self._device_info.get("part", ""),
+                "target_part_name": self._device_info.get("part_name", ""),
                 "device-family": self._device_info.get("family", ""),
                 "device-package": self._device_info.get("package", ""),
                 "device-voltage": self._device_info.get("voltage", ""),
@@ -126,6 +157,8 @@ class GowinDispatcher(BaseDispatcher):
                             if row[1].strip() == device.strip():
                                 # Cache device characteristics for filter variables
                                 self._device_info = {
+                                    "part": device,
+                                    "part_name": row[3].strip() if len(row) > 3 else "",
                                     "family": row[3].strip() if len(row) > 3 else "",
                                     "package": row[6].strip() if len(row) > 6 else "",
                                     "voltage": row[7].strip() if len(row) > 7 else "",
@@ -205,6 +238,7 @@ class GowinDispatcher(BaseDispatcher):
         # Get constraint files (may be empty on first call)
         cst_sources = list(fileset.filter(file_type="gowin-cst"))
         sdc_sources = list(fileset.filter(file_type="gowin-sdc"))
+        serdes_config_sources = list(fileset.filter(file_type="gowin-serdes-config"))
 
         # Define constraint file paths
         pin_cst_file = context.output_path / "aggregate_pins.cst"
@@ -220,6 +254,17 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create HDL input resources with metadata
         hdl_input_resources = []
+
+        # Inject bundled IEEE library files (math_real) - must come first
+        for injected_path, library in self._copy_bundled_ieee_files(context):
+            resource = context.get_resource(injected_path)
+            resource.metadata = {
+                'file_type': 'vhdl',
+                'library': library,
+                'language': 'vhdl',
+            }
+            hdl_input_resources.append(resource)
+
         for source in vhdl_sources + verilog_sources:
             resource = context.get_resource(source.path)
             resource.metadata = {
@@ -229,6 +274,59 @@ class GowinDispatcher(BaseDispatcher):
             }
             hdl_input_resources.append(resource)
 
+        # Handle SerDes configuration if present (Gowin 5-series)
+        # Must be done before ProjectInit since CSR file is added to project
+        serdes_csr_resource = None
+        if serdes_config_sources:
+            # Get device info to determine klut_count for tool selection
+            gowin_config = context.get_tool(self.gowin_tool)
+            gowin_path = Path(gowin_config["path"])
+            device = target.get("part")
+            device_info = get_device_info(gowin_path, device, self.logger)
+
+            if device_info.klut_count is None:
+                self.logger.warning(
+                    f"SerDes config found but device {device} doesn't appear to support SerDes"
+                )
+            else:
+                # Create CSR output path
+                serdes_csr_file = context.output_path / "serdes_init.csr"
+                serdes_csr_resource = context.get_resource(serdes_csr_file)
+
+                # Get input TOML resource (use first if multiple)
+                if len(serdes_config_sources) > 1:
+                    self.logger.warning(
+                        f"Multiple SerDes configs found, using first: {serdes_config_sources[0].path}"
+                    )
+                toml_resource = context.get_resource(serdes_config_sources[0].path)
+
+                # Create SerDes to CSR conversion task
+                task.SerDesToCsr(
+                    context=context,
+                    gowin_tool=self.gowin_tool,
+                    klut_count=device_info.klut_count,
+                    inputs=[toml_resource],
+                    outputs=[serdes_csr_resource]
+                )
+
+                # Add CSR to fileset
+                csr_br = BuildResource(
+                    resource=serdes_csr_resource,
+                    file_type="gowin-serdes-init",
+                    library=None,
+                    is_source=False,
+                    generated_by=self.name
+                )
+                fileset.add(csr_br)
+
+                self.logger.info(f"SerDes CSR will be generated from {serdes_config_sources[0].path}")
+
+        # Build init task inputs: HDL files + optional CSR
+        init_inputs = list(hdl_input_resources)
+        if serdes_csr_resource is not None:
+            serdes_csr_resource.metadata = {'file_type': 'gowin-serdes-init'}
+            init_inputs.append(serdes_csr_resource)
+
         # Create project init task
         init_task = task.ProjectInit(
             context=context,
@@ -236,8 +334,8 @@ class GowinDispatcher(BaseDispatcher):
             gowin_tool=self.gowin_tool,
             output_base_name=output_base_name,
             output_dir=context.output_path,
-            inputs=hdl_input_resources,
-            outputs=[init_marker_resource]
+            inputs=init_inputs,
+            outputs=[init_marker_resource],
         )
 
         # Create synthesis task

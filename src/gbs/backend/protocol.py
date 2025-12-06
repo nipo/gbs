@@ -37,7 +37,9 @@ class Backend(Protocol):
     def contribute_passes(
         self,
         config: dict[str, Any],
-        output_types: set[str]
+        output_types: set[str],
+        project_config: dict[str, Any] | None = None,
+        gbs_config: 'GBSConfig | None' = None
     ) -> list['Pass']:
         """Contribute Pass instances for build planning
 
@@ -47,15 +49,17 @@ class Backend(Protocol):
         Args:
             config: Backend-specific configuration from OutputGroup.backend_config
             output_types: Set of desired output file types
+            project_config: Project-level configuration (raw_config)
+            gbs_config: GBS configuration (tools, etc.)
 
         Returns:
             List of Pass instances this backend can contribute
 
         Example:
-            def contribute_passes(self, config, output_types):
+            def contribute_passes(self, config, output_types, project_config=None, gbs_config=None):
                 passes = []
                 if "ghdl-simulator" in output_types:
-                    passes.append(GHDLSimulatePass(config))
+                    passes.append(GHDLSimulatePass(config, project_config, gbs_config))
                 return passes
         """
         ...
@@ -80,7 +84,9 @@ class BaseBackend(ABC):
     def contribute_passes(
         self,
         config: dict[str, Any],
-        output_types: set[str]
+        output_types: set[str],
+        project_config: dict[str, Any] | None = None,
+        gbs_config: 'GBSConfig | None' = None
     ) -> list['Pass']:
         """Contribute Pass classes for build planning
 

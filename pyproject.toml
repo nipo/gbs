@@ -39,6 +39,15 @@ gbs = "gbs.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/gbs"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/gbs/builtin/gowin/resources" = "gbs/builtin/gowin/resources"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/gbs/**/*.py",
+    "src/gbs/builtin/gowin/resources/**/*.vhdl",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

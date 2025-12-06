@@ -177,7 +177,7 @@ class Project:
         all_repositories = [project_repo] + self.repositories
 
         from ..planner.planner import BuildPlanner
-        planner = BuildPlanner(all_repositories, backends)
+        planner = BuildPlanner(all_repositories, backends, self.model.raw_config, self.gbs_config)
         self.__realizations = []
 
         for output_group in self.model.output_groups:

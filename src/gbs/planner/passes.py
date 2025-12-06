@@ -64,8 +64,12 @@ class Pass:
     priority: int = 100
 
     def __init__(self,
-                 config: dict[str, Any]):
+                 config: dict[str, Any],
+                 project_config: dict[str, Any] | None = None,
+                 gbs_config: 'GBSConfig | None' = None):
         self.config = config
+        self.project_config = project_config or {}
+        self.gbs_config = gbs_config
     
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for source enumeration

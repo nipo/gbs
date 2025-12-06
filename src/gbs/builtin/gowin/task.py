@@ -1,11 +1,13 @@
 from __future__ import annotations
+import asyncio
 import random
 from pathlib import Path
 
 from ...build.context import BuildContext
-from ...build.task import Resource, Task
+from ...build.task import Resource, Task, ExecutorTask
 from .gw_sh import *
-from .device_info import parse_device_csv
+from .device_info import parse_device_csv, get_device_info
+from ...build.subprocess import MessageSubprocess
 
 class ProjectInit(GwShCommand):
     """Initialize Gowin project in gw_sh session"""
@@ -18,7 +20,7 @@ class ProjectInit(GwShCommand):
         output_base_name: str,
         output_dir: Path,
         inputs: list,
-        outputs: list
+        outputs: list,
     ):
         super().__init__(
             context,
@@ -75,10 +77,14 @@ class ProjectInit(GwShCommand):
                     self.logger.debug(f"  Setting {pin_name} as GPIO")
                     await self.command_run(f"set_option -use_{pin_name}_as_gpio 1")
 
-            # Add HDL files in dependency order (iterate over self.inputs with metadata)
-            self.logger.debug(f"Adding {len(self.inputs)} HDL source files...")
-            total = len(self.inputs)
-            for i, resource in enumerate(self.inputs):
+            # Filter inputs by type
+            hdl_inputs = [r for r in self.inputs if r.metadata.get('file_type') in ('vhdl', 'verilog')]
+            csr_inputs = [r for r in self.inputs if r.metadata.get('file_type') == 'gowin-serdes-init']
+
+            # Add HDL files in dependency order
+            self.logger.debug(f"Adding {len(hdl_inputs)} HDL source files...")
+            total = len(hdl_inputs)
+            for i, resource in enumerate(hdl_inputs):
                 # Get metadata attached to this resource
                 lib_name = resource.metadata.get('library')
                 file_type = resource.metadata.get('file_type')
@@ -92,6 +98,12 @@ class ProjectInit(GwShCommand):
                 await self.command_run(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}")
 
                 await self.update_progress(i / total)
+
+            # Add SerDes CSR file if present (after HDL files, before constraints)
+            for csr_resource in csr_inputs:
+                csr_path = csr_resource.path
+                self.logger.info(f"Adding SerDes CSR file: {csr_path}")
+                await self.command_run(f"set_csr {{{csr_path}}}")
 
             # Add constraint files (even if they don't exist yet)
             for cst_file in [pin_cst_file, timing_sdc_file]:
@@ -219,3 +231,86 @@ class AggregateConstraints(Task):
 
         constraint_type = "pin" if self.file_type == "gowin-cst" else "timing"
         self.logger.info(f"Aggregated {len(resources)} {constraint_type} constraint files to {output_file}")
+
+
+class SerDesToCsr(Task):
+    """Convert Gowin SerDes TOML configuration to CSR file
+
+    Uses the serdes_toml_to_csr tool from Gowin IDE to convert
+    a TOML configuration file to a CSR initialization file.
+
+    The tool path is:
+    <gowin_dir>/IDE/bin/serdes_toml_to_csr.dist/serdes_toml_to_csr_<klut>.bin
+
+    Where <klut> is "15k", "60k", or "138k" based on device capacity.
+    """
+
+    def __init__(
+        self,
+        context: BuildContext,
+        gowin_tool: str,
+        klut_count: str,
+        inputs: list[Resource],
+        outputs: list[Resource],
+    ):
+        """Initialize SerDes to CSR conversion task
+
+        Args:
+            context: Build context
+            gowin_tool: Tool identifier for Gowin installation lookup
+            klut_count: Device klut category ("15k", "60k", "138k")
+            inputs: List with single TOML config file resource
+            outputs: List with single CSR output file resource
+        """
+        super().__init__(
+            context,
+            name="gowin_serdes_to_csr",
+            inputs=inputs,
+            outputs=outputs,
+            description="Convert SerDes TOML to CSR"
+        )
+        self.gowin_tool = gowin_tool
+        self.klut_count = klut_count
+
+    async def work(self) -> None:
+        """Execute SerDes TOML to CSR conversion"""
+        toml_file = self.inputs[0].path
+        csr_file = self.outputs[0].path
+
+        # Get Gowin tool path
+        gowin_config = self.context.get_tool(self.gowin_tool)
+        gowin_path = Path(gowin_config["path"])
+
+        # Build tool path
+        tool_path = (
+            gowin_path / "IDE" / "bin" / "serdes_toml_to_csr.dist" /
+            f"serdes_toml_to_csr_{self.klut_count}.bin"
+        )
+
+        if not tool_path.exists():
+            raise RuntimeError(
+                f"SerDes tool not found at {tool_path}. "
+                f"Device may not support SerDes or Gowin installation is incomplete."
+            )
+
+        # Ensure output directory exists
+        csr_file.parent.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Converting SerDes config: {toml_file} -> {csr_file}")
+
+        # Run the conversion tool
+        # Tool expects: serdes_toml_to_csr_<klut>.bin -o <output.csr> <input.toml>
+        cmd = [str(tool_path), '-o', str(csr_file), str(toml_file)]
+
+        process = MessageSubprocess(
+            argv = cmd,
+            cwd = str(toml_file.parent),
+        )
+
+        async for msg in process:
+            await self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(f"failed with return code {process.returncode}")
+
+        self.logger.info("complete")
