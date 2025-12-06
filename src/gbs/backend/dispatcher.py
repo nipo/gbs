@@ -243,8 +243,11 @@ async def run_dispatcher_iteration(
 
         # Run all dispatchers in priority order
         for dispatcher in registry:
+            s = fileset.modification_serial
             logger.debug(f"Running dispatcher: {dispatcher.name}")
             await dispatcher.process(context, fileset)
+            if s != fileset.modification_serial:
+                logger.debug(f"  Changes happened")
 
         serial_after = fileset.modification_serial
 
