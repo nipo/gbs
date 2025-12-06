@@ -36,18 +36,18 @@ class ToolMessage:
 
     def __str__(self) -> str:
         """Format message for display"""
-        parts = [f"[{self.severity.value.upper()}]"]
-
-        if self.identifier:
-            parts.append(f"({self.identifier})")
-
         if self.file_path:
             location = str(self.file_path)
             if self.line is not None:
                 location += f":{self.line}"
                 if self.column is not None:
                     location += f":{self.column}"
-            parts.append(f"{location}:")
+            parts = [f"{location}:{self.severity.value.upper()}:"]
+        else:
+            parts = [f"[{self.severity.value.upper()}]"]
+
+        if self.identifier:
+            parts.append(f"({self.identifier})")
 
         parts.append(self.message)
 
