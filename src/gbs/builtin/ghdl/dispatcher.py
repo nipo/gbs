@@ -248,13 +248,19 @@ class GHDLDispatcher(BaseDispatcher):
                 context=context,
                 library_name=library_name,
                 ghdl_executable=ghdl_executable,
-                workdir=workdir,
                 vhdl_std=self.vhdl_std,
                 inputs=inputs,
                 outputs=[cf_resource],
             )
 
             self._processed_libraries.add(library_name)
+
+        # Step 2.5: Compile VHPIDIRECT C files
+        vhpidirect_libs = self._compile_vhpidirect_sources(
+            context,
+            fileset,
+            ghdl_executable
+        )
 
         # Step 3 & 4: Elaborate/link
         topcell = context.get_topcell()
@@ -271,8 +277,66 @@ class GHDLDispatcher(BaseDispatcher):
                     root_library,
                     cf_files,
                     vhdl_version,
-                    ghdl_executable
+                    ghdl_executable,
+                    vhpidirect_libs
                 )
+
+    def _compile_vhpidirect_sources(
+        self,
+        context: BuildContext,
+        fileset: BuildFileSet,
+        ghdl_executable: str
+    ) -> list[BuildResource]:
+        """Compile VHPIDIRECT C sources to shared libraries
+
+        Args:
+            context: Build context
+            fileset: Current build fileset
+            ghdl_executable: Path to GHDL executable
+
+        Returns:
+            List of compiled library BuildResources
+        """
+        vhpidirect_libs = []
+
+        # Filter for VHPIDIRECT C files
+        for br in list(fileset.filter(file_type=["ghdl-vhpidirect-c"])):
+            self.logger.info(f"Compiling VHPIDIRECT C source: {br.path.name}")
+
+            # Create output .so path (stable naming: xxx.c -> xxx.so)
+            lib_path = context.output_path / "vhpidirect" / f"{br.path.stem}.so"
+            lib_resource = context.get_resource(lib_path)
+            lib_resource.metadata["file_type"] = "ghdl-vhpidirect-lib"
+
+            # Create compilation task
+            compile_task = task.VHPIDirectCompile(
+                context=context,
+                ghdl_executable=ghdl_executable,
+                compiler="gcc",  # TODO: make configurable
+                inputs=[br.resource],
+                outputs=[lib_resource],
+            )
+
+            # Create BuildResource for the library
+            lib_br = BuildResource(
+                resource=lib_resource,
+                file_type="ghdl-vhpidirect-lib",
+                library=br.library,  # Associate with same library as C file
+                is_source=False,
+                generated_by=self.name,
+            )
+
+            for d in fileset.remove(br.path):
+                compile_task.dependency_add(d)
+
+            # Add to fileset
+            fileset.add(lib_br)
+            vhpidirect_libs.append(lib_br)
+
+        if vhpidirect_libs:
+            self.logger.info(f"Compiled {len(vhpidirect_libs)} VHPIDIRECT libraries")
+
+        return vhpidirect_libs
 
     def _create_elaboration_tasks(
         self,
@@ -283,14 +347,17 @@ class GHDLDispatcher(BaseDispatcher):
         root_library: str,
         cf_files: dict[str, BuildResource],
         vhdl_version: str,
-        ghdl_executable: str
+        ghdl_executable: str,
+        vhpidirect_libs: list[BuildResource] = None
     ):
         """Create elaboration/linking tasks for the top entity
 
         Args:
             ghdl_executable: Path to GHDL executable
+            vhpidirect_libs: List of compiled VHPIDIRECT libraries
         """
-        import subprocess
+        if vhpidirect_libs is None:
+            vhpidirect_libs = []
 
         root_workdir = context.output_path / root_library
 
@@ -299,9 +366,13 @@ class GHDLDispatcher(BaseDispatcher):
         else:
             final_task_class = task.MakeElab
 
-        executable_path = Path.cwd() / topcell
+        executable_path = context.output_path / "simulator.exe"
         executable_resource = context.get_resource(executable_path)
 
+        # Collect all inputs: .cf files and VHPIDIRECT libraries
+        task_inputs = [x.resource for x in cf_files.values()] \
+            + [x.resource for x in vhpidirect_libs]
+        
         link_task = final_task_class(
             context=context,
             topcell=topcell,
@@ -309,7 +380,7 @@ class GHDLDispatcher(BaseDispatcher):
             root_workdir=root_workdir,
             vhdl_std=self.vhdl_std,
             root_library=root_library,
-            inputs=[x.resource for x in cf_files.values()],
+            inputs=task_inputs,
             outputs=[executable_resource],
         )
 

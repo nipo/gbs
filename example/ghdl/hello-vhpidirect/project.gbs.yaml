@@ -1,0 +1,26 @@
+name: vhdl_vhpidirect_demo
+
+root:
+  name: top
+  sources:
+    - file_type: vhdl
+      files:
+        - test_plugin.pkg.vhd
+        - test_plugin.body.vhd
+        - main.vhd
+    - file_type: ghdl-vhpidirect-c
+      files:
+        - test_plugin.c
+
+output:
+  - name: simulation
+    topcell: main
+    filter_vars: {}
+    backend_config:
+      gbs.backend.ghdl:
+        vhdl_standard: "93c"
+        ghdl_tool: "ghdl:jit"
+    outputs:
+      - type: ghdl-simulator
+        path: hello
+

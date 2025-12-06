@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 import asyncio
 from .message import *
+import logging
 
 __all__ = ["MessageSubprocess"]
 
@@ -31,6 +32,7 @@ class MessageSubprocess:
         self.cwd = cwd
         self.process = None
         self.__queue = asyncio.Queue()
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     async def __aiter__(self) -> AsyncIterator[ToolMessage]:
         """Asynchronous iterator of messages. Messages from stdout and
@@ -107,6 +109,8 @@ class MessageSubprocess:
         if self.process:
             return
 
+        self.logger.debug(f"Launching process with argv={self.argv}")
+        
         self.process = await asyncio.create_subprocess_exec(
             *self.argv,
             stdin=asyncio.subprocess.DEVNULL,

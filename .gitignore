@@ -8,3 +8,4 @@ __pycache__
 *.cf
 _build
 _mgmt
+gbs-build

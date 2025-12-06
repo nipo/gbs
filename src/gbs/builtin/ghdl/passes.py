@@ -19,7 +19,7 @@ class GHDLSimulatePass(Pass):
     Output types: ghdl-simulator
     """
     name = "ghdl-simulate"
-    input_types = {"vhdl"}
+    input_types = {"vhdl", "ghdl-vhpidirect-c"}
     output_types = {"ghdl-simulator"}
 
     def filter_vars(self) -> dict[str, Any]:
