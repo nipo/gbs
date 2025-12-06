@@ -5,6 +5,7 @@ from pathlib import Path
 from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext, BuildFileSet, BuildResource
 from . import task
+from ...build.task import Task
 
 class GHDLDispatcher(BaseDispatcher):
     """GHDL backend that compiles VHDL designs
@@ -30,7 +31,8 @@ class GHDLDispatcher(BaseDispatcher):
         self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
         self._ghdl_executable: str | None = None  # Cached executable path
         self._ghdl_backend_type: str | None = None  # Cached backend type
-        self._processed_libraries: set[str] = set()
+        self._library_build: dict[str, tuple[BuildResource, Task]] = {}
+        self._linker: Task = None
 
     def _get_ghdl_config(self, context: BuildContext) -> tuple[str, str]:
         """Get GHDL executable and backend type (cached)
@@ -167,120 +169,124 @@ class GHDLDispatcher(BaseDispatcher):
             "vhdl-version": vhdl_version,  # 1987/1993/2000/2002/2008/2019
         }
 
+    @property
+    def vhdl_version(self):
+        return "93" if "93" in self.vhdl_std else "08"
+    
+    def library_build_get(self,
+                            context: BuildContext,
+                            fileset: BuildFileSet,
+                            library: str) -> tuple[BuildResource, Task]:
+        try:
+            return self._library_build[library]
+        except KeyError:
+            pass
+        
+        ghdl_executable, backend_type = self._get_ghdl_config(context)
+        workdir = context.output_path / library
+
+        # .cf file that will be generated
+        cf_path = workdir / f"{library}-obj{self.vhdl_version}.cf"
+        cf_resource = context.get_resource(cf_path, metadata = {
+            "file_type": "ghdl-cf",
+            "library": library,
+            })
+
+        # Track .cf file for dependencies (but don't add to fileset)
+        cf_br = BuildResource(
+            resource=cf_resource,
+            file_type="ghdl-cf",
+            library=library,
+            is_source=False,
+            generated_by=self.name,
+        )
+
+        # Create import task (ghdl -i/-a)
+        t = task.Import(
+            context=context,
+            library_name=library,
+            ghdl_executable=ghdl_executable,
+            vhdl_std=self.vhdl_std,
+            inputs=[],
+            outputs=[cf_resource],
+        )
+
+        fileset.add(cf_br)
+        self._library_build[library] = cf_resource, t
+
+        return cf_resource, t
+
     async def process(
         self,
         context: BuildContext,
         fileset: BuildFileSet
     ) -> None:
         """Compile VHDL design with GHDL"""
-        import subprocess
-
-        # Get GHDL configuration (cached after first call)
         ghdl_executable, backend_type = self._get_ghdl_config(context)
-
-        # Get VHDL version suffix for .cf files
-        vhdl_version = "93" if "93" in self.vhdl_std else "08"
-
-        # Get libraries in dependency order
-        by_library = fileset.by_library_ordered()
 
         # Get library dependency graph for correct inter-library dependencies
         # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
         lib_deps_graph = fileset.library_dependency_graph_transitive()
 
-        # Track .cf files and analyze tasks for dependencies
-        cf_files: dict[str, BuildResource] = {}
+        for lib, deps in lib_deps_graph.items():
+            _, user_task = self.library_build_get(context, fileset, lib)
 
-        # Step 1 & 2: Import and analyze each library
-        for library_name, library_files in by_library:
-            if library_name is None:
-                continue
+            for d in deps:
+                dep_cf, _ = self.library_build_get(context, fileset, d)
 
-            # Filter for VHDL files only
-            vhdl_files = [br for br in library_files if br.file_type == "vhdl"]
-            if not vhdl_files:
-                continue
+                if dep_cf not in user_task.inputs:
+                    user_task.inputs.append(dep_cf)
+                    user_task.dependency_add(dep_cf)
 
-            self.logger.debug(f"Library {library_name} file order from by_library_ordered: {[br.path.name for br in vhdl_files]}")
-
-            if library_name in self._processed_libraries:
-                continue
-
-            self.logger.info(f"Processing library {library_name} ({len(vhdl_files)} files)")
-
-            workdir = context.output_path / library_name
-
-            # .cf file that will be generated
-            cf_path = workdir / f"{library_name}-obj{vhdl_version}.cf"
-            cf_resource = context.get_resource(cf_path)
-            cf_resource.metadata["file_type"] = "ghdl-cf"
-
-            # Track .cf file for dependencies (but don't add to fileset)
-            cf_br = BuildResource(
-                resource=cf_resource,
-                file_type="ghdl-cf",
-                library=library_name,
-                is_source=False,
-                generated_by=self.name,
-            )
-
-            # Note: .cf files are internal GHDL artifacts, not added to fileset
-            cf_files[library_name] = cf_br
-
-            inputs = []
-
-            # Collect source file paths in partition dependency order
-            # (by_library_ordered already returns files in correct dependency order)
-            for br in vhdl_files:
-                inputs.append(br.resource)
-
-            # Import depends on source files and dependent library .cf
-            # files Use library dependency graph to get only the
-            # actual dependencies
-            lib_deps = lib_deps_graph.get(library_name, set())
-            for dep_lib in cf_files:
-                if dep_lib == library_name:
-                    continue
-                inputs.append(cf_files[dep_lib].resource)
-
-            # Create import task (ghdl -i)
-            import_task = task.Import(
-                context=context,
-                library_name=library_name,
-                ghdl_executable=ghdl_executable,
-                vhdl_std=self.vhdl_std,
-                inputs=inputs,
-                outputs=[cf_resource],
-            )
-
-            self._processed_libraries.add(library_name)
-
-        # Step 2.5: Compile VHPIDIRECT C files
-        vhpidirect_libs = self._compile_vhpidirect_sources(
+        
+        # Step 2.5: Compile new VHPIDIRECT C files
+        self._compile_vhpidirect_sources(
             context,
             fileset,
             ghdl_executable
         )
 
-        # Step 3 & 4: Elaborate/link
-        topcell = context.get_topcell()
-        if topcell and cf_files:
-            # Get the root library from context
-            root_library = context.get_topcell_library()
+        if not self._linker:
+            # Step 3 & 4: Elaborate/link
+            self._linker = self._create_elaboration_tasks(
+                context,
+                fileset,
+                backend_type,
+                context.get_topcell(),
+                context.get_topcell_library(),
+                self.vhdl_version,
+                ghdl_executable,
+            )
 
-            if root_library:
-                self._create_elaboration_tasks(
-                    context,
-                    fileset,
-                    backend_type,
-                    topcell,
-                    root_library,
-                    cf_files,
-                    vhdl_version,
-                    ghdl_executable,
-                    vhpidirect_libs
-                )
+        # Ingress files to linker
+        for br in list(fileset.filter(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
+            for d in fileset.remove(br.path):
+                self._linker.depends_on(d)
+            rsrc = context.get_resource(br.path)
+            self._linker.inputs.append(rsrc)
+            self._linker.dependency_add(rsrc)
 
+        # Get libraries in dependency order
+        for library_name, library_files in fileset.by_library_ordered():
+            if library_name is None:
+                continue
+
+            cf, task = self.library_build_get(context, fileset, library_name)
+
+            for br in library_files:
+                if br.file_type != "vhdl":
+                    continue
+
+                rsrc = context.get_resource(br.path, metadata = {
+                    "file_type": "vhdl",
+                    "library": library_name,
+                })
+
+                for d in fileset.remove(br.path):
+                    task.depends_on(d)
+                task.inputs.append(rsrc)
+                task.dependency_add(rsrc)
+            
     def _compile_vhpidirect_sources(
         self,
         context: BuildContext,
@@ -305,8 +311,10 @@ class GHDLDispatcher(BaseDispatcher):
 
             # Create output .so path (stable naming: xxx.c -> xxx.so)
             lib_path = context.output_path / "vhpidirect" / f"{br.path.stem}.so"
-            lib_resource = context.get_resource(lib_path)
-            lib_resource.metadata["file_type"] = "ghdl-vhpidirect-lib"
+            lib_resource = context.get_resource(lib_path, metadata = {
+                "file_type": "ghdl-vhpidirect-lib",
+                "library": br.library,
+                })
 
             # Create compilation task
             compile_task = task.VHPIDirectCompile(
@@ -345,22 +353,15 @@ class GHDLDispatcher(BaseDispatcher):
         backend_type: str,
         topcell: str,
         root_library: str,
-        cf_files: dict[str, BuildResource],
         vhdl_version: str,
         ghdl_executable: str,
-        vhpidirect_libs: list[BuildResource] = None
-    ):
+    ) -> Task:
         """Create elaboration/linking tasks for the top entity
 
         Args:
             ghdl_executable: Path to GHDL executable
             vhpidirect_libs: List of compiled VHPIDIRECT libraries
         """
-        if vhpidirect_libs is None:
-            vhpidirect_libs = []
-
-        root_workdir = context.output_path / root_library
-
         if backend_type in ["gcc", "llvm"]:
             final_task_class = task.CompileLink
         else:
@@ -368,19 +369,14 @@ class GHDLDispatcher(BaseDispatcher):
 
         executable_path = context.output_path / "simulator.exe"
         executable_resource = context.get_resource(executable_path)
-
-        # Collect all inputs: .cf files and VHPIDIRECT libraries
-        task_inputs = [x.resource for x in cf_files.values()] \
-            + [x.resource for x in vhpidirect_libs]
         
         link_task = final_task_class(
             context=context,
             topcell=topcell,
             ghdl_executable=ghdl_executable,
-            root_workdir=root_workdir,
             vhdl_std=self.vhdl_std,
             root_library=root_library,
-            inputs=task_inputs,
+            inputs=[],
             outputs=[executable_resource],
         )
 
@@ -393,3 +389,4 @@ class GHDLDispatcher(BaseDispatcher):
         )
         fileset.add(sim_br)
 
+        return link_task

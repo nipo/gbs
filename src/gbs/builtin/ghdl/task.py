@@ -3,9 +3,48 @@ from pathlib import Path
 from ...build.task import Task
 from ...build.context import BuildContext
 from ...build.subprocess import MessageSubprocess
+from ...build.message import MessageSeverity, ToolMessage
+import re
 
 class GhdlInvocation(MessageSubprocess):
-    pass
+    error_line = re.compile(r'(?P<file>[^:]+):(?P<line>[0-9]+):(?P<column>[0-9]+):(?P<level>[a-z]+):(?P<message>.+)$')
+
+    level_map = {
+        "info": MessageSeverity.INFO,
+        "warning": MessageSeverity.WARNING,
+        "error": MessageSeverity.ERROR,
+    }
+
+    async def stderr_transform(self, lines):
+        multiline = None
+        async for line in lines:
+            if multiline and line.startswith(" "):
+                if multiline.extended_message:
+                    multiline.extended_message += "\n"+line
+                else:
+                    multiline.extended_message = line
+                continue
+
+            if multiline:
+                yield multiline
+                multiline = None
+                
+            m = self.error_line.match(line)
+            if not m:
+                yield ToolMessage(severity = MessageSeverity.INFO,
+                                  message = line)
+                continue
+
+            severity = self.level_map.get(m.group("level").lower(), MessageSeverity.INFO)
+            multiline = ToolMessage(severity = severity,
+                                    origin = "ghdl",
+                                    message = m.group("message"),
+                                    file_path = m.group("file"),
+                                    line = int(m.group("line")),
+                                    column = int(m.group("column")))
+
+        if multiline:
+            yield multiline
 
 class Import(Task):
     """GHDL import task (ghdl -i + ghdl -a)"""
@@ -48,31 +87,20 @@ class Import(Task):
                 raise ValueError(f"Unknown input type {i}")
         workdir.mkdir(parents=True, exist_ok=True)
 
-        import_process = GhdlInvocation(argv = [
-            self.ghdl_executable, "-i",
-            f"--workdir={workdir.resolve()}",
-            f"--std={self.vhdl_std}",
-            f"--work={self.library_name}",
-        ] + p_flags + sources)
+        for cmd in ["-i", "-a"]:
+            import_process = GhdlInvocation(argv = [
+                self.ghdl_executable, cmd,
+                f"--workdir={workdir.resolve()}",
+                f"--std={self.vhdl_std}",
+                f"--work={self.library_name}",
+                "-Wno-hide"
+            ] + p_flags + sources)
 
-        async for msg in import_process:
-            await self.add_message_obj(msg)
+            async for msg in import_process:
+                await self.add_message_obj(msg)
 
-        if import_process.returncode != 0:
-            raise RuntimeError(f"ghdl -i failed for {self.library_name}: {import_process.returncode}")
-
-        analyze_process = GhdlInvocation(argv = [
-            self.ghdl_executable, "-a",
-            f"--workdir={workdir.resolve()}",
-            f"--std={self.vhdl_std}",
-            f"--work={self.library_name}",
-        ] + p_flags + sources)
-
-        async for msg in analyze_process:
-            await self.add_message_obj(msg)
-
-        if analyze_process.returncode != 0:
-            raise RuntimeError(f"ghdl -i failed for {self.library_name}: {analyze_process.returncode}")
+            if import_process.returncode != 0:
+                raise RuntimeError(f"ghdl {cmd} failed for {self.library_name}: {import_process.returncode}")
 
 class VHPIDirectCompile(Task):
     """GHDL VHPIDIRECT C compilation task"""
@@ -147,7 +175,6 @@ class CompileLink(Task):
         context: BuildContext,
         topcell: str,
         ghdl_executable: str,
-        root_workdir: Path,
         vhdl_std: str,
         root_library: str,
         inputs: list = None,
@@ -162,36 +189,35 @@ class CompileLink(Task):
         )
         self.topcell = topcell
         self.ghdl_executable = ghdl_executable
-        self.root_workdir = root_workdir
         self.vhdl_std = vhdl_std
         self.root_library = root_library
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
         assert len(self.outputs) == 1
-        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = self.outputs[0].path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build -P flags for all libraries
-        p_flags = []
+        flags = []
         for res in self.inputs:
             if res.metadata.get("file_type") == "ghdl-cf":
-                p_flags.append(f"-P{res.path.parent.resolve()}")
-        self.root_workdir.mkdir(parents=True, exist_ok=True)
+                flags.append(f"-P{res.path.parent.resolve()}")
+                if res.metadata["library"] == self.root_library:
+                    flags.append(f"--workdir={res.path.parent.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
-        vhpidirect_ldflags = []
         for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
             # Link the library directly (absolute path)
             lib_path = lib_res.path.resolve()
-            vhpidirect_ldflags.append(f"-Wl,{lib_path}")
+            flags.append(f"-Wl,{lib_path}")
 
         process = GhdlInvocation(argv = [
             self.ghdl_executable, "-c", "-O2",
-            f"--workdir={self.root_workdir.resolve()}",
             f"--std={self.vhdl_std}",
-        ] + p_flags + vhpidirect_ldflags + [
+        ] + flags + [
             f"--work={self.root_library}",
-            "-o", str(self.outputs[0].path),
+            "-o", str(out_path),
             "-e", self.topcell
         ])
 
@@ -231,7 +257,8 @@ class MakeElab(Task):
     async def work(self) -> None:
         """Execute GHDL compile and link"""
         assert len(self.outputs) == 1
-        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = self.outputs[0].path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build -P flags for all libraries
         p_flags = []
@@ -261,7 +288,7 @@ class MakeElab(Task):
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell
-        ], cwd = self.outputs[0].path.parent)
+        ], cwd = out_path.parent)
 
         async for msg in process:
             await self.add_message_obj(msg)
@@ -290,5 +317,5 @@ class MakeElab(Task):
 
 exec {' '.join(run_cmd)}
 """
-        self.outputs[0].path.write_text(script_content)
-        self.outputs[0].path.chmod(0o755)
+        out_path.write_text(script_content)
+        out_path.chmod(0o755)
