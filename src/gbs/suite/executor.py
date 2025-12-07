@@ -15,7 +15,6 @@ from .model import (
     Suite, ProjectReference, ProjectResult, SuiteResult,
     ProjectStatus, SuiteStatus
 )
-from ..project import Project
 from ..logging import get_logger
 
 logger = get_logger(__name__)
@@ -178,6 +177,8 @@ class SuiteExecutor:
         Returns:
             ProjectResult with build status and timing
         """
+        from ..project import Project
+
         start_time = time.time()
 
         logger.info(f"Building project '{proj_ref.name}' at {proj_ref.path}")
@@ -351,6 +352,8 @@ class SuiteExecutor:
         Returns:
             Projects that need rebuilding
         """
+        from ..project import Project
+
         if not self.changed_files:
             return projects
 

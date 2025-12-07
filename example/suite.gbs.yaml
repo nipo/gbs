@@ -1,0 +1,46 @@
+# GBS Suite Example
+#
+# This file demonstrates suite configuration for building multiple
+# GBS projects together. Suites are useful for CI/CD integration
+# and regression testing.
+
+name: gbs-examples
+description: Example GBS projects demonstrating various features
+
+settings:
+  # Maximum number of projects to build in parallel
+  max_parallel_projects: 4
+
+  # Stop execution on first failure
+  stop_on_failure: false
+
+  # Output configuration
+  output:
+    # JUnit XML for CI/CD integration
+    junit_xml: test-results/junit.xml
+
+    # JSON summary for programmatic access
+    summary_json: test-results/summary.json
+
+    # Save individual project logs
+    log_dir: test-results/logs
+    save_logs: true
+
+# Projects to build
+projects:
+  # Basic GHDL example
+  - name: hello
+    path: hello
+    tags: [ghdl, simulation]
+
+  # NSL CDC Demo (if available)
+  - name: nsl-cdc-demo
+    path: nsl_cdc_demo
+    tags: [ghdl, nsl, cdc]
+    skip: true  # Skip by default (may require additional setup)
+
+  # GHDL examples
+  - name: ghdl-examples
+    path: ghdl
+    tags: [ghdl, vhdl]
+    skip: true  # Skip by default
