@@ -347,7 +347,7 @@ class BuildContext:
             failed_steps: List of (BuildStep, Exception) tuples for failed steps
         """
         import click
-        from .task import Task, PrerequisiteFailed, MissingToolError
+        from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError
 
         # First, print all warnings (not just from failed steps)
         warnings = self.messages_get(severity=MessageSeverity.WARNING)
@@ -358,79 +358,104 @@ class BuildContext:
 
         # Print failure summary
         click.echo("\n" + click.style("Build Failed!", fg="red", bold=True))
-        click.echo(click.style(f"Failed steps: {len(failed_steps)}", fg="red"))
         click.echo()
 
-        # Group failures by type
-        task_failures = []
-        other_failures = []
+        # Find root cause failures (not dependency failures)
+        root_causes = []
+        dependency_failures = []
 
         for step, exc in failed_steps:
-            if isinstance(step, Task):
-                task_failures.append((step, exc))
+            if isinstance(exc, PrerequisiteFailed):
+                dependency_failures.append((step, exc))
             else:
-                other_failures.append((step, exc))
+                root_causes.append((step, exc))
 
-        # Print task failures with detailed info
-        if task_failures:
-            click.echo(click.style("Failed Tasks:", fg="red", bold=True))
+        # For each failed Resource, find the Task that should have created it
+        # and show that Task's errors instead
+        tasks_with_errors = {}
 
-            for task, exc in task_failures:
-                click.echo()
+        for step, exc in root_causes:
+            if isinstance(step, Resource) and isinstance(exc, BuildError):
+                # Find the task that should have created this resource
+                for dep in step.depends_on:
+                    if isinstance(dep, Task):
+                        # This task should have created the resource
+                        # Get error messages from this task OR messages with no origin
+                        # (backend parsers often don't set origin)
+                        if dep not in tasks_with_errors:
+                            task_errors = [m for m in self.__messages
+                                         if (m.origin == dep or m.origin is None) and
+                                            m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                            if task_errors:
+                                tasks_with_errors[dep] = task_errors
+
+        # Print root cause failures
+        if root_causes or tasks_with_errors:
+            click.echo(click.style("Root Cause Failures:", fg="red", bold=True))
+            click.echo()
+
+            # First show Tasks that have error messages (even if they didn't fail themselves)
+            for task, errors in tasks_with_errors.items():
                 click.echo(click.style(f"  ✗ {task.name}", fg="red", bold=True))
 
-                # Show task description if available
                 if task.description and task.description != task.name:
                     click.echo(f"    {task.description}")
 
-                # Show inputs
-                if task.inputs:
-                    click.echo(f"    Inputs: {', '.join(str(i.name) for i in task.inputs[:3])}" +
-                             (f" (+{len(task.inputs)-3} more)" if len(task.inputs) > 3 else ""))
+                # Show outputs that failed
+                failed_outputs = [step for step, exc in root_causes
+                                if isinstance(step, Resource) and step in task.expected_by]
+                if failed_outputs:
+                    click.echo(f"    Failed outputs: {', '.join(str(o.name) for o in failed_outputs[:3])}" +
+                             (f" (+{len(failed_outputs)-3} more)" if len(failed_outputs) > 3 else ""))
 
-                # Show outputs
-                if task.outputs:
-                    click.echo(f"    Outputs: {', '.join(str(o.name) for o in task.outputs[:3])}" +
-                             (f" (+{len(task.outputs)-3} more)" if len(task.outputs) > 3 else ""))
+                # Show error messages
+                click.echo(click.style(f"    Errors:", fg="red"))
+                for msg in errors[:10]:  # Limit to 10 messages
+                    for line in str(msg).split('\n'):
+                        click.echo(f"      {line}")
+                if len(errors) > 10:
+                    click.echo(f"      ... and {len(errors) - 10} more errors")
+                click.echo()
 
-                # Print exception type and message
-                if isinstance(exc, PrerequisiteFailed):
-                    click.echo(click.style(f"    Reason: Dependency failed", fg="red"))
-                elif isinstance(exc, MissingToolError):
-                    click.echo(click.style(f"    Reason: {exc}", fg="red"))
-                    click.echo(click.style(f"    Hint: Check tool configuration", fg="yellow"))
-                else:
-                    exc_name = type(exc).__name__
-                    exc_msg = str(exc)
-                    if exc_msg:
-                        click.echo(click.style(f"    Reason: {exc_name}: {exc_msg}", fg="red"))
+            # Show other root cause failures that aren't covered above
+            shown_resources = set()
+            for task in tasks_with_errors:
+                shown_resources.update(step for step, _ in root_causes
+                                     if isinstance(step, Resource) and step in task.expected_by)
+
+            for step, exc in root_causes:
+                if step in shown_resources:
+                    continue
+
+                if isinstance(step, Task):
+                    click.echo(click.style(f"  ✗ {step.name}", fg="red", bold=True))
+
+                    if step.description and step.description != step.name:
+                        click.echo(f"    {step.description}")
+
+                    if isinstance(exc, MissingToolError):
+                        click.echo(click.style(f"    Reason: {exc}", fg="red"))
+                        click.echo(click.style(f"    Hint: Check tool configuration", fg="yellow"))
                     else:
-                        click.echo(click.style(f"    Reason: {exc_name}", fg="red"))
+                        exc_msg = str(exc)
+                        if exc_msg:
+                            click.echo(click.style(f"    Reason: {exc_msg}", fg="red"))
 
-                # Show errors and warnings for this specific task
-                task_messages = [m for m in self.__messages
-                               if m.origin == task and m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                    # Show errors from this task
+                    task_errors = [m for m in self.__messages
+                                 if m.origin == step and m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                    if task_errors:
+                        click.echo(click.style(f"    Errors:", fg="red"))
+                        for msg in task_errors[:5]:
+                            for line in str(msg).split('\n'):
+                                click.echo(f"      {line}")
+                        if len(task_errors) > 5:
+                            click.echo(f"      ... and {len(task_errors) - 5} more errors")
+                    click.echo()
 
-                if task_messages:
-                    click.echo(click.style(f"    Errors from this task:", fg="red"))
-                    for msg in task_messages[:5]:  # Limit to 5 messages
-                        # Indent the message
-                        for line in str(msg).split('\n'):
-                            click.echo(f"      {line}")
-                    if len(task_messages) > 5:
-                        click.echo(f"      ... and {len(task_messages) - 5} more errors")
-
-        # Print other failures
-        if other_failures:
-            click.echo()
-            click.echo(click.style("Other Failures:", fg="red", bold=True))
-            for step, exc in other_failures:
-                click.echo(f"  ✗ {step.name}: {type(exc).__name__}: {exc}")
-
-        # Show log file location if available
+        # Show log file location
         log_file = get_log_file()
         if log_file:
-            click.echo()
             click.echo(click.style(f"Full build log: {log_file}", fg="blue"))
 
     # ========================================================================
