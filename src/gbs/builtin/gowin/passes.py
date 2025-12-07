@@ -45,8 +45,8 @@ class GowinSynthesizePass(Pass):
             "hwdep": "gowin",
         }
 
-        # Get device from project config
-        target = self.project_config.get("target", {})
+        # Get device from backend config (populated from output group's target)
+        target = self.config.get("target", {})
         device = target.get("part")
         if not device:
             return filter_vars

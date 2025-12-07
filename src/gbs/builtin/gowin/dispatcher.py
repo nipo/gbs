@@ -143,11 +143,11 @@ class GowinDispatcher(BaseDispatcher):
         On subsequent calls, adds new constraint files as inputs to existing tasks.
         """
 
-        # Get target from project config
+        # Get target from output group configuration
         if not context.project:
             raise ValueError("No project configured")
 
-        target = context.project.raw_config.get("target", {})
+        target = context.get_target()
         device = target.get("part")
         if not device:
             # No target device configured - skip Gowin backend (simulation-only project)

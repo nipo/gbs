@@ -228,6 +228,16 @@ class BuildContext:
         """
         return self._output_group
 
+    def get_target(self) -> dict[str, Any]:
+        """Get the target device configuration for the current output group
+
+        Returns:
+            Target device configuration dict (may be empty if no target configured)
+        """
+        if self._output_group is None:
+            return {}
+        return self._output_group.target
+
     def get_tool(self, identifier: str, required: bool = True) -> Optional[dict[str, Any]]:
         """Get tool configuration by identifier
 
@@ -363,10 +373,16 @@ class BuildContext:
         # Find root cause failures (not dependency failures)
         root_causes = []
         dependency_failures = []
+        missing_inputs = []
 
         for step, exc in failed_steps:
             if isinstance(exc, PrerequisiteFailed):
                 dependency_failures.append((step, exc))
+                # Check if this is a missing source file
+                if isinstance(step, Resource) and not step.path.exists():
+                    from .task import ResourceTypology
+                    if step.typology == ResourceTypology.SOURCE:
+                        missing_inputs.append(step)
             else:
                 root_causes.append((step, exc))
 

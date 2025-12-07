@@ -1,11 +1,5 @@
 name: blink
 
-target:
-  part: GW5AT-LV60PG484AC1/I0
-  use_as_gpio:
-    - done
-    - jtag
-
 root:
   name: top
   sources:
@@ -24,6 +18,11 @@ output:
     filter_vars:
       vendor: gowin
       target: synthesis
+    target:
+      part: GW5AT-LV60PG484AC1/I0
+      use_as_gpio:
+        - done
+        - jtag
     backend_config:
       gbs.backend.gowin:
         part: GW5AT-LV60PG484AC1/I0

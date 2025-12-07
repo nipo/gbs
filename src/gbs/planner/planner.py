@@ -268,7 +268,12 @@ class BuildPlanner:
 
         for backend in self.backends:
             # Get backend-specific config
-            backend_config = output_group.backend_config.get(backend.name, {})
+            backend_config = output_group.backend_config.get(backend.name, {}).copy()
+
+            # Merge output group's target into backend config
+            # This makes target available to passes via self.config instead of self.project_config
+            if output_group.target:
+                backend_config['target'] = output_group.target
 
             # Ask backend for passes it can contribute
             passes = backend.contribute_passes(backend_config, desired_outputs, self.project_config, self.gbs_config)

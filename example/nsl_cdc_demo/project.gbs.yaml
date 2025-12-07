@@ -1,9 +1,6 @@
 name: nsl_cdc_demo
 description: NSL CDC constraint generation demo
 
-target:
-  part: GW5AT-LV60PG484AC1/I0
-
 root:
   name: top
   sources:
@@ -20,6 +17,8 @@ output:
     filter_vars:
       vendor: gowin
       target: synthesis
+    target:
+      part: GW5AT-LV60PG484AC1/I0
     backend_config:
       gbs.builtin.gowin:
         part: GW5AT-LV60PG484AC1/I0

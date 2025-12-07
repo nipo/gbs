@@ -440,13 +440,10 @@ def load_project(path: Path, gbs_config=None) -> Project:
             logger.warning(f"Invalid max_parallel value in {path}, ignoring")
             max_parallel = None
 
-    # Validate target configuration (optional, required for synthesis backends)
-    target = data.get("target")
-    if target is not None:
-        if not isinstance(target, dict):
-            raise LoadError("'target' must be a dictionary")
-        if "part" not in target:
-            raise LoadError("'target' must specify 'part' (device part number)")
+    # Check for deprecated root-level target configuration
+    if "target" in data:
+        logger.warning(f"Project {path}: 'target' at root level is deprecated. "
+                      f"Move 'target' into output group configuration.")
 
     # Load root partition (inline definition)
     # The root partition is always placed in the "work" library
@@ -512,6 +509,14 @@ def load_project(path: Path, gbs_config=None) -> Project:
         og_topcell = og_data["topcell"]
         og_filter_vars = og_data.get("filter_vars", {})
         og_backend_config = og_data.get("backend_config", {})
+        og_target = og_data.get("target", {})
+
+        # Validate target if present
+        if og_target:
+            if not isinstance(og_target, dict):
+                raise LoadError(f"Output group '{og_name}': 'target' must be a dictionary")
+            if "part" not in og_target:
+                raise LoadError(f"Output group '{og_name}': 'target' must specify 'part' (device part number)")
 
         # Parse output files
         og_outputs = []
@@ -542,6 +547,7 @@ def load_project(path: Path, gbs_config=None) -> Project:
             filter_vars=og_filter_vars,
             backend_config=og_backend_config,
             outputs=og_outputs,
+            target=og_target,
             require_passes=og_require_passes,
             exclude_passes=og_exclude_passes,
             require_backends=og_require_backends,

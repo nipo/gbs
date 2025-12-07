@@ -34,7 +34,8 @@ class IseSynthesizePass(Pass):
         Returns:
             Dictionary with filter variables
         """
-        
+
+        # Get device from backend config (populated from output group's target)
         target = self.config.get("target", {})
         part = target.get("part")
         if not part:

@@ -50,6 +50,7 @@ class OutputGroup:
         filter_vars: Variables used for filter evaluation during source enumeration
         backend_config: Dict mapping backend module names to their config
         outputs: List of desired output files
+        target: Target device configuration (part number, device-specific settings)
         require_passes: Passes that MUST be in the build plan
         exclude_passes: Passes that MUST NOT be in the build plan
         require_backends: Backends that MUST contribute to the build plan
@@ -82,6 +83,7 @@ class OutputGroup:
     filter_vars: dict[str, Any] = field(default_factory=dict)
     backend_config: dict[str, dict] = field(default_factory=dict)
     outputs: list[OutputFile] = field(default_factory=list)
+    target: dict[str, Any] = field(default_factory=dict)  # Target device configuration
 
     # Build planning constraints
     require_passes: list[str] = field(default_factory=list)

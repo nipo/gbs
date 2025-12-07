@@ -38,7 +38,7 @@ class ProjectInit(GwShCommand):
         """Initialize Gowin project in gw_sh"""
         try:
             # Compute values from context
-            target = self.context.project.raw_config.get("target", {})
+            target = self.context.get_target()
             device = target.get("part")
             topcell = self.context.get_topcell()
 
