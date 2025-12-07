@@ -282,6 +282,98 @@ class Project:
             # Execute build tasks
             realization.task_graph_show()
 
+    async def get_source_files(
+        self,
+        output_group_names: Optional[list[str]] = None
+    ) -> dict[str, set[Path]]:
+        """Get source files for output groups without building
+
+        Runs planning phase only to extract source file lists.
+        Useful for determining if a project needs rebuilding.
+
+        Args:
+            output_group_names: Which output groups to plan for (None = all)
+
+        Returns:
+            Dict mapping output_group_name -> set of source file paths
+
+        Example:
+            >>> sources = await project.get_source_files(["simulation"])
+            >>> sources
+            {'simulation': {Path('src/top.vhd'), Path('src/uart.vhd')}}
+        """
+        result = {}
+
+        # Filter output groups if names provided
+        output_groups_to_plan = self.model.output_groups
+        if output_group_names is not None:
+            output_groups_to_plan = [
+                og for og in self.model.output_groups
+                if og.name in output_group_names
+            ]
+
+        # Run planning for each output group
+        async for realization in self.realizations():
+            # Check if this output group should be included
+            if output_group_names is None or realization.plan.output_group.name in output_group_names:
+                # Extract all source files from the source fileset
+                source_files = set(realization.source_fileset.get_all_files())
+                result[realization.plan.output_group.name] = source_files
+
+        return result
+
+    async def needs_rebuild(
+        self,
+        changed_files: set[Path],
+        output_group_names: Optional[list[str]] = None,
+        always_rebuild_patterns: Optional[list[str]] = None
+    ) -> tuple[bool, str]:
+        """Check if project needs rebuild based on changed files
+
+        Args:
+            changed_files: Set of changed file paths (absolute)
+            output_group_names: Which output groups to check
+            always_rebuild_patterns: Glob patterns that always trigger rebuild
+
+        Returns:
+            (needs_rebuild, reason) tuple
+
+        Example:
+            >>> needs, reason = await project.needs_rebuild(
+            ...     changed_files={Path("src/uart.vhd").resolve()},
+            ...     always_rebuild_patterns=["**/*.gbs.yaml"]
+            ... )
+            >>> needs, reason
+            (True, "Source file changed in simulation: uart.vhd")
+        """
+        from pathlib import PurePath
+
+        # Check always_rebuild_patterns first
+        if always_rebuild_patterns:
+            for changed_file in changed_files:
+                for pattern in always_rebuild_patterns:
+                    if PurePath(changed_file).match(pattern):
+                        return (True, f"Always-rebuild pattern matched: {pattern} ({changed_file.name})")
+
+        # Get source files for relevant output groups
+        sources_by_group = await self.get_source_files(output_group_names)
+
+        # Check if any changed file is in the source files
+        for group_name, source_files in sources_by_group.items():
+            # Resolve all source files to absolute paths for comparison
+            resolved_sources = {f.resolve() for f in source_files}
+
+            # Check for overlap with changed files
+            overlapping_files = changed_files & resolved_sources
+
+            if overlapping_files:
+                # Get first overlapping file for message
+                first_file = next(iter(overlapping_files))
+                return (True, f"Source file changed in {group_name}: {first_file.name}")
+
+        # No overlap found
+        return (False, "No source files changed")
+
     def __str__(self) -> str:
         return f"Project({self.model.name}, {len(self.model.output_groups)} output groups, {len(self.repositories)} repositories)"
 
