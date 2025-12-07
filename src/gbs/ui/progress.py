@@ -120,3 +120,19 @@ async def run_with_progress(context: BuildContext, outputs: list[BuildStep]):
         asyncio.gather(*outputs),  # Build tasks
         monitor_build_progress(context)  # Progress monitoring
     )
+
+
+async def run_with_progress_tasks(context: BuildContext):
+    """Run build with progress monitoring for already-launched tasks
+
+    This is called when tasks have already been launched via context.build()
+    and are available in context.running. It monitors their progress until completion.
+
+    Args:
+        context: Build context with running tasks
+    """
+    # Start progress monitoring in parallel with awaiting running tasks
+    await asyncio.gather(
+        asyncio.gather(*context.running),  # Await running tasks
+        monitor_build_progress(context)  # Progress monitoring
+    )
