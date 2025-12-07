@@ -80,7 +80,7 @@ def test_pass_creates_dispatcher():
     dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
     assert dispatcher.name == "ghdl"
-    assert dispatcher.output_dir == Path("build/ghdl")
+    # output_dir is no longer a dispatcher attribute - it's handled via BuildContext
     assert dispatcher.vhdl_std == "2008"
     assert dispatcher.ghdl_tool == "ghdl"
 
@@ -95,7 +95,7 @@ def test_pass_creates_dispatcher_with_defaults():
     assert len(dispatchers) == 1
     dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
-    assert dispatcher.output_dir == Path("build")
+    # output_dir is no longer a dispatcher attribute - it's handled via BuildContext
     assert dispatcher.vhdl_std == "93c"
     assert dispatcher.ghdl_tool == "ghdl"
 
