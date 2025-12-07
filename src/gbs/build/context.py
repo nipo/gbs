@@ -394,6 +394,21 @@ class BuildContext:
                 if task_messages:
                     tasks_with_messages[task] = task_messages
 
+        # Also check ALL tasks for ERROR/FATAL messages, even if they didn't fail
+        # A task can complete successfully but still have errors (e.g., syntax errors that don't stop the tool)
+        for step in self.steps:
+            if isinstance(step, Task) and step not in tasks_with_messages:
+                # Check if this task has any ERROR or FATAL messages
+                task_errors = [m for m in self.__messages
+                             if m.origin == step and
+                                m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                if task_errors:
+                    # Get all warnings and errors from this task
+                    task_messages = [m for m in self.__messages
+                                   if m.origin == step and
+                                      m.severity in (MessageSeverity.WARNING, MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                    tasks_with_messages[step] = task_messages
+
         # Print root cause failures
         if root_causes or tasks_with_messages:
             click.echo(click.style("Root Cause Failures:", fg="red", bold=True))
@@ -428,8 +443,11 @@ class BuildContext:
                 shown_resources.update(step for step, _ in root_causes
                                      if isinstance(step, Resource) and step in task.expected_by)
 
+            # Track which steps have already been shown
+            shown_steps = set(tasks_with_messages.keys()) | shown_resources
+
             for step, exc in root_causes:
-                if step in shown_resources:
+                if step in shown_steps:
                     continue
 
                 if isinstance(step, Task):

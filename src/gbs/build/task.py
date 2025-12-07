@@ -180,7 +180,7 @@ class BuildStep(asyncio.Future):
         Args:
             msg: The ToolMessage to add
         """
-        msg.source = self
+        msg.origin = self
         self.context.message_add(msg)
         self._log_message(msg)
 
