@@ -676,8 +676,45 @@ All tests pass (93/93). Existing projects build successfully.
 
 Commit: e6cc020 "suite: Add Phase 4 - Output Formatters"
 
+Phase 5: CLI Integration - ✓ COMPLETED
+----------------------------------------
+
+**Status**: Completed 2025-01-15
+
+**Goal**: Add command-line interface for suite operations
+
+Deliverables:
+~~~~~~~~~~~~~
+
+1. ✓ CLI command group (``src/gbs/cli/suite.py``)
+
+   * ``gbs suite build`` - Build all projects in suite
+   * ``gbs suite list`` - List all projects
+   * ``gbs suite clean`` - Clean all projects
+
+2. ✓ Build command features:
+
+   * JUnit XML and Summary JSON output options
+   * File-based filtering with --filter
+   * Parallel project control with --jobs
+   * Stop-on-failure option
+   * Comprehensive result summary display
+
+3. ✓ Integration with main CLI:
+
+   * Registered as 'suite' command group
+   * Consistent help text and options
+   * Suite file defaults to suite.gbs.yaml
+   * Proper error handling and exit codes
+
+All tests pass (93/93). Existing projects build successfully.
+
+Commit: de37db5 "suite: Add Phase 5 - CLI Integration"
+
 Phase 4: File-Based Filtering (Week 4)
 ---------------------------------------
+
+**NOTE**: File-based filtering was implemented in Phase 3 (SuiteExecutor)
 
 **Goal**: Skip projects unaffected by file changes
 
