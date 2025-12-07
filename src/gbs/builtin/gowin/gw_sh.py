@@ -52,7 +52,7 @@ class Session:
     # Regex patterns for parsing Gowin output
     progress_pattern = re.compile(r'^\[(?P<pct>[0-9]+)%\] (?P<message>.*)$')
     msg_pattern = re.compile(r'^(?P<level>[A-Z]+) +\(?(?P<ex>[A-Z0-9]+)\)? ?: (?P<message>.*)$')
-    file_pattern = re.compile(r'^(?P<explaination>[^\(]+)\("(?P<filename>[^"]+)":(?P<line>[0-9]+)\)$')
+    file_pattern = re.compile(r'^(?P<explaination>.+?)\("(?P<filename>[^"]+)":(?P<line>[0-9]+)\)$')
     prompt = "% "
 
     # Map Gowin levels to MessageSeverity
