@@ -19,17 +19,26 @@ class BuildContext:
     - All steps
     """
 
-    def __init__(self, max_parallel: int = 4, project_config: Optional[dict[str, Any]] = None, project: Optional[Any] = None, gbs_config: Optional[Any] = None):
+    def __init__(
+        self,
+        max_parallel: int = 4,
+        project_config: Optional[dict[str, Any]] = None,
+        project: Optional[Any] = None,
+        gbs_config: Optional[Any] = None,
+        semaphore: Optional[asyncio.Semaphore] = None
+    ):
         """Initialize build context
 
         Args:
-            max_parallel: Maximum number of tasks to run in parallel
+            max_parallel: Maximum number of tasks to run in parallel (ignored if semaphore provided)
             project_config: Optional project configuration (deprecated, use project instead)
             project: Optional Project instance
             gbs_config: Optional GBSConfig instance for tool lookup
+            semaphore: Optional shared semaphore for parallel execution control
+                      (if provided, max_parallel is ignored)
         """
         self._max_parallel = max_parallel
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None
         self._resources: dict[Path, 'Resource'] = {}
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
         self.project_config = project_config or {}

@@ -4,6 +4,7 @@ Provides the Project class for loading, building, and managing GBS projects.
 """
 
 import sys
+import asyncio
 
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, AsyncIterable
@@ -61,13 +62,25 @@ class Project:
                  model: ProjectModel,
                  repositories: list,
                  path: Optional[Path],
-                 gbs_config: Optional[any]):
+                 gbs_config: Optional[any],
+                 max_parallel: int = 4):
         self.model = model
         self.repositories = repositories
         self.path = path
         self.gbs_config = gbs_config
         self.__realizations = None
+
+        # Shared semaphore for parallel execution across all output groups
+        self._max_parallel = max_parallel
+        self._semaphore: Optional[asyncio.Semaphore] = None
     
+    @property
+    def semaphore(self) -> asyncio.Semaphore:
+        """Get shared semaphore for all build contexts, creating it lazily if needed"""
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._max_parallel)
+        return self._semaphore
+
     @classmethod
     def load_from_file(cls, path: Path, gbs_config=None) -> 'Project':
         """Load a project from a YAML file
@@ -259,9 +272,12 @@ class PlanRealization:
         self.project = project
         self.plan = plan
         self.source_fileset = source_fileset
+
+        # Use the project's shared semaphore so all output groups share parallelism limit
         self.build_ctx = BuildContext(
             project = self.project.model,
-            gbs_config = self.project.gbs_config)
+            gbs_config = self.project.gbs_config,
+            semaphore = self.project.semaphore)
 
         num_files = len(self.source_fileset.get_all_files())
         num_libs = len(self.source_fileset.libraries)
