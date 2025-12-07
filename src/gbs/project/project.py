@@ -63,15 +63,28 @@ class Project:
                  repositories: list,
                  path: Optional[Path],
                  gbs_config: Optional[any],
-                 max_parallel: int = 4):
+                 max_parallel: Optional[int] = None):
         self.model = model
         self.repositories = repositories
         self.path = path
         self.gbs_config = gbs_config
         self.__realizations = None
 
+        # Determine max_parallel using precedence chain:
+        # 1. Explicitly provided parameter (command line will use this)
+        # 2. Project config (model.max_parallel)
+        # 3. GBS config (gbs_config.max_parallel)
+        # 4. Default (4)
+        if max_parallel is not None:
+            self._max_parallel = max_parallel
+        elif model.max_parallel is not None:
+            self._max_parallel = model.max_parallel
+        elif gbs_config is not None and gbs_config.max_parallel is not None:
+            self._max_parallel = gbs_config.max_parallel
+        else:
+            self._max_parallel = 4  # Default
+
         # Shared semaphore for parallel execution across all output groups
-        self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = None
     
     @property
@@ -80,6 +93,19 @@ class Project:
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._max_parallel)
         return self._semaphore
+
+    def set_max_parallel(self, max_parallel: int):
+        """Override max_parallel setting (e.g., from command line)
+
+        Args:
+            max_parallel: Maximum number of parallel tasks
+
+        Raises:
+            ValueError: If semaphore already initialized
+        """
+        if self._semaphore is not None:
+            raise ValueError("Cannot change max_parallel after semaphore is initialized")
+        self._max_parallel = max_parallel
 
     @classmethod
     def load_from_file(cls, path: Path, gbs_config=None) -> 'Project':

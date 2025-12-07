@@ -53,9 +53,11 @@ class GBSConfig:
     Merge rules:
     - Tools: Extend list, but (name, variant) tuples override
     - Repositories: Extend list unconditionally
+    - max_parallel: Override (higher priority wins)
     """
     tools: list[ToolConfig] = field(default_factory=list)
     repositories: list[dict] = field(default_factory=list)
+    max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name' or 'name:variant'
@@ -164,9 +166,22 @@ class GBSConfig:
         # Parse repositories
         repositories = data.get('repositories', [])
 
+        # Parse max_parallel
+        max_parallel = data.get('max_parallel')
+        if max_parallel is not None:
+            try:
+                max_parallel = int(max_parallel)
+                if max_parallel < 1:
+                    logger.warning(f"max_parallel must be >= 1 in {path}, ignoring")
+                    max_parallel = None
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid max_parallel value in {path}, ignoring")
+                max_parallel = None
+
         return cls(
             tools=tools,
-            repositories=repositories
+            repositories=repositories,
+            max_parallel=max_parallel
         )
 
     @classmethod
@@ -175,6 +190,7 @@ class GBSConfig:
 
         - Tools: Extend list, but (name, variant) tuples override
         - Repositories: Extend list unconditionally
+        - max_parallel: Override wins (if set)
 
         Args:
             base: Base configuration (lower priority)
@@ -204,7 +220,11 @@ class GBSConfig:
         # Repositories: extend unconditionally
         merged_repos = base.repositories + override.repositories
 
+        # max_parallel: override wins if set, otherwise keep base
+        merged_max_parallel = override.max_parallel if override.max_parallel is not None else base.max_parallel
+
         return cls(
             tools=merged_tools,
-            repositories=merged_repos
+            repositories=merged_repos,
+            max_parallel=merged_max_parallel
         )

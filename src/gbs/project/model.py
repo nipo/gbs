@@ -106,12 +106,14 @@ class ProjectModel:
         output_groups: List of output groups defining build targets and configurations
         description: Optional description
         raw_config: Raw configuration dictionary (for accessing backends etc)
+        max_parallel: Maximum number of parallel tasks (None = use default from config)
     """
     name: str
     root_partition: Any  # Partition from gbs.repository.model
     output_groups: list[OutputGroup]
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)
+    max_parallel: Optional[int] = None  # Maximum parallel tasks
 
     @property
     def root_library_name(self) -> str:

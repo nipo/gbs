@@ -428,6 +428,18 @@ def load_project(path: Path, gbs_config=None) -> Project:
     name = data["name"]
     description = data.get("description")
 
+    # Parse max_parallel setting
+    max_parallel = data.get("max_parallel")
+    if max_parallel is not None:
+        try:
+            max_parallel = int(max_parallel)
+            if max_parallel < 1:
+                logger.warning(f"max_parallel must be >= 1 in {path}, ignoring")
+                max_parallel = None
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid max_parallel value in {path}, ignoring")
+            max_parallel = None
+
     # Validate target configuration (optional, required for synthesis backends)
     target = data.get("target")
     if target is not None:
@@ -542,7 +554,8 @@ def load_project(path: Path, gbs_config=None) -> Project:
         root_partition=root_partition,
         output_groups=output_groups,
         description=description,
-        raw_config=data
+        raw_config=data,
+        max_parallel=max_parallel
     )
 
     logger.info(f"Loaded project '{name}' with {len(output_groups)} output groups")
