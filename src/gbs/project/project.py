@@ -464,6 +464,7 @@ class PlanRealization:
         # Launch all steps and await them
         if self.build_ctx.steps:
             import asyncio
+            from ..build.task import BuildError
             async with self.build_ctx.build():
                 # build() calls _launch() which launches all steps
                 # Now await all running tasks
@@ -480,6 +481,10 @@ class PlanRealization:
                 except Exception:
                     # Suppress exception - _cleanup() will handle error reporting
                     pass
+
+            # After cleanup, check if build failed and raise if needed
+            if self.build_ctx.build_failed:
+                raise BuildError("Build failed")
 
     def task_graph_show(self, print_func = None):
         from ..build.task import Resource, VirtualResource, Task

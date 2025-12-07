@@ -86,9 +86,16 @@ async def build(ctx, no_progress, jobs):
     try:
         await proj.build(show_progress=show_pb)
     except Exception as e:
-        logger.exception("Build failed")
-        click.echo(f"Build failed: {e}", err=True)
-        sys.exit(1)
+        from ..build.task import BuildError
+        if isinstance(e, BuildError):
+            # BuildError means _cleanup() already printed failure summary
+            # Just exit with error code
+            sys.exit(1)
+        else:
+            # Other exceptions - log and print
+            logger.exception("Build failed")
+            click.echo(f"Build failed: {e}", err=True)
+            sys.exit(1)
 
 @project.command()
 @click.option(

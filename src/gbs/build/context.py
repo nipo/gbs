@@ -65,6 +65,9 @@ class BuildContext:
         self._pending_dependents: dict[Path, set['Resource']] = {}  # path -> dependents
         self._pending_source_deps: dict[Path, set['Resource']] = {}  # path -> source dependencies (partition deps)
 
+        # Build result flag
+        self.build_failed = False
+
     def messages_get(
         self,
         severity: Optional[MessageSeverity] = None,
@@ -309,32 +312,33 @@ class BuildContext:
     async def _cleanup(self) -> None:
         self.logger.debug("Cleanup")
 
-        # Collect failed and successful steps
+        # Collect failed steps from BuildStep futures
+        # (not from running tasks, since we catch exceptions in execute())
         failed_steps = []
-        for p in self.running:
-            if not p.done():
-                p.cancel()
-            else:
-                exc = p.exception()
-                if exc is not None:
-                    failed_steps.append((p, exc))
-
-        # Suppress "exception was never retrieved" warnings by retrieving exceptions
-        # from all BuildStep futures (Resources, Tasks, etc.)
         for step in self.steps:
             if step.done():
                 try:
-                    step.exception()  # Retrieve to suppress asyncio warning
+                    exc = step.exception()  # Retrieve to suppress asyncio warning
+                    if exc is not None:
+                        failed_steps.append((step, exc))
                 except Exception:
                     pass  # Ignore errors when retrieving
+
+        # Cancel any tasks that are still running
+        for p in self.running:
+            if not p.done():
+                p.cancel()
 
         # If build failed, print structured error summary
         if failed_steps:
             self._print_failure_summary(failed_steps)
+            # Set a flag so execute() knows the build failed
+            self.build_failed = True
         else:
             # Success - just print warnings as before
             for m in self.messages_get(min_severity = MessageSeverity.WARNING):
                 m.pprint()
+            self.build_failed = False
 
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
