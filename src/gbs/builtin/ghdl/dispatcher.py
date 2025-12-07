@@ -31,7 +31,7 @@ class GHDLDispatcher(BaseDispatcher):
         self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
         self._ghdl_executable: str | None = None  # Cached executable path
         self._ghdl_backend_type: str | None = None  # Cached backend type
-        self._library_build: dict[str, tuple[BuildResource, Task]] = {}
+        self._library_build: dict[str, tuple['Resource', Task]] = {}
         self._linker: Task = None
 
     def _get_ghdl_config(self, context: BuildContext) -> tuple[str, str]:

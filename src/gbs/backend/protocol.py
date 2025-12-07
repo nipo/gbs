@@ -10,7 +10,7 @@ create Dispatchers for execution. This creates a hierarchical structure:
 Key concepts:
 - Backend: Top-level plugin that contributes passes based on desired outputs
 - Pass: Planning metadata describing file type transformations, creates dispatchers
-- Dispatcher: Execution engine that processes BuildFileSet and creates tasks
+- Dispatcher: Execution engine that processes BuildContext and creates tasks
 """
 
 from __future__ import annotations
