@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from ...build.task import Task
+from ...build.task import Task, BuildError
 from ...build.context import BuildContext
 from ...build.subprocess import MessageSubprocess
 from ...build.message import MessageSeverity, ToolMessage
@@ -100,7 +100,7 @@ class Import(Task):
                 await self.add_message_obj(msg)
 
             if import_process.returncode != 0:
-                raise RuntimeError(f"ghdl {cmd} failed for {self.library_name}: {import_process.returncode}")
+                raise BuildError(f"ghdl {cmd} failed for {self.library_name}: {import_process.returncode}")
 
 class VHPIDirectCompile(Task):
     """GHDL VHPIDIRECT C compilation task"""
@@ -148,7 +148,7 @@ class VHPIDirectCompile(Task):
             await self.add_message_obj(msg)
 
         if compile_process.returncode != 0:
-            raise RuntimeError(f"C compilation failed for {c.path.name}: {compile_process.returncode}")
+            raise BuildError(f"C compilation failed for {c.path.name}: {compile_process.returncode}")
 
         # Link to shared library using GHDL's wrapper
         link_process = GhdlInvocation(argv=[
@@ -162,7 +162,7 @@ class VHPIDirectCompile(Task):
             await self.add_message_obj(msg)
 
         if link_process.returncode != 0:
-            raise RuntimeError(f"Linking failed for {c.path.name}: {link_process.returncode}")
+            raise BuildError(f"Linking failed for {c.path.name}: {link_process.returncode}")
 
         # Clean up object file
         obj_path.unlink(missing_ok=True)
@@ -225,7 +225,7 @@ class CompileLink(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(f"ghdl -c failed: {process.returncode}")
+            raise BuildError(f"ghdl -c failed: {process.returncode}")
 
 class MakeElab(Task):
     """GHDL make task for mcode/jit backends (ghdl -m / -e + wrapper generator)"""
@@ -279,7 +279,7 @@ class MakeElab(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(f"ghdl -m failed: {process.returncode}")
+            raise BuildError(f"ghdl -m failed: {process.returncode}")
 
         process = GhdlInvocation(argv = [
             self.ghdl_executable, "-e",
@@ -294,7 +294,7 @@ class MakeElab(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(f"ghdl -e failed: {process.returncode}")
+            raise BuildError(f"ghdl -e failed: {process.returncode}")
 
         # Build load flags for VHPIDIRECT libraries
         load_flags = []
