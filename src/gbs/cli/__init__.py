@@ -105,9 +105,11 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
 # Import and register command groups
 from .repo import repo
 from .project import project
+from .suite import suite
 
 cli.add_command(repo)
 cli.add_command(project)
+cli.add_command(suite)
 
 
 def main():
