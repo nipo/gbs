@@ -28,7 +28,7 @@ from .message import *
 
 from ..logging import get_logger
 
-__all__ = ["BuildError", "PrerequisiteFailed", "BuildStep",
+__all__ = ["BuildError", "MissingToolError", "PrerequisiteFailed", "BuildStep",
            "VirtualResource", "Resource", "Task", "ExecutorTask", "ResourceTypology"]
 
 
@@ -46,6 +46,14 @@ except ImportError:
 
 class BuildError(Exception):
     """Error during build execution"""
+    pass
+
+class MissingToolError(BuildError):
+    """Required tool not found or not executable
+
+    This exception indicates a tool (like ghdl, yosys, etc.) is missing
+    or not properly configured.
+    """
     pass
 
 class PrerequisiteFailed(Exception):
