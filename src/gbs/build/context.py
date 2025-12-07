@@ -370,32 +370,37 @@ class BuildContext:
             else:
                 root_causes.append((step, exc))
 
-        # For each failed Resource, find the Task that should have created it
-        # and show that Task's errors instead
-        tasks_with_errors = {}
+        # For each failed step, collect the associated task and its messages
+        tasks_with_messages = {}
 
         for step, exc in root_causes:
-            if isinstance(step, Resource) and isinstance(exc, BuildError):
+            task = None
+            if isinstance(step, Task):
+                # The task itself failed
+                task = step
+            elif isinstance(step, Resource) and isinstance(exc, BuildError):
                 # Find the task that should have created this resource
                 for dep in step.depends_on:
                     if isinstance(dep, Task):
-                        # This task should have created the resource
-                        # Get error messages from this task OR messages with no origin
-                        # (backend parsers often don't set origin)
-                        if dep not in tasks_with_errors:
-                            task_errors = [m for m in self.__messages
-                                         if (m.origin == dep or m.origin is None) and
-                                            m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
-                            if task_errors:
-                                tasks_with_errors[dep] = task_errors
+                        task = dep
+                        break
+
+            if task and task not in tasks_with_messages:
+                # Get ALL warnings and errors from this task (not just errors)
+                # Include messages with no origin (backend parsers often don't set it)
+                task_messages = [m for m in self.__messages
+                               if (m.origin == task or m.origin is None) and
+                                  m.severity in (MessageSeverity.WARNING, MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                if task_messages:
+                    tasks_with_messages[task] = task_messages
 
         # Print root cause failures
-        if root_causes or tasks_with_errors:
+        if root_causes or tasks_with_messages:
             click.echo(click.style("Root Cause Failures:", fg="red", bold=True))
             click.echo()
 
-            # First show Tasks that have error messages (even if they didn't fail themselves)
-            for task, errors in tasks_with_errors.items():
+            # First show Tasks that have messages
+            for task, messages in tasks_with_messages.items():
                 click.echo(click.style(f"  ✗ {task.name}", fg="red", bold=True))
 
                 if task.description and task.description != task.name:
@@ -408,18 +413,18 @@ class BuildContext:
                     click.echo(f"    Failed outputs: {', '.join(str(o.name) for o in failed_outputs[:3])}" +
                              (f" (+{len(failed_outputs)-3} more)" if len(failed_outputs) > 3 else ""))
 
-                # Show error messages
-                click.echo(click.style(f"    Errors:", fg="red"))
-                for msg in errors[:10]:  # Limit to 10 messages
+                # Show all warnings and errors from this task
+                click.echo(click.style(f"    Messages:", fg="yellow"))
+                for msg in messages[:10]:  # Limit to 10 messages
                     for line in str(msg).split('\n'):
                         click.echo(f"      {line}")
-                if len(errors) > 10:
-                    click.echo(f"      ... and {len(errors) - 10} more errors")
+                if len(messages) > 10:
+                    click.echo(f"      ... and {len(messages) - 10} more messages")
                 click.echo()
 
             # Show other root cause failures that aren't covered above
             shown_resources = set()
-            for task in tasks_with_errors:
+            for task in tasks_with_messages:
                 shown_resources.update(step for step, _ in root_causes
                                      if isinstance(step, Resource) and step in task.expected_by)
 
@@ -441,16 +446,16 @@ class BuildContext:
                         if exc_msg:
                             click.echo(click.style(f"    Reason: {exc_msg}", fg="red"))
 
-                    # Show errors from this task
-                    task_errors = [m for m in self.__messages
-                                 if m.origin == step and m.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL)]
-                    if task_errors:
-                        click.echo(click.style(f"    Errors:", fg="red"))
-                        for msg in task_errors[:5]:
+                    # Show warnings and errors from this task
+                    task_messages = [m for m in self.__messages
+                                   if m.origin == step and m.severity in (MessageSeverity.WARNING, MessageSeverity.ERROR, MessageSeverity.FATAL)]
+                    if task_messages:
+                        click.echo(click.style(f"    Messages:", fg="yellow"))
+                        for msg in task_messages[:10]:
                             for line in str(msg).split('\n'):
                                 click.echo(f"      {line}")
-                        if len(task_errors) > 5:
-                            click.echo(f"      ... and {len(task_errors) - 5} more errors")
+                        if len(task_messages) > 10:
+                            click.echo(f"      ... and {len(task_messages) - 10} more messages")
                     click.echo()
 
         # Show log file location
