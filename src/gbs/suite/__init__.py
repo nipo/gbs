@@ -11,6 +11,7 @@ from .model import (
     ProjectResult, SuiteResult
 )
 from .loader import load_suite, LoadError
+from .executor import SuiteExecutor, ExecutionError
 
 __all__ = [
     # Models
@@ -27,4 +28,8 @@ __all__ = [
     # Loader
     'load_suite',
     'LoadError',
+
+    # Executor
+    'SuiteExecutor',
+    'ExecutionError',
 ]
