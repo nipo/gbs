@@ -38,6 +38,12 @@ The following modules form the core of GBS:
 **gbs.backend.dispatcher**
     Dispatcher system for build execution.
 
+**gbs.suite.model**
+    Suite data model for multi-project orchestration.
+
+**gbs.suite.loader**
+    Suite file loading and validation.
+
 Module Documentation
 --------------------
 
@@ -108,6 +114,24 @@ Dispatcher System
 ~~~~~~~~~~~~~~~~~
 
 .. automodule:: gbs.backend.dispatcher
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+Suite Model
+~~~~~~~~~~~
+
+.. automodule:: gbs.suite.model
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+Suite Loader
+~~~~~~~~~~~~
+
+.. automodule:: gbs.suite.loader
    :members:
    :undoc-members:
    :show-inheritance:

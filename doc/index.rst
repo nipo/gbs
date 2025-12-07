@@ -12,6 +12,7 @@ and pluggable backends for different toolchains.
    overview
    getting_started
    project_file
+   suite
    cli
 
 .. toctree::

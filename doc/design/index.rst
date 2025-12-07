@@ -15,6 +15,7 @@ GBS follows a layered architecture with clear separation between:
    repositories
    build_system
    plugins
+   suite
 
 Design Principles
 -----------------
