@@ -27,29 +27,11 @@ class Dispatcher(Protocol):
     All dispatchers must implement:
     - name: Unique identifier
     - priority: Execution order (lower = earlier, default range 100-999)
-    - get_filter_variables(): Provide variables for partition filtering
     - process(): Transform the pending work queue
     """
 
     name: str
     priority: int
-
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for partition evaluation
-
-        These variables are used when evaluating the source model to determine
-        which files should be included in the build.
-
-        Args:
-            context: Build context
-
-        Returns:
-            Dictionary of variable_name -> value
-
-        Example:
-            return {"target_language": "vhdl", "has_verilog_support": True}
-        """
-        ...
 
     async def process(self, context: BuildContext) -> None:
         """Process the pending work queue, transforming it in place
@@ -77,7 +59,7 @@ class BaseDispatcher(ABC):
     """Base class for dispatchers
 
     Provides common functionality and enforces the Dispatcher protocol.
-    Subclasses must implement get_filter_variables() and process().
+    Subclasses must implement process().
     """
 
     def __init__(self, name: str, priority: int = 500):
@@ -95,14 +77,6 @@ class BaseDispatcher(ABC):
         self.name = name
         self.priority = priority
         self.logger = get_logger(f"Dispatcher({name})")
-
-    @abstractmethod
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for partition evaluation
-
-        Must be implemented by subclasses.
-        """
-        ...
 
     @abstractmethod
     async def process(self, context: BuildContext) -> None:
@@ -154,29 +128,6 @@ class DispatcherRegistry:
             List of dispatchers sorted by priority
         """
         return sorted(self._dispatchers, key=lambda d: (d.priority, d.name))
-
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Collect filter variables from all dispatchers
-
-        Args:
-            context: Build context
-
-        Returns:
-            Combined dictionary of all filter variables
-
-        Note:
-            If multiple dispatchers provide the same variable, later dispatchers
-            (higher priority) will override earlier ones.
-        """
-        variables = {}
-        for dispatcher in self.get_dispatchers_ordered():
-            dispatcher_vars = dispatcher.get_filter_variables(context)
-            if dispatcher_vars:
-                variables.update(dispatcher_vars)
-                self.logger.debug(
-                    f"Dispatcher {dispatcher.name} provided variables: {list(dispatcher_vars.keys())}"
-                )
-        return variables
 
     def __len__(self) -> int:
         """Number of registered dispatchers"""

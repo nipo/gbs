@@ -88,46 +88,6 @@ class GowinDispatcher(BaseDispatcher):
 
         return injected
 
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for Gowin synthesis
-
-        Provides device characteristics from CSV if device is configured.
-
-        Returns:
-            Filter variables for synthesis targeting
-        """
-        filter_vars = {
-            "target-usage": "synthesis",
-            "vendor": "gowin",
-        }
-
-        # Parse device info if not already cached and device is configured
-        if self._device_info is None and context.project:
-            target = context.project.raw_config.get("target", {})
-            device = target.get("part")
-            if device:
-                try:
-                    gowin_config = context.get_tool(self.gowin_tool, required=False)
-                    if gowin_config:
-                        gowin_path = Path(gowin_config["path"])
-                        # Parse CSV to populate self._device_info
-                        self._parse_device_csv(gowin_path, device)
-                except Exception as e:
-                    self.logger.debug(f"Could not parse device info: {e}")
-
-        # Add device characteristics if available
-        if self._device_info:
-            filter_vars.update({
-                "target_part": self._device_info.get("part", ""),
-                "target_part_name": self._device_info.get("part_name", ""),
-                "device-family": self._device_info.get("family", ""),
-                "device-package": self._device_info.get("package", ""),
-                "device-voltage": self._device_info.get("voltage", ""),
-                "device-speed": self._device_info.get("speed", ""),
-            })
-
-        return filter_vars
-
     def _parse_device_csv(self, gowin_path: Path, device: str) -> tuple[str, str]:
         """Parse Gowin device CSV to get device characteristics and set_device parameters
 

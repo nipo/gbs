@@ -70,9 +70,6 @@ class CompressDispatcher(BaseDispatcher):
     def __init__(self):
         super().__init__("compress", priority=850)
 
-    def get_filter_variables(self, context: BuildContext):
-        return {}
-
     async def process(self, context: BuildContext) -> None:
         """Create compression tasks for unsatisfied compressed outputs.
 

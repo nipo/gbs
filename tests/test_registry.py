@@ -61,10 +61,7 @@ class MockBackendA(BaseBackend):
             def __init__(self):
                 super().__init__("test_dispatcher_a")
 
-            def get_filter_variables(self, context):
-                return {}
-
-            async def process(self, context, fileset):
+            async def process(self, context):
                 pass
 
         return TestDispatcher()
@@ -88,10 +85,7 @@ class MockBackendB(BaseBackend):
             def __init__(self):
                 super().__init__("test_dispatcher_b")
 
-            def get_filter_variables(self, context):
-                return {}
-
-            async def process(self, context, fileset):
+            async def process(self, context):
                 pass
 
         return TestDispatcher()

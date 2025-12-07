@@ -33,9 +33,6 @@ class OutputCopyDispatcher(BaseDispatcher):
     def __init__(self):
         super().__init__("output-copy", priority=900)
 
-    def get_filter_variables(self, context: BuildContext):
-        return {}
-
     async def process(self, context: BuildContext) -> None:
         """Copy matching files to output paths.
 

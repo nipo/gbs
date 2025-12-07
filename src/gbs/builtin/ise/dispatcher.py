@@ -62,17 +62,6 @@ class IseDispatcher(BaseDispatcher):
         self.trce_task = None
         self.bitgen_task = None
 
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for ISE synthesis
-
-        Returns:
-            Filter variables for synthesis targeting
-        """
-        return {
-            "target-usage": "synthesis",
-            "vendor": "xilinx",
-        }
-
     async def process(
         self,
         context: BuildContext

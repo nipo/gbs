@@ -21,9 +21,6 @@ class TestDispatcher:
         """Test creating a BaseDispatcher subclass"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {"test_var": "test_value"}
-
             async def process(self, context):
                 pass
 
@@ -35,36 +32,14 @@ class TestDispatcher:
         """Test default priority is 500"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 
         dispatcher = TestBackend("test")
         assert dispatcher.priority == 500
 
-    def test_dispatcher_filter_variables(self):
-        """Test dispatcher provides filter variables"""
-
-        class VHDLBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {
-                    "target_language": "vhdl",
-                    "vhdl_version": "2008",
-                    "has_verilog": False
-                }
-
-            async def process(self, context):
-                pass
-
-        backend = VHDLBackend("vhdl")
-        ctx = BuildContext()
-        vars = backend.get_filter_variables(ctx)
-
-        assert vars["target_language"] == "vhdl"
-        assert vars["vhdl_version"] == "2008"
-        assert vars["has_verilog"] is False
+    # Test removed - get_filter_variables no longer part of Dispatcher protocol
+    # Filter variables are now only provided by Pass.filter_vars() during planning
 
     @pytest.mark.asyncio
     async def test_dispatcher_process(self, tmp_path):
@@ -98,9 +73,6 @@ class TestDispatcherRegistry:
         """Test registering a dispatcher"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 
@@ -114,9 +86,6 @@ class TestDispatcherRegistry:
         """Test that registering duplicate names raises error"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 
@@ -133,9 +102,6 @@ class TestDispatcherRegistry:
         """Test dispatchers are ordered by priority"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 
@@ -161,9 +127,6 @@ class TestDispatcherRegistry:
         """Test dispatchers with same priority are ordered by name"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 
@@ -183,43 +146,13 @@ class TestDispatcherRegistry:
         assert ordered[1].name == "b"
         assert ordered[2].name == "c"
 
-    def test_collect_filter_variables(self):
-        """Test collecting filter variables from multiple backends"""
-
-        class Backend1(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {"var1": "value1", "shared": "backend1"}
-
-            async def process(self, context):
-                pass
-
-        class Backend2(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {"var2": "value2", "shared": "backend2"}
-
-            async def process(self, context):
-                pass
-
-        registry = DispatcherRegistry()
-        registry.register(Backend1("backend1", priority=100))
-        registry.register(Backend2("backend2", priority=200))
-
-        ctx = BuildContext()
-        variables = registry.get_filter_variables(ctx)
-
-        # Should have both vars
-        assert variables["var1"] == "value1"
-        assert variables["var2"] == "value2"
-        # Later backend should override
-        assert variables["shared"] == "backend2"
+    # Test removed - get_filter_variables no longer part of Dispatcher protocol
+    # Filter variables are now only provided by Pass.filter_vars() during planning
 
     def test_iterate_over_registry(self):
         """Test iterating over registry yields backends in order"""
 
         class TestBackend(BaseDispatcher):
-            def get_filter_variables(self, context):
-                return {}
-
             async def process(self, context):
                 pass
 

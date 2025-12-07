@@ -147,28 +147,6 @@ class GHDLDispatcher(BaseDispatcher):
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"GHDL --version failed: {e}")
 
-    def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-        """Provide filter variables for GHDL
-
-        GHDL is a simulation tool, so it automatically sets target-usage=simulation.
-        This allows conditional source filtering based on simulation vs synthesis.
-
-        Also provides ghdl-backend (mcode/gcc/llvm/jit) for backend-specific filtering
-        and vhdl-version (normalized to four-digit year) for version-specific code.
-        """
-        # Get cached config (will detect on first call)
-        _, backend_type = self._get_ghdl_config(context)
-
-        # Normalize VHDL version to four-digit year
-        vhdl_version = self._normalize_vhdl_version(self.vhdl_std)
-
-        return {
-            "target-usage": "simulation",
-            "compiler": "ghdl",
-            "ghdl-backend": backend_type,  # mcode/gcc/llvm/jit
-            "vhdl-version": vhdl_version,  # 1987/1993/2000/2002/2008/2019
-        }
-
     @property
     def vhdl_version(self):
         return "93" if "93" in self.vhdl_std else "08"
