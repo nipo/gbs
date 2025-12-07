@@ -319,6 +319,15 @@ class BuildContext:
                 if exc is not None:
                     failed_steps.append((p, exc))
 
+        # Suppress "exception was never retrieved" warnings by retrieving exceptions
+        # from all BuildStep futures (Resources, Tasks, etc.)
+        for step in self.steps:
+            if step.done():
+                try:
+                    step.exception()  # Retrieve to suppress asyncio warning
+                except Exception:
+                    pass  # Ignore errors when retrieving
+
         # If build failed, print structured error summary
         if failed_steps:
             self._print_failure_summary(failed_steps)

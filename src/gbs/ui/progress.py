@@ -116,10 +116,14 @@ async def run_with_progress(context: BuildContext, outputs: list[BuildStep]):
         outputs: List of output resources/tasks to build
     """
     # Start progress monitoring in parallel with build
-    await asyncio.gather(
-        asyncio.gather(*outputs),  # Build tasks
-        monitor_build_progress(context)  # Progress monitoring
-    )
+    try:
+        await asyncio.gather(
+            asyncio.gather(*outputs),  # Build tasks
+            monitor_build_progress(context)  # Progress monitoring
+        )
+    except Exception:
+        # Suppress exception - caller will handle error reporting
+        pass
 
 
 async def run_with_progress_tasks(context: BuildContext):
@@ -132,7 +136,11 @@ async def run_with_progress_tasks(context: BuildContext):
         context: Build context with running tasks
     """
     # Start progress monitoring in parallel with awaiting running tasks
-    await asyncio.gather(
-        asyncio.gather(*context.running),  # Await running tasks
-        monitor_build_progress(context)  # Progress monitoring
-    )
+    try:
+        await asyncio.gather(
+            asyncio.gather(*context.running),  # Await running tasks
+            monitor_build_progress(context)  # Progress monitoring
+        )
+    except Exception:
+        # Suppress exception - caller will handle error reporting
+        pass

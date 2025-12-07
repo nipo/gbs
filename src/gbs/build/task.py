@@ -236,10 +236,7 @@ class BuildStep(asyncio.Future):
         try:
             await self._work()
         except Exception as e:
-            self.logger.debug("Work excepted: %s", e)
-            import traceback
-            for line in traceback.format_exc().split("\n"):
-                self.logger.error(line)
+            self.logger.debug("Work failed: %s", e)
             await self.update_progress(1.0, "Failed")
             self.__mark_done(e)
             return
