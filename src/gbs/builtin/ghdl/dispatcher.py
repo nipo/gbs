@@ -3,9 +3,9 @@ from typing import Any
 from pathlib import Path
 
 from ...backend.dispatcher import BaseDispatcher
-from ...build.context import BuildContext, BuildFileSet, BuildResource
+from ...build.context import BuildContext
+from ...build.task import Task, ResourceTypology
 from . import task
-from ...build.task import Task
 
 class GHDLDispatcher(BaseDispatcher):
     """GHDL backend that compiles VHDL designs
@@ -175,29 +175,22 @@ class GHDLDispatcher(BaseDispatcher):
     
     def library_build_get(self,
                             context: BuildContext,
-                            fileset: BuildFileSet,
-                            library: str) -> tuple[BuildResource, Task]:
+                            library: str) -> tuple['Resource', Task]:
         try:
             return self._library_build[library]
         except KeyError:
             pass
-        
+
         ghdl_executable, backend_type = self._get_ghdl_config(context)
         workdir = context.output_path / library
 
         # .cf file that will be generated
         cf_path = workdir / f"{library}-obj{self.vhdl_version}.cf"
-        cf_resource = context.get_resource(cf_path, metadata = {
-            "file_type": "ghdl-cf",
-            "library": library,
-            })
-
-        # Track .cf file for dependencies (but don't add to fileset)
-        cf_br = BuildResource(
-            resource=cf_resource,
+        cf_resource = context.get_resource(
+            cf_path,
             file_type="ghdl-cf",
             library=library,
-            is_source=False,
+            typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name,
         )
 
@@ -211,46 +204,38 @@ class GHDLDispatcher(BaseDispatcher):
             outputs=[cf_resource],
         )
 
-        fileset.add(cf_br)
+        # Add to pending queue
+        context.add_pending(cf_resource)
         self._library_build[library] = cf_resource, t
 
         return cf_resource, t
 
-    async def process(
-        self,
-        context: BuildContext,
-        fileset: BuildFileSet
-    ) -> None:
+    async def process(self, context: BuildContext) -> None:
         """Compile VHDL design with GHDL"""
         ghdl_executable, backend_type = self._get_ghdl_config(context)
 
         # Get library dependency graph for correct inter-library dependencies
         # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
-        lib_deps_graph = fileset.library_dependency_graph_transitive()
+        lib_deps_graph = context._pending_library_dependency_graph_transitive()
 
         for lib, deps in lib_deps_graph.items():
-            _, user_task = self.library_build_get(context, fileset, lib)
+            _, user_task = self.library_build_get(context, lib)
 
             for d in deps:
-                dep_cf, _ = self.library_build_get(context, fileset, d)
+                dep_cf, _ = self.library_build_get(context, d)
 
                 if dep_cf not in user_task.inputs:
                     user_task.inputs.append(dep_cf)
                     user_task.dependency_add(dep_cf)
 
-        
+
         # Step 2.5: Compile new VHPIDIRECT C files
-        self._compile_vhpidirect_sources(
-            context,
-            fileset,
-            ghdl_executable
-        )
+        self._compile_vhpidirect_sources(context, ghdl_executable)
 
         if not self._linker:
             # Step 3 & 4: Elaborate/link
             self._linker = self._create_elaboration_tasks(
                 context,
-                fileset,
                 backend_type,
                 context.get_topcell(),
                 context.get_topcell_library(),
@@ -259,97 +244,84 @@ class GHDLDispatcher(BaseDispatcher):
             )
 
         # Ingress files to linker
-        for br in list(fileset.filter(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
-            for d in fileset.remove(br.path):
-                self._linker.depends_on(d)
-            rsrc = context.get_resource(br.path)
-            self._linker.inputs.append(rsrc)
-            self._linker.dependency_add(rsrc)
+        for resource in list(context.filter_pending(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
+            # Remove from pending (consuming the intermediate files)
+            dependents = context.remove_pending(resource.path)
+            self._linker.inputs.append(resource)
+            self._linker.dependency_add(resource)
+            for dep in dependents:
+                self._linker.dependency_add(dep)
 
         # Get libraries in dependency order
-        for library_name, library_files in fileset.by_library_ordered():
+        for library_name, library_files in context.get_pending_by_library_ordered():
             if library_name is None:
                 continue
 
-            cf, task = self.library_build_get(context, fileset, library_name)
+            cf, task_obj = self.library_build_get(context, library_name)
 
-            for br in library_files:
-                if br.file_type != "vhdl":
+            for resource in library_files:
+                if resource.file_type != "vhdl":
                     continue
 
-                rsrc = context.get_resource(br.path, metadata = {
-                    "file_type": "vhdl",
-                    "library": library_name,
-                })
-
-                for d in fileset.remove(br.path):
-                    task.depends_on(d)
-                task.inputs.append(rsrc)
-                task.dependency_add(rsrc)
+                # Remove from pending (consuming the source)
+                # Add dependents as task dependencies to ensure proper execution order
+                dependents = context.remove_pending(resource.path)
+                task_obj.inputs.append(resource)
+                task_obj.dependency_add(resource)
+                for dep in dependents:
+                    task_obj.dependency_add(dep)
             
     def _compile_vhpidirect_sources(
         self,
         context: BuildContext,
-        fileset: BuildFileSet,
         ghdl_executable: str
-    ) -> list[BuildResource]:
+    ):
         """Compile VHPIDIRECT C sources to shared libraries
 
         Args:
             context: Build context
-            fileset: Current build fileset
             ghdl_executable: Path to GHDL executable
-
-        Returns:
-            List of compiled library BuildResources
         """
-        vhpidirect_libs = []
+        vhpidirect_count = 0
 
         # Filter for VHPIDIRECT C files
-        for br in list(fileset.filter(file_type=["ghdl-vhpidirect-c"])):
-            self.logger.info(f"Compiling VHPIDIRECT C source: {br.path.name}")
+        for resource in list(context.filter_pending(file_type=["ghdl-vhpidirect-c"])):
+            self.logger.info(f"Compiling VHPIDIRECT C source: {resource.path.name}")
 
             # Create output .so path (stable naming: xxx.c -> xxx.so)
-            lib_path = context.output_path / "vhpidirect" / f"{br.path.stem}.so"
-            lib_resource = context.get_resource(lib_path, metadata = {
-                "file_type": "ghdl-vhpidirect-lib",
-                "library": br.library,
-                })
+            lib_path = context.output_path / "vhpidirect" / f"{resource.path.stem}.so"
+            lib_resource = context.get_resource(
+                lib_path,
+                file_type="ghdl-vhpidirect-lib",
+                library=resource.library,
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
 
             # Create compilation task
             compile_task = task.VHPIDirectCompile(
                 context=context,
                 ghdl_executable=ghdl_executable,
                 compiler="gcc",  # TODO: make configurable
-                inputs=[br.resource],
+                inputs=[resource],
                 outputs=[lib_resource],
             )
 
-            # Create BuildResource for the library
-            lib_br = BuildResource(
-                resource=lib_resource,
-                file_type="ghdl-vhpidirect-lib",
-                library=br.library,  # Associate with same library as C file
-                is_source=False,
-                generated_by=self.name,
-            )
+            # Remove C source from pending (it's consumed by the task)
+            dependents = context.remove_pending(resource.path)
+            for dep in dependents:
+                compile_task.dependency_add(dep)
 
-            for d in fileset.remove(br.path):
-                compile_task.dependency_add(d)
+            # Add output library to pending queue
+            context.add_pending(lib_resource)
+            vhpidirect_count += 1
 
-            # Add to fileset
-            fileset.add(lib_br)
-            vhpidirect_libs.append(lib_br)
-
-        if vhpidirect_libs:
-            self.logger.info(f"Compiled {len(vhpidirect_libs)} VHPIDIRECT libraries")
-
-        return vhpidirect_libs
+        if vhpidirect_count:
+            self.logger.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
 
     def _create_elaboration_tasks(
         self,
         context: BuildContext,
-        fileset: BuildFileSet,
         backend_type: str,
         topcell: str,
         root_library: str,
@@ -359,8 +331,12 @@ class GHDLDispatcher(BaseDispatcher):
         """Create elaboration/linking tasks for the top entity
 
         Args:
+            context: Build context
+            backend_type: GHDL backend type (gcc, llvm, mcode, jit)
+            topcell: Top-level entity name
+            root_library: Root library name
+            vhdl_version: VHDL version string
             ghdl_executable: Path to GHDL executable
-            vhpidirect_libs: List of compiled VHPIDIRECT libraries
         """
         if backend_type in ["gcc", "llvm"]:
             final_task_class = task.CompileLink
@@ -368,8 +344,14 @@ class GHDLDispatcher(BaseDispatcher):
             final_task_class = task.MakeElab
 
         executable_path = context.output_path / "simulator.exe"
-        executable_resource = context.get_resource(executable_path)
-        
+        executable_resource = context.get_resource(
+            executable_path,
+            file_type="ghdl-simulator",
+            library=root_library,
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+        )
+
         link_task = final_task_class(
             context=context,
             topcell=topcell,
@@ -380,13 +362,7 @@ class GHDLDispatcher(BaseDispatcher):
             outputs=[executable_resource],
         )
 
-        sim_br = BuildResource(
-            resource=executable_resource,
-            file_type="ghdl-simulator",
-            library=root_library,
-            is_source=False,
-            generated_by=self.name,
-        )
-        fileset.add(sim_br)
+        # Add simulator to pending queue
+        context.add_pending(executable_resource)
 
         return link_task

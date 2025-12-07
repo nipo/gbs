@@ -5,9 +5,9 @@ This module implements the unified dispatcher system where all dispatchers
 in an iterative transformation process.
 
 Key concepts:
-- Dispatcher: Transforms BuildFileSet iteratively
+- Dispatcher: Transforms pending work queue iteratively
 - DispatcherRegistry: Manages dispatchers and their priorities
-- Iteration loop: Runs dispatchers until fileset converges
+- Iteration loop: Runs dispatchers until pending queue converges
 - Filter variables: Dispatchers provide variables for partition evaluation
 """
 
@@ -15,20 +15,20 @@ from __future__ import annotations
 from typing import Protocol, Any, runtime_checkable
 from abc import ABC, abstractmethod
 
-from ..build.context import BuildContext, BuildFileSet
+from ..build.context import BuildContext
 from ..logging import get_logger
 
 __all__ = ["Dispatcher", "BaseDispatcher", "DispatcherRegistry", "run_dispatcher_iteration"]
 
 @runtime_checkable
 class Dispatcher(Protocol):
-    """Protocol for dispatchers that transform the BuildFileSet
+    """Protocol for dispatchers that transform the pending work queue
 
     All dispatchers must implement:
     - name: Unique identifier
     - priority: Execution order (lower = earlier, default range 100-999)
     - get_filter_variables(): Provide variables for partition filtering
-    - process(): Transform the fileset
+    - process(): Transform the pending work queue
     """
 
     name: str
@@ -51,26 +51,20 @@ class Dispatcher(Protocol):
         """
         ...
 
-    async def process(
-        self,
-        context: BuildContext,
-        fileset: BuildFileSet
-    ) -> None:
-        """Process the fileset, transforming it in place
+    async def process(self, context: BuildContext) -> None:
+        """Process the pending work queue, transforming it in place
 
         Dispatchers can:
-        - Add new generated files (e.g., transpiled outputs)
-        - Remove processed files (e.g., inputs that were transformed)
-        - Replace files (e.g., optimized versions)
+        - Add new generated files (e.g., transpiled outputs) via context.add_pending()
+        - Remove processed files (e.g., inputs that were transformed) via context.remove_pending()
         - Create build tasks for files
-        - Query and filter existing files
+        - Query and filter pending resources via context.filter_pending()
 
-        The fileset is modified in place. The modification serial will be
+        The pending queue is modified in place. The modification serial will be
         used to detect convergence.
 
         Args:
-            context: Build context
-            fileset: BuildFileSet to transform
+            context: Build context (use context.filter_pending(), context.add_pending(), etc.)
 
         Note:
             This is an async method to support task creation and other
@@ -111,14 +105,11 @@ class BaseDispatcher(ABC):
         ...
 
     @abstractmethod
-    async def process(
-        self,
-        context: BuildContext,
-        fileset: BuildFileSet
-    ) -> None:
-        """Process the fileset
+    async def process(self, context: BuildContext) -> None:
+        """Process the pending work queue
 
         Must be implemented by subclasses.
+        Use context.filter_pending(), context.add_pending(), context.remove_pending(), etc.
         """
         ...
 
@@ -198,18 +189,16 @@ class DispatcherRegistry:
 
 async def run_dispatcher_iteration(
     context: BuildContext,
-    fileset: BuildFileSet,
     registry: DispatcherRegistry,
     max_iterations: int = 100
 ) -> int:
     """Run dispatcher iteration loop until convergence
 
-    Iteratively runs all dispatchers until the fileset stops changing
+    Iteratively runs all dispatchers until the pending queue stops changing
     (modification serial stabilizes).
 
     Args:
-        context: Build context
-        fileset: BuildFileSet to process
+        context: Build context (contains pending work queue)
         registry: Dispatcher registry
         max_iterations: Maximum iterations before giving up
 
@@ -224,10 +213,10 @@ async def run_dispatcher_iteration(
         registry.register(VerilogToVHDLDispatcher())
         registry.register(GHDLDispatcher())
 
-        fileset = BuildFileSet(context)
-        # ... populate fileset with source files ...
+        # Populate pending queue with source files
+        context.populate_pending(build_set)
 
-        iterations = await run_dispatcher_iteration(context, fileset, registry)
+        iterations = await run_dispatcher_iteration(context, registry)
         print(f"Converged after {iterations} iterations")
     """
     logger = get_logger("DispatcherIteration")
@@ -237,32 +226,32 @@ async def run_dispatcher_iteration(
 
     while iteration < max_iterations:
         iteration += 1
-        serial_before = fileset.modification_serial
+        serial_before = context.pending_modification_serial
 
-        logger.debug(f"Iteration {iteration}: serial={serial_before}, files={len(fileset)}")
+        logger.debug(f"Iteration {iteration}: serial={serial_before}, pending={context.pending_count()}")
 
         # Run all dispatchers in priority order
         for dispatcher in registry:
-            s = fileset.modification_serial
+            s = context.pending_modification_serial
             logger.debug(f"Running dispatcher: {dispatcher.name}")
-            await dispatcher.process(context, fileset)
-            if s != fileset.modification_serial:
+            await dispatcher.process(context)
+            if s != context.pending_modification_serial:
                 logger.debug(f"  Changes happened")
 
-        serial_after = fileset.modification_serial
+        serial_after = context.pending_modification_serial
 
         # Check for convergence
         if serial_after == serial_before:
             logger.info(
                 f"Converged after {iteration} iterations "
-                f"(serial={serial_after}, files={len(fileset)})"
+                f"(serial={serial_after}, pending={context.pending_count()})"
             )
 
             # Verify all outputs have producers
-            unsatisfied = fileset.get_unsatisfied_outputs()
+            unsatisfied = context.get_pending_unsatisfied_outputs()
             if unsatisfied:
                 unsatisfied_info = [
-                    f"  - {br.file_type} at {br.path}" for br in unsatisfied
+                    f"  - {res.file_type} at {res.path}" for res in unsatisfied
                 ]
                 raise RuntimeError(
                     f"Build planning failed: {len(unsatisfied)} output(s) have no producer:\n"
@@ -274,11 +263,11 @@ async def run_dispatcher_iteration(
         logger.debug(
             f"Iteration {iteration} complete: "
             f"serial {serial_before} -> {serial_after}, "
-            f"files={len(fileset)}"
+            f"pending={context.pending_count()}"
         )
 
     # Failed to converge
     raise RuntimeError(
         f"Dispatcher iteration did not converge after {max_iterations} iterations. "
-        f"This may indicate a dispatcher is continuously modifying the fileset."
+        f"This may indicate a dispatcher is continuously modifying the pending queue."
     )

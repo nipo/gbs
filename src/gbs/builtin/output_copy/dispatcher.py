@@ -1,10 +1,10 @@
 """Output Copy Dispatcher
 
-Copies files from the build fileset to the output paths specified
+Copies files from the pending work queue to the output paths specified
 in the OutputGroup configuration.
 
 Works backwards from unsatisfied outputs: finds outputs that have no
-producer yet, locates matching source files in the fileset (by type),
+producer yet, locates matching source files in the pending queue (by type),
 and creates copy tasks.
 """
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...backend.dispatcher import BaseDispatcher
-from ...build.context import BuildContext, BuildFileSet, BuildResource
+from ...build.context import BuildContext
 from .task import CopyTask
 
 
@@ -23,8 +23,8 @@ class OutputCopyDispatcher(BaseDispatcher):
     other backends have generated their outputs. It works backwards
     from unsatisfied output goals:
 
-    1. Find outputs marked is_output=True with no producer
-    2. Look for source files in fileset matching the output's file_type
+    1. Find outputs marked typology=OUTPUT with no producer
+    2. Look for source files in pending queue matching the output's file_type
     3. Create copy task from source to output
 
     Priority: 900 (runs after compression and main compilation)
@@ -33,35 +33,29 @@ class OutputCopyDispatcher(BaseDispatcher):
     def __init__(self):
         super().__init__("output-copy", priority=900)
 
-    def get_filter_variables(self):
+    def get_filter_variables(self, context: BuildContext):
         return {}
 
-    async def process(
-        self,
-        context: BuildContext,
-        fileset: BuildFileSet
-    ) -> None:
+    async def process(self, context: BuildContext) -> None:
         """Copy matching files to output paths.
 
         Works backwards: finds unsatisfied outputs, locates sources
         by file_type, creates copy tasks.
 
         Args:
-            context: Build context
-            fileset: BuildFileSet containing sources and output goals
+            context: Build context (use context.get_pending_unsatisfied_outputs(), etc.)
         """
         # Get outputs that need producers
-        unsatisfied = fileset.get_unsatisfied_outputs()
+        unsatisfied = context.get_pending_unsatisfied_outputs()
 
-        for output_br in unsatisfied:
-            file_type = output_br.file_type
-            dest_path = output_br.path
-            dest_resource = output_br.resource
+        for dest_resource in unsatisfied:
+            file_type = dest_resource.file_type
+            dest_path = dest_resource.path
 
             # Find source file with matching type (excluding the output itself)
             matching = [
-                br for br in fileset.filter(file_type=file_type)
-                if br.path != dest_path
+                res for res in context.filter_pending(file_type=file_type)
+                if res.path != dest_path
             ]
 
             if not matching:
@@ -77,8 +71,7 @@ class OutputCopyDispatcher(BaseDispatcher):
                     f"using first: {matching[0].path}"
                 )
 
-            source_br = matching[0]
-            source_resource = source_br.resource
+            source_resource = matching[0]
 
             # Skip if source and destination are the same
             if source_resource.path.resolve() == dest_path.resolve():
@@ -105,5 +98,5 @@ class OutputCopyDispatcher(BaseDispatcher):
                 destination=dest_resource,
             )
 
-            # Update the BuildResource to reflect it now has a producer
-            output_br.generated_by = self.name
+            # Update the resource to reflect it now has a producer
+            dest_resource.generated_by = self.name

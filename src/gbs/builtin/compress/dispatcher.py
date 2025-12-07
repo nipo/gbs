@@ -1,6 +1,6 @@
 """Compression Dispatcher
 
-Compresses files in the build fileset based on type suffixes.
+Compresses files in the pending work queue based on type suffixes.
 Works backwards from unsatisfied outputs: if an output needs type
 "ise-bitstream+gzip", this dispatcher creates a compressed version
 from "ise-bitstream" source.
@@ -14,7 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...backend.dispatcher import BaseDispatcher
-from ...build.context import BuildContext, BuildFileSet, BuildResource
+from ...build.context import BuildContext
+from ...build.task import ResourceTypology
 from .task import GzipTask
 
 
@@ -60,7 +61,7 @@ class CompressDispatcher(BaseDispatcher):
     It works backwards from unsatisfied outputs:
     1. Find outputs with compression suffixes (e.g., "+gzip") that have no producer
     2. Strip the last transform to get the source type needed
-    3. Look for source in fileset, or create an intermediate output goal
+    3. Look for source in pending queue, or create an intermediate output goal
     4. Create compression task from source to output
 
     Priority: 850 (runs after main compilation, before output-copy)
@@ -69,28 +70,23 @@ class CompressDispatcher(BaseDispatcher):
     def __init__(self):
         super().__init__("compress", priority=850)
 
-    def get_filter_variables(self):
+    def get_filter_variables(self, context: BuildContext):
         return {}
 
-    async def process(
-        self,
-        context: BuildContext,
-        fileset: BuildFileSet
-    ) -> None:
+    async def process(self, context: BuildContext) -> None:
         """Create compression tasks for unsatisfied compressed outputs.
 
         Works backwards: finds outputs needing compression, locates or
         creates source, then creates compression task.
 
         Args:
-            context: Build context
-            fileset: BuildFileSet containing sources and output goals
+            context: Build context (use context.get_pending_unsatisfied_outputs(), etc.)
         """
         # Get outputs that need producers
-        unsatisfied = fileset.get_unsatisfied_outputs()
+        unsatisfied = context.get_pending_unsatisfied_outputs()
 
-        for output_br in unsatisfied:
-            base_type, transform = parse_output_type(output_br.file_type)
+        for dest_resource in unsatisfied:
+            base_type, transform = parse_output_type(dest_resource.file_type)
 
             if transform is None:
                 # No transform suffix, not our job
@@ -104,33 +100,29 @@ class CompressDispatcher(BaseDispatcher):
             task_class, extension = handler_info
 
             self.logger.debug(
-                f"Output {output_br.file_type} needs transform '{transform}' "
+                f"Output {dest_resource.file_type} needs transform '{transform}' "
                 f"from base type '{base_type}'"
             )
 
             # Look for source file with base type
-            matching = fileset.filter(file_type=base_type)
+            matching = context.filter_pending(file_type=base_type)
 
             if not matching:
                 # Source doesn't exist yet - create an intermediate output goal
                 # This will be satisfied by another dispatcher (or previous iteration)
                 intermediate_path = context.output_path / self._generate_intermediate_name(
-                    output_br.path, extension
+                    dest_resource.path, extension
                 )
-                intermediate_resource = context.get_resource(intermediate_path, metadata={
-                    "file_type": base_type,
-                })
 
-                # Only create if not already in fileset
-                if intermediate_path not in fileset:
-                    intermediate_br = BuildResource(
-                        resource=intermediate_resource,
+                # Only create if not already in pending queue
+                if context.get_pending(intermediate_path) is None:
+                    intermediate_resource = context.get_resource(
+                        intermediate_path,
                         file_type=base_type,
-                        is_source=False,
-                        is_output=True,  # Mark as goal so other dispatchers can satisfy it
+                        typology=ResourceTypology.OUTPUT,  # Mark as goal
                         generated_by=None,
                     )
-                    fileset.add(intermediate_br)
+                    context.add_pending(intermediate_resource)
                     self.logger.info(
                         f"Created intermediate goal: {base_type} at {intermediate_path}"
                     )
@@ -142,17 +134,15 @@ class CompressDispatcher(BaseDispatcher):
                     f"using first: {matching[0].path}"
                 )
 
-            source_br = matching[0]
-            source_resource = source_br.resource
-            dest_resource = output_br.resource
+            source_resource = matching[0]
 
             # Skip if already has a producer (shouldn't happen for unsatisfied, but be safe)
             if dest_resource.depends_on:
-                self.logger.debug(f"Output {output_br.path} already has producer, skip")
+                self.logger.debug(f"Output {dest_resource.path} already has producer, skip")
                 continue
 
             self.logger.info(
-                f"Compressing {base_type} -> {output_br.file_type}: "
+                f"Compressing {base_type} -> {dest_resource.file_type}: "
                 f"{source_resource.path} -> {dest_resource.path}"
             )
 
@@ -163,8 +153,8 @@ class CompressDispatcher(BaseDispatcher):
                 destination=dest_resource,
             )
 
-            # Update the BuildResource to reflect it now has a producer
-            output_br.generated_by = self.name
+            # Update the resource to reflect it now has a producer
+            dest_resource.generated_by = self.name
 
     def _generate_intermediate_name(self, output_path: Path, extension: str) -> str:
         """Generate name for intermediate file by removing extension.

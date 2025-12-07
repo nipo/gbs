@@ -22,13 +22,21 @@ from pathlib import Path
 from typing import Any, Callable, Awaitable, Optional, AsyncIterator
 import asyncio
 from dataclasses import dataclass
+from enum import Enum
 import time
 from .message import *
 
 from ..logging import get_logger
 
 __all__ = ["BuildError", "PrerequisiteFailed", "BuildStep",
-           "VirtualResource", "Resource", "Task", "ExecutorTask"]
+           "VirtualResource", "Resource", "Task", "ExecutorTask", "ResourceTypology"]
+
+
+class ResourceTypology(Enum):
+    """Typology (classification) of a resource in the build graph"""
+    SOURCE = "source"           # User-provided source file
+    INTERMEDIATE = "intermediate"  # Generated during build (default)
+    OUTPUT = "output"           # Final deliverable
 
 try:
     import click
@@ -278,19 +286,60 @@ class VirtualResource(BuildStep):
 class Resource(BuildStep):
     """A file resource
 
-    Its only work is to check the file exists
+    Represents a source or generated file in the build with metadata.
+    This is also an asyncio Future - awaiting it waits for the file to be ready.
+
+    Attributes:
+        path: File path
+        file_type: Type of file (e.g., 'vhdl', 'verilog', 'systemverilog', 'c')
+        library: Library name for HDL files (None for non-HDL)
+        file_type_version: File type version (e.g., '2008' for VHDL, '2005' for Verilog)
+        typology: Resource typology (SOURCE, INTERMEDIATE, OUTPUT)
+        generated_by: Backend name that generated this file (None for source files)
+        metadata: Additional backend-specific metadata
     """
 
-    def __init__(self, context: BuildContext, path: Path):
+    def __init__(
+        self,
+        context: BuildContext,
+        path: Path,
+        file_type: str | None = None,
+        library: str | None = None,
+        file_type_version: str | None = None,
+        typology: ResourceTypology = ResourceTypology.INTERMEDIATE,
+        generated_by: str | None = None
+    ):
         """Initialize resource
 
         Args:
             context: Build context
             path: Path to file
+            file_type: Type of file (e.g., 'vhdl', 'verilog')
+            library: Library name for HDL files
+            file_type_version: File type version
+            typology: Resource typology (SOURCE, INTERMEDIATE, OUTPUT), defaults to INTERMEDIATE
+            generated_by: Backend name that generated this file
         """
-        super().__init__(context, path.name)
+        # Set path BEFORE calling super().__init__() because __hash__ needs it
         self.path = path
-        self.metadata = {}  # Backend-specific metadata (file_type, library, etc.)
+        self.file_type = file_type
+        self.library = library
+        self.file_type_version = file_type_version
+        self.typology = typology
+        self.generated_by = generated_by
+
+        # Populate metadata dict for backward compatibility with code that accesses
+        # metadata["file_type"], metadata["library"], etc.
+        self.metadata = {}
+        if file_type is not None:
+            self.metadata["file_type"] = file_type
+        if library is not None:
+            self.metadata["library"] = library
+        if file_type_version is not None:
+            self.metadata["file_type_version"] = file_type_version
+
+        # Now call parent __init__ which will call step_register() -> __hash__()
+        super().__init__(context, path.name)
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -300,6 +349,29 @@ class Resource(BuildStep):
             return self.path.stat().st_mtime
         except:
             return None
+
+    def __hash__(self):
+        """Hash based on path for set membership"""
+        return hash(self.path)
+
+    def __eq__(self, other):
+        """Equality based on path"""
+        if not isinstance(other, Resource):
+            return False
+        return self.path == other.path
+
+    @property
+    def is_source(self) -> bool:
+        """Compatibility property for legacy code"""
+        return self.typology == ResourceTypology.SOURCE
+
+    @property
+    def is_output(self) -> bool:
+        """Compatibility property for legacy code"""
+        return self.typology == ResourceTypology.OUTPUT
+
+    def __repr__(self):
+        return f"Resource({self.path}, {self.file_type}, lib={self.library})"
 
     async def work(self):
         """

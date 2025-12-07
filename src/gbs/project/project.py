@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 
 from .model import ProjectModel
 from ..logging import get_logger
-from ..build import BuildContext, BuildFileSet, BuildResource
+from ..build import BuildContext
+from ..build.task import ResourceTypology
 from ..backend.protocol import Backend
 from ..backend.registry import get_backend_registry
 from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
@@ -278,25 +279,20 @@ class PlanRealization:
             output_group = self.plan.output_group
         )
 
-        # Create BuildFileSet from plan's source fileset
-        self.fileset = BuildFileSet(self.build_ctx)
-        self.build_ctx.populate_fileset(self.source_fileset, self.fileset)
+        # Populate pending work queue from plan's source fileset
+        self.build_ctx.populate_pending(self.source_fileset)
 
-        # Add output goals to fileset
+        # Add output goals to pending queue
         # These are the desired outputs that dispatchers will work backwards from
         for output in self.plan.output_group.outputs:
             output_path = output.path.resolve()
-            output_resource = self.build_ctx.get_resource(output_path, metadata={
-                "file_type": output.type,
-            })
-            output_br = BuildResource(
-                resource=output_resource,
+            output_resource = self.build_ctx.get_resource(
+                output_path,
                 file_type=output.type,
-                is_source=False,
-                is_output=True,
+                typology=ResourceTypology.OUTPUT,
                 generated_by=None,  # No producer yet
             )
-            self.fileset.add(output_br)
+            self.build_ctx.add_pending(output_resource)
             logger.debug(f"  Added output goal: {output.type} -> {output_path}")
 
         # Determine which backends to use:
@@ -325,14 +321,26 @@ class PlanRealization:
         # Run dispatcher iteration
         iterations = await run_dispatcher_iteration(
             self.build_ctx,
-            self.fileset,
             self.dispatcher_registry,
             max_iterations=max_iterations
         )
         logger.info(f"  Converged after {iterations} iteration(s)")
 
     async def execute(self, show_progress: bool = False):
-        await self.build_ctx.execute_build(self.fileset, show_progress)
+        # Launch all steps and await them
+        if self.build_ctx.steps:
+            import asyncio
+            async with self.build_ctx.build():
+                # build() calls _launch() which launches all steps
+                # Now await all running tasks
+                if show_progress:
+                    try:
+                        from ..ui.progress import run_with_progress_tasks
+                        await run_with_progress_tasks(self.build_ctx)
+                    except ImportError:
+                        await asyncio.gather(*self.build_ctx.running)
+                else:
+                    await asyncio.gather(*self.build_ctx.running)
 
     def task_graph_show(self, print_func = None):
         from ..build.task import Resource, VirtualResource, Task

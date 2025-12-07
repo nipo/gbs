@@ -203,7 +203,7 @@ class CompileLink(Task):
         for res in self.inputs:
             if res.metadata.get("file_type") == "ghdl-cf":
                 flags.append(f"-P{res.path.parent.resolve()}")
-                if res.metadata["library"] == self.root_library:
+                if res.metadata.get("library") == self.root_library:
                     flags.append(f"--workdir={res.path.parent.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
