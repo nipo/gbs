@@ -5,9 +5,8 @@ Supports pluggable repository loaders for custom formats.
 """
 
 import yaml
-import importlib
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Type
 
 from .model import (
     SourceFile,
@@ -29,18 +28,23 @@ class LoadError(Exception):
     pass
 
 
-class RepositoryLoader(Protocol):
-    """Protocol for repository loader plugins
+class RepositoryLoader:
+    """Base class for repository loader plugins
 
-    A repository loader must implement a `load` function that takes a Path
-    and returns a Repository object.
+    Repository loaders are instantiated with a path and provide a load()
+    method to load the repository from that path.
     """
 
-    def load(self, path: Path) -> Repository:
-        """Load a repository from the given path
+    def __init__(self, path: Path):
+        """Initialize repository loader
 
         Args:
             path: Path to the repository root or definition file
+        """
+        self.path = path
+
+    def load(self) -> Repository:
+        """Load a repository from the configured path
 
         Returns:
             Repository object
@@ -48,69 +52,97 @@ class RepositoryLoader(Protocol):
         Raises:
             LoadError: If repository cannot be loaded
         """
-        ...
+        raise NotImplementedError("Subclasses must implement load()")
 
 
 # Registry of repository loaders
-_REPOSITORY_LOADERS: dict[str, Callable[[Path], Repository]] = {}
+_REPOSITORY_LOADERS: dict[str, Type[RepositoryLoader]] = {}
+_loaders_discovered: bool = False
 
 
-def register_repository_loader(name: str, loader: Callable[[Path], Repository]):
-    """Register a custom repository loader
+def register_repository_loader(name: str, loader_class: Type[RepositoryLoader]):
+    """Register a custom repository loader class
 
     Args:
-        name: Fully qualified name for the loader (e.g., "gbs.plugin.nsl.tree")
-        loader: Loader function that takes Path and returns Repository
+        name: Fully qualified name for the loader (e.g., "nsl-tree")
+        loader_class: RepositoryLoader class (not instance)
     """
-    _REPOSITORY_LOADERS[name] = loader
+    _REPOSITORY_LOADERS[name] = loader_class
     logger.debug(f"Registered repository loader: {name}")
 
 
-def get_repository_loader(name: str) -> Callable[[Path], Repository]:
-    """Get a repository loader by name
+def discover_repository_loaders():
+    """Discover all repository loaders via the unified plugin system
 
-    If the loader is not registered, attempts to import it as a module
-    and use its `load` function.
+    Iterates over all registered plugins and calls their
+    enumerate_repository_parsers() methods to discover parsers.
+    Each parser class is registered using register_repository_loader().
+    """
+    global _loaders_discovered
+
+    if _loaders_discovered:
+        return
+
+    logger.info("Discovering repository loaders via plugin system...")
+
+    # Import here to avoid circular dependency
+    from ..plugins.loader import get_plugin_registry
+
+    # Get the plugin registry (which auto-discovers plugins)
+    plugin_registry = get_plugin_registry()
+
+    # Iterate over each plugin and get its repository parser classes
+    for plugin in plugin_registry.get_all_plugins():
+        try:
+            # Get repository parser classes provided by this plugin (dict of name -> class)
+            parser_classes = plugin.enumerate_repository_parsers()
+
+            # Register each parser class
+            for name, loader_class in parser_classes.items():
+                # Validate that it's a RepositoryLoader subclass
+                if not isinstance(loader_class, type) or not issubclass(loader_class, RepositoryLoader):
+                    logger.warning(
+                        f"Repository parser '{name}' from plugin {plugin.name} "
+                        f"is not a RepositoryLoader subclass"
+                    )
+                    continue
+
+                # Register the parser class
+                register_repository_loader(name, loader_class)
+                logger.debug(f"Registered repository parser: {name} from {plugin.name}")
+
+        except Exception as e:
+            logger.error(f"Error enumerating repository parsers from plugin {plugin.name}: {e}")
+
+    _loaders_discovered = True
+    logger.info(f"Repository loader discovery complete: {len(_REPOSITORY_LOADERS)} loaders")
+
+
+def get_repository_loader(name: str) -> Type[RepositoryLoader]:
+    """Get a repository loader class by name
+
+    On first call, discovers all repository loaders from the plugin system.
 
     Args:
-        name: Fully qualified loader name (e.g., "gbs.plugin.nsl.tree")
+        name: Loader name (e.g., "nsl-tree")
 
     Returns:
-        Loader function
+        RepositoryLoader class (not instance)
 
     Raises:
-        LoadError: If loader cannot be found or imported
+        LoadError: If loader is not registered
     """
-    # Check if already registered
+    # Discover loaders from plugins on first use
+    discover_repository_loaders()
+
+    # Check if registered
     if name in _REPOSITORY_LOADERS:
         return _REPOSITORY_LOADERS[name]
 
-    # Try to import the module
-    try:
-        logger.debug(f"Importing repository loader: {name}")
-        module = importlib.import_module(name)
-
-        # Look for 'load' function
-        if not hasattr(module, 'load'):
-            raise LoadError(
-                f"Repository loader '{name}' must provide a 'load' function"
-            )
-
-        loader = module.load
-
-        # Register for future use
-        register_repository_loader(name, loader)
-
-        return loader
-
-    except ImportError as e:
-        import traceback
-        traceback.print_exc()
-        raise LoadError(f"Failed to import repository loader '{name}': {e}")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise LoadError(f"Error loading repository loader '{name}': {e}")
+    raise LoadError(
+        f"Repository loader '{name}' not registered. "
+        f"Available loaders: {', '.join(_REPOSITORY_LOADERS.keys()) if _REPOSITORY_LOADERS else 'none'}"
+    )
 
 
 def load_yaml_file(path: Path) -> dict[str, Any]:
@@ -598,10 +630,11 @@ def _load_single_repository(repo_spec: dict[str, Any], project_base_path: Path) 
 
     try:
         if loader_name:
-            # Use custom loader
-            loader = get_repository_loader(loader_name)
+            # Use custom loader - get the class and instantiate it with path
+            loader_class = get_repository_loader(loader_name)
             logger.info(f"Loading repository from {repo_path} using {loader_name}")
-            repository = loader(repo_path)
+            loader_instance = loader_class(repo_path)
+            repository = loader_instance.load()
         else:
             # Use default YAML loader
             logger.info(f"Loading repository from {repo_path} using default YAML loader")

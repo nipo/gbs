@@ -75,21 +75,24 @@ class Plugin(ABC):
         """
         return []
 
-    def enumerate_repository_parsers(self) -> list:  # list['RepositoryParser']:
-        """Enumerate repository parser instances provided by this plugin
+    def enumerate_repository_parsers(self) -> dict[str, type['RepositoryLoader']]:
+        """Enumerate repository parser classes provided by this plugin
 
         Repository parsers load source definitions from various formats
-        (YAML, TOML, JSON, custom formats).
+        (YAML, TOML, JSON, custom formats). Returns a dict mapping loader
+        names to RepositoryLoader classes (not instances).
+
+        The classes will be instantiated with a Path argument when needed.
 
         Returns:
-            List of RepositoryParser instances
+            Dict mapping loader name to RepositoryLoader class
 
         Example:
             >>> def enumerate_repository_parsers(self):
-            ...     from .parser import YAMLParser
-            ...     return [YAMLParser()]
+            ...     from .repository import TreeLoader
+            ...     return {"nsl-tree": TreeLoader}
         """
-        return []
+        return {}
 
     def __repr__(self) -> str:
         return f"Plugin(name={self.name!r}, version={self.version})"
