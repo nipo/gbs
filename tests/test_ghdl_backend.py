@@ -99,7 +99,7 @@ def test_pass_creates_dispatcher_with_defaults():
     dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
     # output_dir is no longer a dispatcher attribute - it's handled via BuildContext
-    assert dispatcher.vhdl_std == "93c"
+    assert dispatcher.vhdl_std == "1993"
     assert dispatcher.ghdl_tool == "ghdl"
 
 
