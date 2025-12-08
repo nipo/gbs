@@ -63,7 +63,7 @@ for shared settings across multiple projects in a directory tree:
          - backend: gbs.builtin.ghdl
            config:
              output_dir: build
-             vhdl_std: 93c
+             vhdl_std: "1993"
              ghdl_tool: ghdl:system
        repositories: []
 

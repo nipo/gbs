@@ -87,7 +87,7 @@ class Import(Task):
             import_process = GhdlInvocation(argv = [
                 ghdl_executable, cmd,
                 f"--workdir={workdir.resolve()}",
-                f"--std={self.dispatcher.vhdl_std}",
+                f"--std={self.dispatcher.ghdl_vhdl_version}",
                 f"--work={self.library_name}",
                 "-Wno-hide"
             ] + p_flags + sources)
@@ -207,7 +207,7 @@ class CompileLink(Task):
 
         process = GhdlInvocation(argv = [
             ghdl_executable, "-c", "-O2",
-            f"--std={self.dispatcher.vhdl_std}",
+            f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + flags + [
             f"--work={self.root_library}",
             "-o", str(out_path),
@@ -260,7 +260,7 @@ class MakeElab(Task):
         process = GhdlInvocation(argv = [
             ghdl_executable, "-m",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.dispatcher.vhdl_std}",
+            f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell
@@ -275,7 +275,7 @@ class MakeElab(Task):
         process = GhdlInvocation(argv = [
             ghdl_executable, "-e",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.dispatcher.vhdl_std}",
+            f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell
@@ -296,7 +296,7 @@ class MakeElab(Task):
         run_cmd = [
             ghdl_executable, "-r",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.dispatcher.vhdl_std}",
+            f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell,

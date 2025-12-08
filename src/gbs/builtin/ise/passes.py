@@ -45,6 +45,9 @@ class IseSynthesizePass(Pass):
         if not m:
             raise ValueError("Must supply target part in backend configuration")
 
+        # Get vhdl_standard from config, default to "1993"
+        vhdl_std = self.config.get("vhdl_standard", "1993")
+
         return {
             "target-usage": "synthesis",
             "vendor": "xilinx",
@@ -53,6 +56,7 @@ class IseSynthesizePass(Pass):
             "part_name": m.group("name"),
             "part_speed": m.group("speed"),
             "part_package": m.group("package"),
+            "vhdl-version": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
@@ -65,10 +69,12 @@ class IseSynthesizePass(Pass):
             IseDispatcher singleton
         """
         tool = self.config.get("tool", "ise")
+        vhdl_std = self.config.get("vhdl_standard", "1993")
         target = self.config["target"]
 
         return [IseDispatcher(
             context=context,
+            vhdl_std=vhdl_std,
             target=target,
             tool = tool,
         )]

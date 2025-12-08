@@ -4,7 +4,6 @@
 # This configuration is shared by all example projects in this directory tree.
 # Each example project references the "simulation" profile defined here.
 
-# Tool Definitions
 tools:
   # GHDL from PATH (system installation)
   - name: ghdl
@@ -17,61 +16,27 @@ tools:
     config:
       executable: /Users/nipo/local/bin/ghdl
 
-  # GCC from PATH
   - name: gcc
     variant: system
     config:
       executable: gcc
 
-  # Gowin EDA config
   - name: gowin
     variant: V1.9.11.03
     config:
       # This path is where "IDE" and "Programmer" directories are
       path: /opt/Gowin/GowinIDE.app/Contents/Resources/Gowin_EDA
-
-# Profiles
-profiles:
-  # Standard simulation profile used by all examples
-  simulation:
-    # No filter_vars needed - GHDL backend automatically sets target=simulation
-    filter_vars: {}
-
-    backends:
-      - backend: gbs.backend:GHDLBackend
-        config:
-          output_dir: build
-          vhdl_std: 93c
-          ghdl_tool: ghdl:system
-
-    # Note: Repository is defined at tree level (below) instead of in profile
-    # This allows examples to add project-specific repositories
-    repositories: []
-
-  simulation-jit:
-    # No filter_vars needed - GHDL backend automatically sets target=simulation
-    filter_vars: {}
-
-    backends:
-      - backend: gbs.backend:GHDLBackend
-        config:
-          output_dir: build
-          vhdl_std: 93c
-          ghdl_tool: ghdl:jit
-
-    # Note: Repository is defined at tree level (below) instead of in profile
-    # This allows examples to add project-specific repositories
-    repositories: []
-
-  gowin:
-    backends:
-      - backend: gbs.backend:GowinBackend
-        config:
-          gowin_tool: gowin:V1.9.11.03
+    message:
+      level_force:
+        EX4800: INFO
+        CV0017: INFO
+        CV0018: INFO
+        EX4319: INFO
+        EX4196: INFO
 
 # Common Repositories
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation
 repositories:
   - path: /Users/nipo/projects/nsl_clean
-    loader: gbs.plugin.nsl.tree
+    loader: nsl-tree

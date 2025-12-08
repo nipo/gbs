@@ -23,7 +23,7 @@ class GHDLDispatcher(BaseDispatcher):
 
     def __init__(self,
         context: BuildContext,
-        vhdl_std: str = "93c",
+        vhdl_std: str = "1993",
         ghdl_tool: str = "ghdl"
     ):
         super().__init__(context, "ghdl", tool_name=ghdl_tool, priority=500)
@@ -33,6 +33,18 @@ class GHDLDispatcher(BaseDispatcher):
         self._ghdl_backend_type: str | None = None  # Cached backend type
         self._library_build: dict[str, tuple['Resource', Task]] = {}
         self._linker: Task = None
+
+        year_map = {
+            "1987": "93c",
+            "1993": "93c",
+            "2000": "00",
+            "2002": "02",
+            "2008": "08",
+            "2019": "19",
+        }
+
+        self.ghdl_vhdl_version = year_map.get(vhdl_std, "93c")
+    
 
     def _get_ghdl_config(self) -> tuple[str, str]:
         """Get GHDL executable and backend type (cached)
@@ -64,40 +76,6 @@ class GHDLDispatcher(BaseDispatcher):
         self._ghdl_backend_type = backend_type
 
         return ghdl_executable, backend_type
-
-    @staticmethod
-    def _normalize_vhdl_version(vhdl_std: str) -> str:
-        """Normalize VHDL standard to four-digit year format
-
-        Args:
-            vhdl_std: GHDL standard string (e.g., "93c", "08", "2008")
-
-        Returns:
-            Four-digit year string (e.g., "1993", "2008")
-        """
-        # Strip any suffix characters (like 'c' for common extensions)
-        std = vhdl_std.rstrip('c')
-
-        # Map two-digit years to four-digit years
-        year_map = {
-            "87": "1987",
-            "93": "1993",
-            "00": "2000",
-            "02": "2002",
-            "08": "2008",
-            "19": "2019",
-        }
-
-        # If already four digits, return as-is
-        if len(std) == 4 and std.isdigit():
-            return std
-
-        # If two digits, look up in map
-        if std in year_map:
-            return year_map[std]
-
-        # Default to 1993 if unknown
-        return "1993"
 
     def _detect_ghdl_backend(self, ghdl_executable: str) -> str:
         """Detect GHDL backend type (mcode, gcc, llvm, or jit)
@@ -144,10 +122,6 @@ class GHDLDispatcher(BaseDispatcher):
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"GHDL --version failed: {e}")
 
-    @property
-    def vhdl_version(self):
-        return "93" if "93" in self.vhdl_std else "08"
-    
     def library_build_get(self, library: str) -> tuple['Resource', Task]:
         try:
             return self._library_build[library]
@@ -157,7 +131,7 @@ class GHDLDispatcher(BaseDispatcher):
         workdir = self.context.output_path / library
 
         # .cf file that will be generated
-        cf_path = workdir / f"{library}-obj{self.vhdl_version}.cf"
+        cf_path = workdir / f"{library}-obj{self.ghdl_vhdl_version.rstrip('c')}.cf"
         cf_resource = self.context.get_resource(
             cf_path,
             file_type="ghdl-cf",

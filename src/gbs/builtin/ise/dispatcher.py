@@ -46,6 +46,7 @@ class IseDispatcher(BaseDispatcher):
     def __init__(
             self,
             context: BuildContext,
+            vhdl_std: str,
             tool: str,
             target: dict[str, str] = {},
     ):
@@ -62,6 +63,10 @@ class IseDispatcher(BaseDispatcher):
         self.par_task = None
         self.trce_task = None
         self.bitgen_task = None
+        self.vhdl_std = vhdl_std
+
+        if vhdl_std != "1993":
+            raise ValueError("ISE has no useful support outside of VHDL-1993")
 
     async def process(self) -> None:
         """Process HDL sources and constraints

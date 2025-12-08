@@ -321,7 +321,7 @@ Simulation Project
          target-usage: simulation
        backend_config:
          gbs.builtin.ghdl:
-           vhdl_standard: "93c"
+           vhdl_standard: "1993"
            ghdl_tool: ghdl:system
        outputs:
          - type: ghdl-simulator

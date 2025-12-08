@@ -35,8 +35,9 @@ class GowinDispatcher(BaseDispatcher):
 
     def __init__(
         self,
-        context: BuildContext,
-        gowin_tool: str = "gowin",
+            context: BuildContext,
+            vhdl_std: str = "1993",
+            gowin_tool: str = "gowin",
     ):
         super().__init__(context, "gowin", tool_name=gowin_tool, priority=600)
         self.gowin_tool = gowin_tool
@@ -48,6 +49,9 @@ class GowinDispatcher(BaseDispatcher):
         self._pin_cst_task: Task | None = None
         self._timing_sdc_task: Task | None = None
 
+        if vhdl_std != "1993":
+            raise NotImplementedError("Non-93 support is not implemented.")
+        
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
         if self._session is None:

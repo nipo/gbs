@@ -39,10 +39,14 @@ class GowinSynthesizePass(Pass):
         Returns:
             Dictionary with filter variables
         """
+        # Get vhdl_standard from config, default to "1993"
+        vhdl_std = self.config.get("vhdl_standard", "1993")
+
         filter_vars = {
             "target-usage": "synthesis",
             "vendor": "gowin",
             "hwdep": "gowin",
+            "vhdl-version": vhdl_std,
         }
 
         # Get device from backend config (populated from output group's target)
@@ -85,9 +89,11 @@ class GowinSynthesizePass(Pass):
         Returns:
             GowinDispatcher instance
         """
+        vhdl_std = self.config.get("vhdl_standard", "1993")
         gowin_tool = self.config.get("gowin_tool", "gowin")
 
         return [GowinDispatcher(
             context=context,
+            vhdl_std = vhdl_std,
             gowin_tool=gowin_tool,
         )]

@@ -36,13 +36,12 @@ Configuration Options
 ``vhdl_standard``
     VHDL standard version. Options:
 
-    - ``"87"`` - VHDL-1987
-    - ``"93"`` or ``"93c"`` - VHDL-1993 (with common extensions)
-    - ``"00"`` or ``"02"`` - VHDL-2000/2002
-    - ``"08"`` or ``"2008"`` - VHDL-2008
-    - ``"19"`` or ``"2019"`` - VHDL-2019
+    - ``"1993"`` - VHDL-1993 (with common extensions)
+    - ``"2000"`` - VHDL-2000/2002
+    - ``"2008"`` - VHDL-2008
+    - ``"2019"`` - VHDL-2019
 
-    Default: ``"93c"``
+    Default: ``"1993"``
 
 ``ghdl_tool``
     Tool identifier for GHDL lookup in ``name:variant`` format.

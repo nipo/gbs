@@ -96,7 +96,7 @@ Pass Methods
            return {
                "target-usage": "simulation",
                "compiler": "ghdl",
-               "vhdl-version": self.config.get("vhdl_standard", "93"),
+               "vhdl-version": self.config.get("vhdl_standard", "1993"),
            }
 
 **dispatchers()**
@@ -108,7 +108,7 @@ Pass Methods
        def dispatchers(self) -> list[Dispatcher]:
            return [GHDLDispatcher(
                output_dir=Path(self.config.get("output_dir", "build")),
-               vhdl_std=self.config.get("vhdl_standard", "93c"),
+               vhdl_std=self.config.get("vhdl_standard", "1993"),
            )]
 
 Pass Example
@@ -126,20 +126,18 @@ Pass Example
        output_types = {"ghdl-simulator", "simulator"}
 
        def filter_vars(self):
-           vhdl_std = self.config.get("vhdl_standard", "93")
-           # Map GHDL-style to filter-style
-           version_map = {"93c": "1993", "93": "1993", "08": "2008", "2008": "2008"}
+           vhdl_std = self.config.get("vhdl_standard", "1993")
            return {
                "target-usage": "simulation",
                "compiler": "ghdl",
-               "vhdl-version": version_map.get(vhdl_std, "1993"),
+               "vhdl-version": vhdl_std,
            }
 
        def dispatchers(self):
            from .dispatcher import GHDLDispatcher
            return [GHDLDispatcher(
                output_dir=Path(self.config.get("output_dir", "build")),
-               vhdl_std=self.config.get("vhdl_standard", "93c"),
+               vhdl_std=self.config.get("vhdl_standard", "1993"),
                ghdl_tool=self.config.get("ghdl_tool", "ghdl"),
            )]
 

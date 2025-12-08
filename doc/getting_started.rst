@@ -90,7 +90,7 @@ Create a simple VHDL project with a testbench that prints "Hello World".
        filter_vars: {}
        backend_config:
          gbs.builtin.ghdl:
-           vhdl_standard: "93c"
+           vhdl_standard: "1993"
        outputs:
          - type: ghdl-simulator
            path: build/top

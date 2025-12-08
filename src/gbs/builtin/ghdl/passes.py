@@ -31,16 +31,13 @@ class GHDLSimulatePass(Pass):
         Returns:
             Dictionary with filter variables
         """
-        # Get vhdl_standard from config, default to "93c"
-        vhdl_std = self.config.get("vhdl_standard", "93c")
-
-        # Normalize VHDL version to four-digit year
-        vhdl_version = GHDLDispatcher._normalize_vhdl_version(vhdl_std)
+        # Get vhdl_standard from config, default to "1993"
+        vhdl_std = self.config.get("vhdl_standard", "1993")
 
         return {
             "target-usage": "simulation",
             "compiler": "ghdl",
-            "vhdl-version": vhdl_version,
+            "vhdl-version": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
@@ -52,7 +49,7 @@ class GHDLSimulatePass(Pass):
         Returns:
             GHDLDispatcher singleton
         """
-        vhdl_std = self.config.get("vhdl_standard", "93c")
+        vhdl_std = self.config.get("vhdl_standard", "1993")
         ghdl_tool = self.config.get("ghdl_tool", "ghdl")
 
         return [GHDLDispatcher(

@@ -35,7 +35,7 @@ output:
     filter_vars: {}
     backend_config:
       gbs.backend.ghdl:
-        vhdl_standard: "93c"
+        vhdl_standard: "1993"
         ghdl_tool: "ghdl:system"
     outputs:
       - type: ghdl-simulator
