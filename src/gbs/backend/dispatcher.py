@@ -28,6 +28,7 @@ class Dispatcher(Protocol):
     - name: Unique identifier
     - priority: Execution order (lower = earlier, default range 100-999)
     - process(): Transform the pending work queue
+    - get_clean_paths(): Return paths to clean
     """
 
     name: str
@@ -51,6 +52,18 @@ class Dispatcher(Protocol):
         Note:
             This is an async method to support task creation and other
             async operations.
+        """
+        ...
+
+    def get_clean_paths(self, context: BuildContext) -> set:
+        """Return paths that should be cleaned by this dispatcher
+
+        Args:
+            context: Build context
+
+        Returns:
+            Set of Path objects to clean. Typically includes context.output_path
+            or subdirectories within it that this dispatcher creates.
         """
         ...
 
@@ -86,6 +99,20 @@ class BaseDispatcher(ABC):
         Use context.filter_pending(), context.add_pending(), context.remove_pending(), etc.
         """
         ...
+
+    def get_clean_paths(self, context: BuildContext) -> set:
+        """Return paths that should be cleaned by this dispatcher
+
+        Default implementation returns the output path for this build context.
+        Subclasses can override to clean additional or different paths.
+
+        Args:
+            context: Build context
+
+        Returns:
+            Set of Path objects to clean
+        """
+        return {context.output_path}
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name}, priority={self.priority})"
