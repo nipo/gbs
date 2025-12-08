@@ -30,17 +30,21 @@ settings:
 projects:
   # Basic GHDL example
   - name: hello
-    path: hello
+    path: ghdl/hello
     tags: [ghdl, simulation]
+
+  # Basic GHDL example
+  - name: hello-vhpidirect
+    path: ghdl/hello-vhpidirect
+    tags: [ghdl, vhpidirect, simulation]
+
+  # NSL GHDL example
+  - name: amba
+    path: ghdl/amba/axi4_stream_fifo
+    tags: [ghdl, nsl, simulation]
 
   # NSL CDC Demo (if available)
   - name: nsl-cdc-demo
-    path: nsl_cdc_demo
-    tags: [ghdl, nsl, cdc]
+    path: gowin/nsl_cdc_demo
+    tags: [gowin, nsl, cdc]
     skip: true  # Skip by default (may require additional setup)
-
-  # GHDL examples
-  - name: ghdl-examples
-    path: ghdl
-    tags: [ghdl, vhdl]
-    skip: true  # Skip by default
