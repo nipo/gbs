@@ -9,3 +9,4 @@ simulate
 simulate.gz
 blink.bin
 blink.fs
+*.bit

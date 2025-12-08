@@ -1,0 +1,24 @@
+name: blink
+
+root:
+  name: top
+  sources:
+    - file_type: vhdl
+      files:
+        - boundary.vhd
+    - file_type: xilinx-ucf
+      files:
+        - led.ucf
+  deps:
+    - nsl_hwdep.clock
+
+output:
+  - name: synthesis
+    topcell: boundary
+    backend_config:
+      gbs.builtin.ise:
+        target:
+          part: xc6slx9-2tqg144
+    outputs:
+      - type: ise-bitstream
+        path: blink.bit
