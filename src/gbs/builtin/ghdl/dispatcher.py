@@ -122,13 +122,16 @@ class GHDLDispatcher(BaseDispatcher):
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"GHDL --version failed: {e}")
 
+    def library_workdir(self, library: str) -> Path:
+        return self.context.output_path / library
+        
     def library_build_get(self, library: str) -> tuple['Resource', Task]:
         try:
             return self._library_build[library]
         except KeyError:
             pass
 
-        workdir = self.context.output_path / library
+        workdir = self.library_workdir(library)
 
         # .cf file that will be generated
         cf_path = workdir / f"{library}-obj{self.ghdl_vhdl_version.rstrip('c')}.cf"
@@ -230,6 +233,7 @@ class GHDLDispatcher(BaseDispatcher):
 
             # Create compilation task
             compile_task = task.VHPIDirectCompile(
+                self,
                 compiler="gcc",  # TODO: make configurable
                 inputs=[resource],
                 outputs=[lib_resource],

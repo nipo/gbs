@@ -227,7 +227,6 @@ class MakeElab(Task):
         self,
         dispatcher: "Dispatcher",
         topcell: str,
-        root_workdir: Path,
         root_library: str,
         inputs: list = None,
         outputs: list = None,
@@ -240,7 +239,6 @@ class MakeElab(Task):
             description=f"GHDL make {topcell}"
         )
         self.topcell = topcell
-        self.root_workdir = root_workdir
         self.root_library = root_library
 
     async def work(self) -> None:
@@ -259,7 +257,7 @@ class MakeElab(Task):
 
         process = GhdlInvocation(argv = [
             ghdl_executable, "-m",
-            f"--workdir={self.root_workdir.resolve()}",
+            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
