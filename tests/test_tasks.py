@@ -16,6 +16,14 @@ from gbs.build import (
 )
 
 
+# Mock dispatcher for testing
+class MockDispatcher:
+    """Simple mock dispatcher for testing Task objects"""
+    def __init__(self, context):
+        self.context = context
+        self.name = "mock"
+
+
 class TestBuildContext:
     """Tests for BuildContext"""
 
@@ -127,7 +135,7 @@ class TestTask:
             return [output_file]
 
         task = ExecutorTask(
-            ctx,
+            MockDispatcher(ctx),
             "uppercase",
             inputs=[input_res],
             outputs=[output_res],
@@ -165,7 +173,7 @@ class TestTask:
             file2.write_text(str(val * 2))
             return [file2]
 
-        task1 = ExecutorTask(ctx, "task1", [res1], [res2], task1_exec)
+        task1 = ExecutorTask(MockDispatcher(ctx), "task1", [res1], [res2], task1_exec)
 
         # Task 2: add 10
         async def task2_exec(context, inputs):
@@ -173,7 +181,7 @@ class TestTask:
             file3.write_text(str(val + 10))
             return [file3]
 
-        task2 = ExecutorTask(ctx, "task2", [res2], [res3], task2_exec)
+        task2 = ExecutorTask(MockDispatcher(ctx), "task2", [res2], [res3], task2_exec)
 
         # Launch all steps
         async with ctx.build():
@@ -206,7 +214,7 @@ class TestTask:
             output_res = ctx.get_resource(tmp_path / f"{task_name}.txt")
 
             task = ExecutorTask(
-                ctx,
+                MockDispatcher(ctx),
                 task_name,
                 inputs=[],
                 outputs=[output_res],
@@ -233,7 +241,7 @@ class TestTask:
         async def executor(context, inputs):
             return [{"key": "value", "number": 42}]
 
-        task = ExecutorTask(ctx, "producer", [], [vres], executor)
+        task = ExecutorTask(MockDispatcher(ctx), "producer", [], [vres], executor)
 
         # Launch all steps
         async with ctx.build():
@@ -257,7 +265,7 @@ class TestTask:
             data = json.loads(inputs[0].path.read_text())
             return [data["data"]]
 
-        task = ExecutorTask(ctx, "parse", [input_res], [vres], executor)
+        task = ExecutorTask(MockDispatcher(ctx), "parse", [input_res], [vres], executor)
 
         # Launch all steps
         async with ctx.build():
@@ -276,13 +284,13 @@ class TestTask:
         async def failing_executor(context, inputs):
             raise RuntimeError("Task failed!")
 
-        task1 = ExecutorTask(ctx, "task1", [], [res1], failing_executor)
+        task1 = ExecutorTask(MockDispatcher(ctx), "task1", [], [res1], failing_executor)
 
         # Task 2: depends on task1
         async def task2_executor(context, inputs):
             return [tmp_path / "file2.txt"]
 
-        task2 = ExecutorTask(ctx, "task2", [res1], [res2], task2_executor)
+        task2 = ExecutorTask(MockDispatcher(ctx), "task2", [res1], [res2], task2_executor)
 
         # Launch all steps
         async with ctx.build():
@@ -309,7 +317,7 @@ class TestTask:
             (tmp_path / "file2.txt").write_text(str(val * 2))
             return [tmp_path / "file2.txt"]
 
-        taskA = ExecutorTask(ctx, "taskA", [res1], [res2], taskA_exec)
+        taskA = ExecutorTask(MockDispatcher(ctx), "taskA", [res1], [res2], taskA_exec)
 
         # Task B: res1 -> res3
         async def taskB_exec(context, inputs):
@@ -317,7 +325,7 @@ class TestTask:
             (tmp_path / "file3.txt").write_text(str(val * 3))
             return [tmp_path / "file3.txt"]
 
-        taskB = ExecutorTask(ctx, "taskB", [res1], [res3], taskB_exec)
+        taskB = ExecutorTask(MockDispatcher(ctx), "taskB", [res1], [res3], taskB_exec)
 
         # Task C: res2, res3 -> res4
         async def taskC_exec(context, inputs):
@@ -326,7 +334,7 @@ class TestTask:
             (tmp_path / "file4.txt").write_text(str(val2 + val3))
             return [tmp_path / "file4.txt"]
 
-        taskC = ExecutorTask(ctx, "taskC", [res2, res3], [res4], taskC_exec)
+        taskC = ExecutorTask(MockDispatcher(ctx), "taskC", [res2, res3], [res4], taskC_exec)
 
         # Launch all steps
         async with ctx.build():
@@ -361,7 +369,7 @@ class TestTask:
             executed = True
             return [output_file]
 
-        task = ExecutorTask(ctx, "task", [input_res], [output_res], executor)
+        task = ExecutorTask(MockDispatcher(ctx), "task", [input_res], [output_res], executor)
 
         # Launch all steps
         async with ctx.build():
@@ -396,7 +404,7 @@ class TestTask:
             output_file.write_text("updated")
             return [output_file]
 
-        task = ExecutorTask(ctx, "task", [input_res], [output_res], executor)
+        task = ExecutorTask(MockDispatcher(ctx), "task", [input_res], [output_res], executor)
 
         # Launch all steps
         async with ctx.build():

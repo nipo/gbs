@@ -230,7 +230,7 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create task to copy bundled IEEE files
         task.CopyBundledIeeeFiles(
-            context=self.context,
+            dispatcher=self,
             outputs=ieee_file_resources
         )
 
@@ -272,7 +272,7 @@ class GowinDispatcher(BaseDispatcher):
 
                 # Create SerDes to CSR conversion task
                 task.SerDesToCsr(
-                    context=self.context,
+                    dispatcher=self,
                     gowin_tool=self.gowin_tool,
                     klut_count=device_info.klut_count,
                     inputs=[toml_resource],
@@ -292,7 +292,7 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create project init task
         init_task = task.ProjectInit(
-            context=self.context,
+            dispatcher=self,
             session=session,
             gowin_tool=self.gowin_tool,
             output_base_name=output_base_name,
@@ -303,7 +303,7 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create synthesis task
         synth_task = task.Synthesis(
-            context=self.context,
+            dispatcher=self,
             session=session,
             inputs=[init_marker_resource],
             outputs=[netlist_resource]
@@ -319,7 +319,7 @@ class GowinDispatcher(BaseDispatcher):
         # Create pin constraint aggregation task (.cst files)
         # Store reference for dynamic input updates
         self._pin_cst_task = task.AggregateConstraints(
-            context=self.context,
+            dispatcher=self,
             file_type="gowin-cst",
             inputs=cst_input_resources,
             outputs=[pin_cst_resource]
@@ -328,7 +328,7 @@ class GowinDispatcher(BaseDispatcher):
         # Create timing constraint aggregation task (.sdc files)
         # Store reference for dynamic input updates
         self._timing_sdc_task = task.AggregateConstraints(
-            context=self.context,
+            dispatcher=self,
             file_type="gowin-sdc",
             inputs=sdc_input_resources,
             outputs=[timing_sdc_resource]
@@ -336,7 +336,7 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create PnR task (depends on init + netlist + constraints)
         pnr_task = task.PnR(
-            context=self.context,
+            dispatcher=self,
             session=session,
             inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
             outputs=[bitstream_resource, bitstream_bin_resource]

@@ -106,7 +106,7 @@ class Xst(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_xst_synth",
             inputs=inputs,
             outputs=outputs,
@@ -148,7 +148,7 @@ class Xst(IseTask):
             f"set -xsthdpdir {output_dir}",
             "run",
             f"-p {self.device}",
-            f"-top {self.context.get_topcell()}",
+            f"-top {self.dispatcher.context.get_topcell()}",
             f"-ifn {srclist_path}",
             f"-ofn {netlist_rsrc.path}",
             "-max_fanout 15",
@@ -183,7 +183,7 @@ class BmmGenerate(Task):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_generate_bmm",
             inputs=[],
             outputs=outputs,
@@ -211,7 +211,7 @@ class EdifConvert(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_ngc2edif",
             inputs=inputs,
             outputs=outputs,
@@ -246,7 +246,7 @@ class NetlistConvert(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_ngdbuild",
             inputs=inputs,
             outputs=outputs,
@@ -298,7 +298,7 @@ class Map(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_map",
             inputs=inputs,
             outputs=outputs,
@@ -356,7 +356,7 @@ class Par(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_par",
             inputs=inputs,
             outputs=outputs,
@@ -404,7 +404,7 @@ class Trce(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_trce",
             inputs=inputs,
             outputs=outputs,
@@ -443,7 +443,7 @@ class Bitgen(IseTask):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name="ise_bitgen",
             inputs=inputs,
             outputs=outputs,

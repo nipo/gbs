@@ -59,7 +59,7 @@ class Import(Task):
         outputs: list,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"ghdl_import_{library_name}",
             inputs=inputs,
             outputs=outputs,
@@ -116,7 +116,7 @@ class VHPIDirectCompile(Task):
         src = inputs[0].path
         stem = src.stem
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"vhpidirect_compile_{stem}",
             inputs=inputs,
             outputs=outputs,
@@ -181,7 +181,7 @@ class CompileLink(Task):
         outputs: list = None,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"ghdl_link_simulator",
             inputs=inputs or [],
             outputs=outputs or [],
@@ -242,7 +242,7 @@ class MakeElab(Task):
         outputs: list = None,
     ):
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"ghdl_make_{topcell}",
             inputs=inputs or [],
             outputs=outputs or [],

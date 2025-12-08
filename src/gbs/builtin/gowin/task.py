@@ -23,8 +23,7 @@ class CopyBundledIeeeFiles(Task):
         context: BuildContext,
         outputs: list[Resource],
     ):
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             name="copy_bundled_ieee",
             inputs=[],
             outputs=outputs,
@@ -58,8 +57,7 @@ class ProjectInit(GwShCommand):
         inputs: list,
         outputs: list,
     ):
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             name = "gowin_project_init",
             session = session,
             inputs = inputs,
@@ -74,15 +72,15 @@ class ProjectInit(GwShCommand):
         """Initialize Gowin project in gw_sh"""
         try:
             # Compute values from context
-            target = self.context.get_target()
+            target = self.dispatcher.context.get_target()
             device = target.get("part")
-            topcell = self.context.get_topcell()
+            topcell = self.dispatcher.context.get_topcell()
 
             # Prepare paths
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
             # Get Gowin tool config and parse device CSV
-            gowin_config = self.context.get_tool(self.gowin_tool)
+            gowin_config = self.dispatcher.context.get_tool(self.gowin_tool)
             gowin_path = Path(gowin_config["path"])
             part_group, part_number = parse_device_csv(gowin_path, device, self.logger)
 
@@ -188,8 +186,7 @@ class Synthesis(LongRunningCommand):
         inputs: list,
         outputs: list
     ):
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             name = "gowin_synthesis",
             session = session,
             inputs = inputs,
@@ -212,8 +209,7 @@ class PnR(LongRunningCommand):
         inputs: list,
         outputs: list
     ):
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             name = "gowin_pnr",
             session = session,
             inputs = inputs,
@@ -239,8 +235,7 @@ class AggregateConstraints(Task):
         # Generate description based on file type
         constraint_type = "pin" if file_type == "gowin-cst" else "timing"
 
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             f"gowin_aggregate_{constraint_type}_constraints",
             inputs=inputs,
             outputs=outputs,
@@ -298,8 +293,7 @@ class SerDesToCsr(Task):
             inputs: List with single TOML config file resource
             outputs: List with single CSR output file resource
         """
-        super().__init__(
-            context,
+        super().__init__(dispatcher,
             name="gowin_serdes_to_csr",
             inputs=inputs,
             outputs=outputs,
@@ -314,7 +308,7 @@ class SerDesToCsr(Task):
         csr_file = self.outputs[0].path
 
         # Get Gowin tool path
-        gowin_config = self.context.get_tool(self.gowin_tool)
+        gowin_config = self.dispatcher.context.get_tool(self.gowin_tool)
         gowin_path = Path(gowin_config["path"])
 
         # Build tool path

@@ -45,7 +45,7 @@ class CopyTask(Task):
             destination: Destination file resource
         """
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"copy:{destination.path.name}",
             inputs=[source],
             outputs=[destination],
@@ -59,7 +59,7 @@ class CopyTask(Task):
         self.logger.info(f"Copying {source.path} -> {destination.path}")
 
         # Run copy in thread pool to avoid blocking event loop
-        async with self.context.semaphore:
+        async with self.dispatcher.context.semaphore:
             await asyncio.to_thread(
                 _copy_file,
                 source.path,

@@ -89,7 +89,7 @@ class OutputCopyDispatcher(BaseDispatcher):
 
             # Create copy task
             CopyTask(
-                context=self.context,
+                dispatcher=self,
                 source=source_resource,
                 destination=dest_resource,
             )

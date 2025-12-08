@@ -47,7 +47,7 @@ class GzipTask(Task):
             destination: Destination file resource (compressed)
         """
         super().__init__(
-            context=context,
+            dispatcher=dispatcher,
             name=f"gzip:{destination.path.name}",
             inputs=[source],
             outputs=[destination],
@@ -61,7 +61,7 @@ class GzipTask(Task):
         self.logger.info(f"Compressing {self.source.path} -> {self.destination.path}")
 
         # Run compression in thread pool to avoid blocking event loop
-        async with self.context.semaphore:
+        async with self.dispatcher.context.semaphore:
             await asyncio.to_thread(
                 _gzip_file,
                 self.source.path,

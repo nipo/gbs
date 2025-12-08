@@ -395,24 +395,22 @@ class Task(BuildStep):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: 'Dispatcher',
         name: str,
         inputs: list[BuildStep],
         outputs: list[BuildStep],
-        description: str = "",
-        dispatcher: 'Dispatcher | None' = None
+        description: str = ""
     ):
         """Initialize task
 
         Args:
-            context: Build context
+            dispatcher: Creating dispatcher (provides context and tool config access)
             name: Unique task name
             inputs: Input resources (files or virtual)
             outputs: Output resources (files or virtual)
             description: Human-readable description
-            dispatcher: Optional reference to creating dispatcher (for tool config access)
         """
-        super().__init__(context, name)
+        super().__init__(dispatcher.context, name)
         self.description = description or name
         self.inputs = inputs
         self.outputs = outputs
@@ -501,7 +499,7 @@ class ExecutorTask(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: 'Dispatcher',
         name: str,
         inputs: list[BuildStep],
         outputs: list[BuildStep],
@@ -511,14 +509,14 @@ class ExecutorTask(Task):
         """Initialize task
 
         Args:
-            context: Build context
+            dispatcher: Creating dispatcher (provides context and tool config access)
             name: Unique task name
             inputs: Input resources (files or virtual)
             outputs: Output resources (files or virtual)
-            executor: Optional executor function
+            executor: Executor function
             description: Human-readable description
         """
-        super().__init__(context, name, inputs = inputs, outputs =
+        super().__init__(dispatcher, name, inputs = inputs, outputs =
                          outputs, description = description)
         self.executor = executor
 

@@ -192,7 +192,7 @@ class IseDispatcher(BaseDispatcher):
 
         # Run XST synthesis
         self.xst_task = task.Xst(
-            context=self.context,
+            dispatcher=self,
             device=self.device,
             inputs=[env_resource],
             outputs=[ngc_resource],
@@ -200,25 +200,25 @@ class IseDispatcher(BaseDispatcher):
 
         # Generate BMM file (placeholder)
         self.bmm_task = task.BmmGenerate(
-            context=self.context,
+            dispatcher=self,
             outputs=[bmm_resource],
         )
 
         # Convert Netlist
         self.net_task = task.NetlistConvert(
-            context=self.context,
+            dispatcher=self,
             inputs=[env_resource, ngc_resource, bmm_resource],
             outputs=[ngd_resource],
         )
         self.edif_task = task.EdifConvert(
-            context=self.context,
+            dispatcher=self,
             inputs=[env_resource, ngc_resource],
             outputs=[edif_resource],
         )
 
         # Physical Mapping
         self.map_task = task.Map(
-            context=self.context,
+            dispatcher=self,
             device=self.device,
             inputs=[env_resource, ngd_resource],
             outputs=[map_resource, pcf_resource],
@@ -226,21 +226,21 @@ class IseDispatcher(BaseDispatcher):
 
         # Place and Route
         self.par_task = task.Par(
-            context=self.context,
+            dispatcher=self,
             inputs=[env_resource, map_resource],
             outputs=[par_resource],
         )
 
         # Run Timing Analysis
         self.trce_task = task.Trce(
-            context=self.context,
+            dispatcher=self,
             inputs=[env_resource, par_resource, pcf_resource],
             outputs=[twr_resource],
         )
 
         # Run BITGEN
         self.bitgen_task = task.Bitgen(
-            context=self.context,
+            dispatcher=self,
             inputs=[env_resource, par_resource],
             outputs=[bit_resource],
         )

@@ -169,7 +169,7 @@ class GHDLDispatcher(BaseDispatcher):
 
         # Create import task (ghdl -i/-a)
         t = task.Import(
-            context=self.context,
+            dispatcher=self,
             library_name=library,
             ghdl_executable=ghdl_executable,
             vhdl_std=self.vhdl_std,

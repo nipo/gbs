@@ -144,7 +144,7 @@ class CompressDispatcher(BaseDispatcher):
 
             # Create compression task
             task_class(
-                context=self.context,
+                dispatcher=self,
                 source=source_resource,
                 destination=dest_resource,
             )
