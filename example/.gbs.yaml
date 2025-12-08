@@ -11,6 +11,12 @@ tools:
     config:
       executable: ghdl
 
+  # NVC from PATH
+  - name: nvc
+    variant: system
+    config:
+      executable: nvc
+
   - name: gcc
     variant: system
     config:

@@ -1,0 +1,23 @@
+name: nvc_hello_project
+
+root:
+  name: top
+  deps:
+    - nsl_data.text
+    - nsl_simulation.assertions
+  sources:
+    - file_type: vhdl
+      files:
+        - top.vhd
+
+output:
+  - name: simulation
+    topcell: top
+    filter_vars: {}
+    backend_config:
+      gbs.builtin.nvc:
+        vhdl_standard: "1993"
+        nvc_tool: "nvc"
+    outputs:
+      - type: nvc-simulator
+        path: build/top
