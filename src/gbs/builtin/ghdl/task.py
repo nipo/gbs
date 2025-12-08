@@ -1,7 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
 from ...build.task import Task, BuildError
-from ...build.context import BuildContext
 from ...build.subprocess import MessageSubprocess
 from ...build.message import MessageSeverity, ToolMessage
 import re
@@ -51,10 +50,8 @@ class Import(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         library_name: str,
-        ghdl_executable: str,
-        vhdl_std: str,
         inputs: list,
         outputs: list,
     ):
@@ -66,13 +63,12 @@ class Import(Task):
             description=f"GHDL import {library_name}"
         )
         self.library_name = library_name
-        self.ghdl_executable = ghdl_executable
-        self.vhdl_std = vhdl_std
 
     async def work(self) -> None:
         """Execute GHDL import"""
         sources = []
         p_flags = []
+        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
 
         cf_out, = self.outputs_of_type("ghdl-cf")
         workdir = cf_out.path.parent
@@ -89,9 +85,9 @@ class Import(Task):
 
         for cmd in ["-i", "-a"]:
             import_process = GhdlInvocation(argv = [
-                self.ghdl_executable, cmd,
+                ghdl_executable, cmd,
                 f"--workdir={workdir.resolve()}",
-                f"--std={self.vhdl_std}",
+                f"--std={self.dispatcher.vhdl_std}",
                 f"--work={self.library_name}",
                 "-Wno-hide"
             ] + p_flags + sources)
@@ -107,8 +103,7 @@ class VHPIDirectCompile(Task):
 
     def __init__(
         self,
-        context: BuildContext,
-        ghdl_executable: str,
+        dispatcher: "Dispatcher",
         compiler: str = "gcc",
         inputs: list = None,
         outputs: list = None,
@@ -122,7 +117,6 @@ class VHPIDirectCompile(Task):
             outputs=outputs,
             description=f"Compile VHPIDIRECT {stem}"
         )
-        self.ghdl_executable = ghdl_executable
         self.compiler = compiler
 
     async def work(self) -> None:
@@ -130,6 +124,7 @@ class VHPIDirectCompile(Task):
         # Ensure output directory exists
         c, = self.inputs_of_type("ghdl-vhpidirect-c")
         so, = self.outputs_of_type("ghdl-vhpidirect-lib")
+        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
 
         so.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -137,7 +132,7 @@ class VHPIDirectCompile(Task):
         obj_path = so.path.with_suffix('.o')
 
         compile_process = GhdlInvocation(argv=[
-            self.ghdl_executable, "--vpi-compile",
+            ghdl_executable, "--vpi-compile",
             self.compiler, "-c",
             "-fPIC",  # Position-independent code for shared library
             str(c.path.resolve()),
@@ -152,7 +147,7 @@ class VHPIDirectCompile(Task):
 
         # Link to shared library using GHDL's wrapper
         link_process = GhdlInvocation(argv=[
-            self.ghdl_executable, "--vpi-link",
+            ghdl_executable, "--vpi-link",
             self.compiler, "-shared",
             str(obj_path),
             "-o", str(so.path)
@@ -172,10 +167,8 @@ class CompileLink(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         topcell: str,
-        ghdl_executable: str,
-        vhdl_std: str,
         root_library: str,
         inputs: list = None,
         outputs: list = None,
@@ -188,13 +181,13 @@ class CompileLink(Task):
             description=f"GHDL link {topcell}"
         )
         self.topcell = topcell
-        self.ghdl_executable = ghdl_executable
-        self.vhdl_std = vhdl_std
         self.root_library = root_library
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
         assert len(self.outputs) == 1
+        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
+
         out_path = self.outputs[0].path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -213,8 +206,8 @@ class CompileLink(Task):
             flags.append(f"-Wl,{lib_path}")
 
         process = GhdlInvocation(argv = [
-            self.ghdl_executable, "-c", "-O2",
-            f"--std={self.vhdl_std}",
+            ghdl_executable, "-c", "-O2",
+            f"--std={self.dispatcher.vhdl_std}",
         ] + flags + [
             f"--work={self.root_library}",
             "-o", str(out_path),
@@ -232,11 +225,9 @@ class MakeElab(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         topcell: str,
-        ghdl_executable: str,
         root_workdir: Path,
-        vhdl_std: str,
         root_library: str,
         inputs: list = None,
         outputs: list = None,
@@ -249,13 +240,13 @@ class MakeElab(Task):
             description=f"GHDL make {topcell}"
         )
         self.topcell = topcell
-        self.ghdl_executable = ghdl_executable
         self.root_workdir = root_workdir
-        self.vhdl_std = vhdl_std
         self.root_library = root_library
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
+        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
+
         assert len(self.outputs) == 1
         out_path = self.outputs[0].path
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,9 +258,9 @@ class MakeElab(Task):
                 p_flags.append(f"-P{res.path.parent.resolve()}")
 
         process = GhdlInvocation(argv = [
-            self.ghdl_executable, "-m",
+            ghdl_executable, "-m",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.vhdl_std}",
+            f"--std={self.dispatcher.vhdl_std}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell
@@ -282,9 +273,9 @@ class MakeElab(Task):
             raise BuildError(f"ghdl -m failed: {process.returncode}")
 
         process = GhdlInvocation(argv = [
-            self.ghdl_executable, "-e",
+            ghdl_executable, "-e",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.vhdl_std}",
+            f"--std={self.dispatcher.vhdl_std}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell
@@ -303,9 +294,9 @@ class MakeElab(Task):
 
         # Create run script
         run_cmd = [
-            self.ghdl_executable, "-r",
+            ghdl_executable, "-r",
             f"--workdir={self.root_workdir.resolve()}",
-            f"--std={self.vhdl_std}",
+            f"--std={self.dispatcher.vhdl_std}",
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell,

@@ -33,7 +33,7 @@ class CopyTask(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         source: Resource,
         destination: Resource,
     ):

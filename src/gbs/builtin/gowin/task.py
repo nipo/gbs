@@ -20,7 +20,7 @@ class CopyBundledIeeeFiles(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         outputs: list[Resource],
     ):
         super().__init__(dispatcher,
@@ -49,7 +49,7 @@ class ProjectInit(GwShCommand):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         session: Session,
         gowin_tool: str,
         output_base_name: str,
@@ -181,7 +181,7 @@ class Synthesis(LongRunningCommand):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         session: Session,
         inputs: list,
         outputs: list
@@ -204,7 +204,7 @@ class PnR(LongRunningCommand):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         session: Session,
         inputs: list,
         outputs: list
@@ -227,7 +227,7 @@ class AggregateConstraints(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         file_type: str,
         inputs: list,
         outputs: list
@@ -278,7 +278,7 @@ class SerDesToCsr(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         gowin_tool: str,
         klut_count: str,
         inputs: list[Resource],

@@ -154,7 +154,6 @@ class GHDLDispatcher(BaseDispatcher):
         except KeyError:
             pass
 
-        ghdl_executable, backend_type = self._get_ghdl_config()
         workdir = self.context.output_path / library
 
         # .cf file that will be generated
@@ -171,8 +170,6 @@ class GHDLDispatcher(BaseDispatcher):
         t = task.Import(
             dispatcher=self,
             library_name=library,
-            ghdl_executable=ghdl_executable,
-            vhdl_std=self.vhdl_std,
             inputs=[],
             outputs=[cf_resource],
         )
@@ -185,8 +182,6 @@ class GHDLDispatcher(BaseDispatcher):
 
     async def process(self) -> None:
         """Compile VHDL design with GHDL"""
-        ghdl_executable, backend_type = self._get_ghdl_config()
-
         # Get library dependency graph for correct inter-library dependencies
         # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
         lib_deps_graph = self.context._pending_library_dependency_graph_transitive()
@@ -203,17 +198,13 @@ class GHDLDispatcher(BaseDispatcher):
 
 
         # Step 2.5: Compile new VHPIDIRECT C files
-        self._compile_vhpidirect_sources(context, ghdl_executable)
+        self._compile_vhpidirect_sources()
 
         if not self._linker:
             # Step 3 & 4: Elaborate/link
             self._linker = self._create_elaboration_tasks(
-                context,
-                backend_type,
                 self.context.get_topcell(),
                 self.context.get_topcell_library(),
-                self.vhdl_version,
-                ghdl_executable,
             )
 
         # Ingress files to linker
@@ -230,7 +221,7 @@ class GHDLDispatcher(BaseDispatcher):
             if library_name is None:
                 continue
 
-            cf, task_obj = self.library_build_get(context, library_name)
+            cf, task_obj = self.library_build_get(library_name)
 
             for resource in library_files:
                 if resource.file_type != "vhdl":
@@ -244,14 +235,8 @@ class GHDLDispatcher(BaseDispatcher):
                 for dep in dependents:
                     task_obj.dependency_add(dep)
             
-    def _compile_vhpidirect_sources(self,
-        ghdl_executable: str
-    ):
+    def _compile_vhpidirect_sources(self):
         """Compile VHPIDIRECT C sources to shared libraries
-
-        Args:
-            context: Build context
-            ghdl_executable: Path to GHDL executable
         """
         vhpidirect_count = 0
 
@@ -271,8 +256,6 @@ class GHDLDispatcher(BaseDispatcher):
 
             # Create compilation task
             compile_task = task.VHPIDirectCompile(
-                context=context,
-                ghdl_executable=ghdl_executable,
                 compiler="gcc",  # TODO: make configurable
                 inputs=[resource],
                 outputs=[lib_resource],
@@ -291,27 +274,21 @@ class GHDLDispatcher(BaseDispatcher):
             self.logger.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
 
     def _create_elaboration_tasks(self,
-        backend_type: str,
         topcell: str,
         root_library: str,
-        vhdl_version: str,
-        ghdl_executable: str,
     ) -> Task:
         """Create elaboration/linking tasks for the top entity
 
         Args:
-            context: Build context
-            backend_type: GHDL backend type (gcc, llvm, mcode, jit)
             topcell: Top-level entity name
             root_library: Root library name
-            vhdl_version: VHDL version string
-            ghdl_executable: Path to GHDL executable
         """
+        _, backend_type = self._get_ghdl_config()
+
         if backend_type in ["gcc", "llvm"]:
             final_task_class = task.CompileLink
         else:
             final_task_class = task.MakeElab
-
         executable_path = self.context.output_path / "simulator.exe"
         executable_resource = self.context.get_resource(
             executable_path,
@@ -322,10 +299,8 @@ class GHDLDispatcher(BaseDispatcher):
         )
 
         link_task = final_task_class(
-            context=context,
+            dispatcher = self,
             topcell=topcell,
-            ghdl_executable=ghdl_executable,
-            vhdl_std=self.vhdl_std,
             root_library=root_library,
             inputs=[],
             outputs=[executable_resource],

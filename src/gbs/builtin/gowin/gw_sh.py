@@ -188,14 +188,14 @@ class Session:
 class GwShCommand(Task):
     def __init__(
             self,
-            context: BuildContext,
+            dispatcher: "Dispatcher",
             name: str,
             session: Session,
             inputs: list,
             outputs: list,
             description: str = "",
     ):
-        super().__init__(context = context,
+        super().__init__(dispatcher = dispatcher,
                          name = name,
                          inputs = inputs,
                          outputs = outputs,
