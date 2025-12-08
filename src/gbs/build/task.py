@@ -177,9 +177,34 @@ class BuildStep(asyncio.Future):
         Adds an existing ToolMessage to this step's message collection.
         Also logs the message using the step's logger.
 
+        Applies per-backend message severity mangling if configured via
+        tool configuration's message.level_force section.
+
         Args:
             msg: The ToolMessage to add
         """
+        # Apply message severity mangling if configured
+        if hasattr(self, 'dispatcher') and self.dispatcher is not None:
+            tool_config = self.dispatcher.get_tool_config()
+            if tool_config and msg.identifier:
+                # Check for message level overrides in tool config
+                level_force = tool_config.get('message', {}).get('level_force', {})
+                if msg.identifier in level_force:
+                    new_severity_str = level_force[msg.identifier].upper()
+                    try:
+                        # Convert string to MessageSeverity enum
+                        new_severity = MessageSeverity[new_severity_str]
+                        old_severity = msg.severity
+                        msg.severity = new_severity
+                        self.logger.debug(
+                            f"Message {msg.identifier}: severity {old_severity.value} → {new_severity.value}"
+                        )
+                    except KeyError:
+                        self.logger.warning(
+                            f"Invalid severity level '{new_severity_str}' for message {msg.identifier}, "
+                            f"using original severity {msg.severity.value}"
+                        )
+
         msg.origin = self
         self.context.message_add(msg)
         self._log_message(msg)
