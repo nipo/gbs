@@ -1,13 +1,49 @@
 from __future__ import annotations
 import asyncio
 import random
+import shutil
 from pathlib import Path
+from importlib.resources import files, as_file
 
 from ...build.context import BuildContext
-from ...build.task import Resource, Task, ExecutorTask
+from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
 from .gw_sh import *
 from .device_info import parse_device_csv, get_device_info
 from ...build.subprocess import MessageSubprocess
+
+class CopyBundledIeeeFiles(Task):
+    """Task that copies bundled IEEE library files to build directory
+
+    Gowin doesn't ship ieee.math_real, so we provide synthesizable versions.
+    This task extracts them from resources and places them in the build directory.
+    """
+
+    def __init__(
+        self,
+        context: BuildContext,
+        outputs: list[Resource],
+    ):
+        super().__init__(
+            context,
+            name="copy_bundled_ieee",
+            inputs=[],
+            outputs=outputs,
+            description="Copy bundled IEEE math_real files"
+        )
+
+    async def work(self) -> None:
+        """Copy bundled IEEE files from resources to output paths"""
+        pkg_resources = files("gbs.builtin.gowin.resources.ieee")
+
+        for output in self.outputs:
+            filename = output.path.name
+            # Create directory if needed
+            output.path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Copy from resources
+            with as_file(pkg_resources / filename) as src_path:
+                shutil.copy(src_path, output.path)
+            self.logger.info(f"Copied bundled {filename} to {output.path}")
 
 class ProjectInit(GwShCommand):
     """Initialize Gowin project in gw_sh session"""
