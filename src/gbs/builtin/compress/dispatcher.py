@@ -68,7 +68,7 @@ class CompressDispatcher(BaseDispatcher):
     """
 
     def __init__(self, context: BuildContext):
-        super().__init__(context, "compress", priority=850)
+        super().__init__(context, "compress", tool_name="compress", priority=850)
 
     async def process(self) -> None:
         """Create compression tasks for unsatisfied compressed outputs.

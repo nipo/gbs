@@ -26,7 +26,7 @@ class GHDLDispatcher(BaseDispatcher):
         vhdl_std: str = "93c",
         ghdl_tool: str = "ghdl"
     ):
-        super().__init__(context, "ghdl", priority=500)
+        super().__init__(context, "ghdl", tool_name=ghdl_tool, priority=500)
         self.vhdl_std = vhdl_std
         self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
         self._ghdl_executable: str | None = None  # Cached executable path

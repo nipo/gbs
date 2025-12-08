@@ -59,7 +59,7 @@ class MockBackendA(BaseBackend):
 
         class TestDispatcher(BaseDispatcher):
             def __init__(self, context):
-                super().__init__(context, "test_dispatcher_a")
+                super().__init__(context, "test_dispatcher_a", tool_name="test_a")
 
             async def process(self):
                 pass
@@ -84,8 +84,8 @@ class MockBackendB(BaseBackend):
         from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
-            def __init__(self):
-                super().__init__("test_dispatcher_b")
+            def __init__(self, context):
+                super().__init__(context, "test_dispatcher_b", tool_name="test_b")
 
             async def process(self):
                 pass

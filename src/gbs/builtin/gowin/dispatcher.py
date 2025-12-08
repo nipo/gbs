@@ -38,7 +38,7 @@ class GowinDispatcher(BaseDispatcher):
         context: BuildContext,
         gowin_tool: str = "gowin",
     ):
-        super().__init__(context, "gowin", priority=600)
+        super().__init__(context, "gowin", tool_name=gowin_tool, priority=600)
         self.gowin_tool = gowin_tool
         self.output_base_name = "project"
         self._session: Session | None = None

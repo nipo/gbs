@@ -85,12 +85,13 @@ class BaseDispatcher(ABC):
     Subclasses must implement process().
     """
 
-    def __init__(self, context: BuildContext, name: str, priority: int = 500):
+    def __init__(self, context: BuildContext, name: str, tool_name: str, priority: int = 500):
         """Initialize dispatcher
 
         Args:
             context: Build context for this realization
             name: Unique dispatcher name
+            tool_name: Tool identifier for configuration lookup
             priority: Execution priority (lower = earlier)
                      Suggested ranges:
                      100-299: Preprocessing (transpilers, code generators)
@@ -100,6 +101,7 @@ class BaseDispatcher(ABC):
         """
         self.context = context
         self.name = name
+        self.tool_name = tool_name
         self.priority = priority
         self.logger = get_logger(f"Dispatcher({name})")
 
@@ -116,6 +118,18 @@ class BaseDispatcher(ABC):
             Tool configuration dictionary
         """
         return self.context.get_tool(name, required=required)
+
+    def get_tool_config(self) -> dict | None:
+        """Get this dispatcher's primary tool configuration
+
+        Uses the tool_name provided during initialization to look up
+        the tool's configuration. This enables tasks to access
+        tool-specific settings like message level overrides.
+
+        Returns:
+            Tool configuration dictionary, or None if tool not found
+        """
+        return self.context.get_tool(self.tool_name, required=False)
 
     @abstractmethod
     async def process(self) -> None:

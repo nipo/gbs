@@ -25,7 +25,7 @@ class TestDispatcher:
                 pass
 
         ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test_backend", priority=100)
+        dispatcher = TestBackend(ctx, "test_backend", tool_name="test", priority=100)
         assert dispatcher.name == "test_backend"
         assert dispatcher.priority == 100
 
@@ -37,7 +37,7 @@ class TestDispatcher:
                 pass
 
         ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test")
+        dispatcher = TestBackend(ctx, "test", tool_name="test")
         assert dispatcher.priority == 500
 
     # Test removed - get_filter_variables no longer part of Dispatcher protocol
@@ -56,7 +56,7 @@ class TestDispatcher:
                 processed.append(self.name)
 
         ctx = BuildContext()
-        dispatcher = LoggingBackend(ctx, "logger")
+        dispatcher = LoggingBackend(ctx, "logger", tool_name="test")
         ctx = BuildContext()
 
         await dispatcher.process()
@@ -81,7 +81,7 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test", priority=100)
+        dispatcher = TestBackend(ctx, "test", tool_name="test", priority=100)
         registry.register(dispatcher)
 
         assert len(registry) == 1
@@ -95,8 +95,8 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        dispatcher1 = TestBackend(ctx, "test", priority=100)
-        dispatcher2 = TestBackend(ctx, "test", priority=200)
+        dispatcher1 = TestBackend(ctx, "test", tool_name="test", priority=100)
+        dispatcher2 = TestBackend(ctx, "test", tool_name="test", priority=200)
 
         registry.register(dispatcher1)
 
@@ -114,11 +114,11 @@ class TestDispatcherRegistry:
 
         # Register in random order
         ctx = BuildContext()
-        dispatcher3 = TestBackend(ctx, "backend3", priority=300)
+        dispatcher3 = TestBackend(ctx, "backend3", tool_name="test", priority=300)
         ctx = BuildContext()
-        dispatcher1 = TestBackend(ctx, "backend1", priority=100)
+        dispatcher1 = TestBackend(ctx, "backend1", tool_name="test", priority=100)
         ctx = BuildContext()
-        dispatcher2 = TestBackend(ctx, "backend2", priority=200)
+        dispatcher2 = TestBackend(ctx, "backend2", tool_name="test", priority=200)
 
         registry.register(dispatcher3)
         registry.register(dispatcher1)
@@ -141,11 +141,11 @@ class TestDispatcherRegistry:
         registry = DispatcherRegistry()
 
         ctx = BuildContext()
-        dispatcher_c = TestBackend(ctx, "c", priority=100)
+        dispatcher_c = TestBackend(ctx, "c", tool_name="test", priority=100)
         ctx = BuildContext()
-        dispatcher_a = TestBackend(ctx, "a", priority=100)
+        dispatcher_a = TestBackend(ctx, "a", tool_name="test", priority=100)
         ctx = BuildContext()
-        dispatcher_b = TestBackend(ctx, "b", priority=100)
+        dispatcher_b = TestBackend(ctx, "b", tool_name="test", priority=100)
 
         registry.register(dispatcher_c)
         registry.register(dispatcher_a)
@@ -169,9 +169,9 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        registry.register(TestBackend(ctx, "b", priority=200))
+        registry.register(TestBackend(ctx, "b", tool_name="test", priority=200))
         ctx = BuildContext()
-        registry.register(TestBackend(ctx, "a", priority=100))
+        registry.register(TestBackend(ctx, "a", tool_name="test", priority=100))
 
         names = [b.name for b in registry]
         assert names == ["a", "b"]

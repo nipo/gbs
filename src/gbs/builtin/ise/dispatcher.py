@@ -49,7 +49,7 @@ class IseDispatcher(BaseDispatcher):
         tool: str,
         target: dict[str, str] = {},
     ):
-        super().__init__(context, "ise", priority=600)
+        super().__init__(context, "ise", tool_name=tool, priority=600)
         self.output_base_name = "project"
         self.target = target
         self.device = target["part"]

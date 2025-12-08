@@ -25,7 +25,9 @@ class TestBackendInterface:
                     async def process(self):
                         pass
 
-                return TestDispatcher("test_dispatcher")
+                from gbs.build import BuildContext
+                ctx = BuildContext()
+                return TestDispatcher(ctx, "test_dispatcher", tool_name="test")
 
         backend = TestBackend("test_backend")
         assert backend.name == "test_backend"
@@ -53,7 +55,9 @@ class TestBackendInterface:
                     async def process(self):
                         pass
 
-                return TestDispatcher("test")
+                from gbs.build import BuildContext
+                ctx = BuildContext()
+                return TestDispatcher(ctx, "test", tool_name="test")
 
         backend = TestBackend("test_backend")
 
@@ -76,7 +80,7 @@ class TestBackendInterface:
             def create_dispatcher(self, config):
                 class TestDispatcher(BaseDispatcher):
                     def __init__(self, context, name, test_config):
-                        super().__init__(context, name)
+                        super().__init__(context, name, tool_name="test")
                         self.test_config = test_config
 
                     def get_filter_variables(self, context):
@@ -115,7 +119,9 @@ class TestBackendInterface:
                     async def process(self):
                         pass
 
-                return TestDispatcher("test")
+                from gbs.build import BuildContext
+                ctx = BuildContext()
+                return TestDispatcher(ctx, "test", tool_name="test")
 
         backend = ConfigurableBackend("configurable")
 

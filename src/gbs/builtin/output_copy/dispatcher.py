@@ -31,7 +31,7 @@ class OutputCopyDispatcher(BaseDispatcher):
     """
 
     def __init__(self, context: BuildContext):
-        super().__init__(context, "output-copy", priority=900)
+        super().__init__(context, "output-copy", tool_name="output-copy", priority=900)
 
     async def process(self) -> None:
         """Copy matching files to output paths.
