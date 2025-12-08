@@ -11,11 +11,6 @@ tools:
     config:
       executable: ghdl
 
-  - name: ghdl
-    variant: jit
-    config:
-      executable: /Users/nipo/local/bin/ghdl
-
   - name: gcc
     variant: system
     config:
@@ -44,5 +39,5 @@ tools:
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation
 repositories:
-  - path: /Users/nipo/projects/nsl
+  - path: ~/projects/nsl
     loader: nsl-tree

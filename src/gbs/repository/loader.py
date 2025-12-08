@@ -18,6 +18,7 @@ from .model import (
 )
 from ..project.model import ProjectModel as Project, OutputGroup, OutputFile
 from ..logging import get_logger
+from ..utils import expand_path
 
 
 logger = get_logger(__name__)
@@ -614,7 +615,8 @@ def _load_single_repository(repo_spec: dict[str, Any], project_base_path: Path) 
     if "path" not in repo_spec:
         raise LoadError("Repository specification must include 'path'")
 
-    repo_path = Path(repo_spec["path"])
+    # Expand ~ and environment variables in path
+    repo_path = expand_path(repo_spec["path"])
 
     # Resolve relative paths
     if not repo_path.is_absolute():

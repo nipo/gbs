@@ -5,6 +5,7 @@ from pathlib import Path
 from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Task, ResourceTypology
+from ...utils import expand_path
 from . import task
 
 class GHDLDispatcher(BaseDispatcher):
@@ -63,6 +64,8 @@ class GHDLDispatcher(BaseDispatcher):
         tool_config = self.context.get_tool(self.ghdl_tool, required=False)
         if tool_config:
             ghdl_executable = tool_config.get("executable", "ghdl")
+            # Expand ~ and environment variables in executable path
+            ghdl_executable = str(expand_path(ghdl_executable))
             self.logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
         else:
             ghdl_executable = "ghdl"

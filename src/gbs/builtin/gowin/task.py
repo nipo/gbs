@@ -7,6 +7,7 @@ from importlib.resources import files, as_file
 
 from ...build.context import BuildContext
 from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
+from ...utils import expand_path
 from .gw_sh import *
 from .device_info import parse_device_csv, get_device_info
 from ...build.subprocess import MessageSubprocess
@@ -309,7 +310,8 @@ class SerDesToCsr(Task):
 
         # Get Gowin tool path
         gowin_config = self.dispatcher.context.get_tool(self.gowin_tool)
-        gowin_path = Path(gowin_config["path"])
+        # Expand ~ and environment variables in tool path
+        gowin_path = expand_path(gowin_config["path"])
 
         # Build tool path
         tool_path = (

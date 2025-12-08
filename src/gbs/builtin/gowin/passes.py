@@ -7,6 +7,7 @@ import csv
 
 from ...planner.passes import Pass
 from ...backend.dispatcher import Dispatcher
+from ...utils import expand_path
 from .dispatcher import GowinDispatcher
 
 class GowinSynthesizePass(Pass):
@@ -62,7 +63,8 @@ class GowinSynthesizePass(Pass):
             gowin_tool = self.config.get("gowin_tool", "gowin")
             tool_config = self.gbs_config.get_tool(gowin_tool)
             if tool_config and tool_config.config.get("path"):
-                gowin_path = Path(tool_config.config["path"])
+                # Expand ~ and environment variables in tool path
+                gowin_path = expand_path(tool_config.config["path"])
                 csv_path = gowin_path / "IDE" / "data" / "device" / "device_info.csv"
 
                 if csv_path.exists():
