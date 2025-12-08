@@ -87,11 +87,11 @@ class Pass:
         """
         return {}
 
-    def dispatchers(self) -> list['Dispatcher']:
-        """Create a Dispatcher for executing this pass transformations
+    def dispatchers(self, context: 'BuildContext') -> list['Dispatcher']:
+        """Create dispatchers for executing this pass transformations
 
         Args:
-            config: Backend-specific configuration
+            context: Build context to pass to dispatcher constructors
 
         Returns:
             Dispatcher instance list

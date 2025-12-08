@@ -466,7 +466,7 @@ class PlanRealization:
         # Create dispatcher registry for this plan
         self.dispatcher_registry = DispatcherRegistry()
         for pass_metadata in self.plan.passes:
-            contributed_dispatchers = pass_metadata.pass_obj.dispatchers()
+            contributed_dispatchers = pass_metadata.pass_obj.dispatchers(self.build_ctx)
             for dispatcher in contributed_dispatchers:
                 self.dispatcher_registry.register(dispatcher)
                 logger.info(f"  Registered dispatcher: {dispatcher.name}")
@@ -475,11 +475,11 @@ class PlanRealization:
         plugin_registry = get_plugin_registry()
 
         for plugin in plugin_registry.get_all_plugins():
-            for dispatcher in plugin.generic_dispatchers():
+            for dispatcher in plugin.generic_dispatchers(self.build_ctx):
                 self.dispatcher_registry.register(dispatcher)
                 logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
 
-            
+
     async def dispatch(self, max_iterations = 10) -> None:
         # Run dispatcher iteration
         iterations = await run_dispatcher_iteration(
@@ -585,7 +585,7 @@ class PlanRealization:
         # Collect paths to clean from all dispatchers
         paths_to_clean = set()
         for dispatcher in self.dispatcher_registry.get_dispatchers_ordered():
-            dispatcher_paths = dispatcher.get_clean_paths(self.build_ctx)
+            dispatcher_paths = dispatcher.get_clean_paths()
             paths_to_clean |= dispatcher_paths
 
         # Clean or report paths

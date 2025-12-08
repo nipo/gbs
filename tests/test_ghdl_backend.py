@@ -7,6 +7,7 @@ from gbs.builtin.ghdl.backend import GHDLBackend
 from gbs.builtin.ghdl.passes import GHDLSimulatePass
 from gbs.backend.protocol import Backend, BaseBackend
 from gbs.backend.dispatcher import Dispatcher
+from gbs.build import BuildContext
 
 
 def test_backend_creation():
@@ -74,7 +75,8 @@ def test_pass_creates_dispatcher():
     }
 
     pass_obj = GHDLSimulatePass(config)
-    dispatchers = pass_obj.dispatchers()
+    ctx = BuildContext()
+    dispatchers = pass_obj.dispatchers(ctx)
 
     assert len(dispatchers) == 1
     dispatcher = dispatchers[0]
@@ -90,7 +92,8 @@ def test_pass_creates_dispatcher_with_defaults():
     config = {}
 
     pass_obj = GHDLSimulatePass(config)
-    dispatchers = pass_obj.dispatchers()
+    ctx = BuildContext()
+    dispatchers = pass_obj.dispatchers(ctx)
 
     assert len(dispatchers) == 1
     dispatcher = dispatchers[0]

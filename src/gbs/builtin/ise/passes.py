@@ -55,8 +55,11 @@ class IseSynthesizePass(Pass):
             "part_package": m.group("package"),
         }
 
-    def dispatchers(self) -> list[Dispatcher]:
+    def dispatchers(self, context) -> list[Dispatcher]:
         """Create ISE dispatcher for execution
+
+        Args:
+            context: Build context to pass to dispatcher
 
         Returns:
             IseDispatcher singleton
@@ -65,6 +68,7 @@ class IseSynthesizePass(Pass):
         target = self.config["target"]
 
         return [IseDispatcher(
+            context=context,
             target=target,
             tool = tool,
         )]

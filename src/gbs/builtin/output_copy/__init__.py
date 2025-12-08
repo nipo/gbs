@@ -15,10 +15,14 @@ class OutputCopyPlugin(Plugin):
             version="1.0.0"
         )
 
-    def generic_dispatchers(self):
-        """Return OutputCopy backend instance"""
+    def generic_dispatchers(self, context):
+        """Return OutputCopy backend instance
+
+        Args:
+            context: Build context to pass to dispatcher constructor
+        """
         from .dispatcher import OutputCopyDispatcher
-        return [OutputCopyDispatcher()]
+        return [OutputCopyDispatcher(context)]
 
 
 def gbs_register():

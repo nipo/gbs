@@ -30,20 +30,19 @@ class OutputCopyDispatcher(BaseDispatcher):
     Priority: 900 (runs after compression and main compilation)
     """
 
-    def __init__(self):
-        super().__init__("output-copy", priority=900)
+    def __init__(self, context: BuildContext):
+        super().__init__(context, "output-copy", priority=900)
 
-    async def process(self, context: BuildContext) -> None:
+    async def process(self) -> None:
         """Copy matching files to output paths.
 
         Works backwards: finds unsatisfied outputs, locates sources
         by file_type, creates copy tasks.
 
-        Args:
-            context: Build context (use context.get_pending_unsatisfied_outputs(), etc.)
+        Uses self.context to access the build context.
         """
         # Get outputs that need producers
-        unsatisfied = context.get_pending_unsatisfied_outputs()
+        unsatisfied = self.context.get_pending_unsatisfied_outputs()
 
         for dest_resource in unsatisfied:
             file_type = dest_resource.file_type
@@ -51,7 +50,7 @@ class OutputCopyDispatcher(BaseDispatcher):
 
             # Find source file with matching type (excluding the output itself)
             matching = [
-                res for res in context.filter_pending(file_type=file_type)
+                res for res in self.context.filter_pending(file_type=file_type)
                 if res.path != dest_path
             ]
 
@@ -90,7 +89,7 @@ class OutputCopyDispatcher(BaseDispatcher):
 
             # Create copy task
             CopyTask(
-                context=context,
+                context=self.context,
                 source=source_resource,
                 destination=dest_resource,
             )

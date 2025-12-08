@@ -22,7 +22,7 @@ class TestBackendInterface:
                     def get_filter_variables(self, context):
                         return {}
 
-                    async def process(self, context, fileset):
+                    async def process(self):
                         pass
 
                 return TestDispatcher("test_dispatcher")
@@ -50,7 +50,7 @@ class TestBackendInterface:
                     def get_filter_variables(self, context):
                         return {}
 
-                    async def process(self, context, fileset):
+                    async def process(self):
                         pass
 
                 return TestDispatcher("test")
@@ -75,17 +75,19 @@ class TestBackendInterface:
 
             def create_dispatcher(self, config):
                 class TestDispatcher(BaseDispatcher):
-                    def __init__(self, name, test_config):
-                        super().__init__(name)
+                    def __init__(self, context, name, test_config):
+                        super().__init__(context, name)
                         self.test_config = test_config
 
                     def get_filter_variables(self, context):
                         return {}
 
-                    async def process(self, context, fileset):
+                    async def process(self):
                         pass
 
-                return TestDispatcher("test_dispatcher", config.get("test_value"))
+                from gbs.build import BuildContext
+                ctx = BuildContext()
+                return TestDispatcher(ctx, "test_dispatcher", config.get("test_value"))
 
         backend = TestBackend("test_backend")
         dispatcher = backend.create_dispatcher({"test_value": 42})
@@ -110,7 +112,7 @@ class TestBackendInterface:
                     def get_filter_variables(self, context):
                         return {}
 
-                    async def process(self, context, fileset):
+                    async def process(self):
                         pass
 
                 return TestDispatcher("test")

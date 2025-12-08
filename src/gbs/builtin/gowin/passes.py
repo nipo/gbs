@@ -76,13 +76,11 @@ class GowinSynthesizePass(Pass):
 
         return filter_vars
 
-    def dispatchers(self) -> list[Dispatcher]:
+    def dispatchers(self, context) -> list[Dispatcher]:
         """Create Gowin dispatcher for execution
 
         Args:
-            config: Backend configuration with optional:
-                - device: Target device string
-                - gowin_tool: Tool identifier
+            context: Build context to pass to dispatcher
 
         Returns:
             GowinDispatcher instance
@@ -90,5 +88,6 @@ class GowinSynthesizePass(Pass):
         gowin_tool = self.config.get("gowin_tool", "gowin")
 
         return [GowinDispatcher(
+            context=context,
             gowin_tool=gowin_tool,
         )]

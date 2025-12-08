@@ -67,20 +67,19 @@ class CompressDispatcher(BaseDispatcher):
     Priority: 850 (runs after main compilation, before output-copy)
     """
 
-    def __init__(self):
-        super().__init__("compress", priority=850)
+    def __init__(self, context: BuildContext):
+        super().__init__(context, "compress", priority=850)
 
-    async def process(self, context: BuildContext) -> None:
+    async def process(self) -> None:
         """Create compression tasks for unsatisfied compressed outputs.
 
         Works backwards: finds outputs needing compression, locates or
         creates source, then creates compression task.
 
-        Args:
-            context: Build context (use context.get_pending_unsatisfied_outputs(), etc.)
+        Uses self.context to access the build context.
         """
         # Get outputs that need producers
-        unsatisfied = context.get_pending_unsatisfied_outputs()
+        unsatisfied = self.context.get_pending_unsatisfied_outputs()
 
         for dest_resource in unsatisfied:
             base_type, transform = parse_output_type(dest_resource.file_type)
@@ -102,24 +101,24 @@ class CompressDispatcher(BaseDispatcher):
             )
 
             # Look for source file with base type
-            matching = context.filter_pending(file_type=base_type)
+            matching = self.context.filter_pending(file_type=base_type)
 
             if not matching:
                 # Source doesn't exist yet - create an intermediate output goal
                 # This will be satisfied by another dispatcher (or previous iteration)
-                intermediate_path = context.output_path / self._generate_intermediate_name(
+                intermediate_path = self.context.output_path / self._generate_intermediate_name(
                     dest_resource.path, extension
                 )
 
                 # Only create if not already in pending queue
-                if context.get_pending(intermediate_path) is None:
-                    intermediate_resource = context.get_resource(
+                if self.context.get_pending(intermediate_path) is None:
+                    intermediate_resource = self.context.get_resource(
                         intermediate_path,
                         file_type=base_type,
                         typology=ResourceTypology.OUTPUT,  # Mark as goal
                         generated_by=None,
                     )
-                    context.add_pending(intermediate_resource)
+                    self.context.add_pending(intermediate_resource)
                     self.logger.info(
                         f"Created intermediate goal: {base_type} at {intermediate_path}"
                     )
@@ -145,7 +144,7 @@ class CompressDispatcher(BaseDispatcher):
 
             # Create compression task
             task_class(
-                context=context,
+                context=self.context,
                 source=source_resource,
                 destination=dest_resource,
             )

@@ -27,43 +27,53 @@ class Dispatcher(Protocol):
     All dispatchers must implement:
     - name: Unique identifier
     - priority: Execution order (lower = earlier, default range 100-999)
+    - context: BuildContext reference (provided to constructor)
     - process(): Transform the pending work queue
     - get_clean_paths(): Return paths to clean
     """
 
     name: str
     priority: int
+    context: BuildContext
 
-    async def process(self, context: BuildContext) -> None:
+    async def process(self) -> None:
         """Process the pending work queue, transforming it in place
 
         Dispatchers can:
-        - Add new generated files (e.g., transpiled outputs) via context.add_pending()
-        - Remove processed files (e.g., inputs that were transformed) via context.remove_pending()
+        - Add new generated files (e.g., transpiled outputs) via self.context.add_pending()
+        - Remove processed files (e.g., inputs that were transformed) via self.context.remove_pending()
         - Create build tasks for files
-        - Query and filter pending resources via context.filter_pending()
+        - Query and filter pending resources via self.context.filter_pending()
 
         The pending queue is modified in place. The modification serial will be
         used to detect convergence.
 
-        Args:
-            context: Build context (use context.filter_pending(), context.add_pending(), etc.)
-
         Note:
             This is an async method to support task creation and other
-            async operations.
+            async operations. Access context via self.context.
         """
         ...
 
-    def get_clean_paths(self, context: BuildContext) -> set:
+    def get_clean_paths(self) -> set:
         """Return paths that should be cleaned by this dispatcher
 
+        Returns:
+            Set of Path objects to clean. Typically includes self.context.output_path
+            or subdirectories within it that this dispatcher creates.
+        """
+        ...
+
+    def get_tool(self, name: str, required: bool = True) -> dict:
+        """Get tool configuration from context
+
+        Helper method that delegates to self.context.get_tool().
+
         Args:
-            context: Build context
+            name: Tool identifier
+            required: If True, raise error if tool not found
 
         Returns:
-            Set of Path objects to clean. Typically includes context.output_path
-            or subdirectories within it that this dispatcher creates.
+            Tool configuration dictionary
         """
         ...
 
@@ -75,10 +85,11 @@ class BaseDispatcher(ABC):
     Subclasses must implement process().
     """
 
-    def __init__(self, name: str, priority: int = 500):
+    def __init__(self, context: BuildContext, name: str, priority: int = 500):
         """Initialize dispatcher
 
         Args:
+            context: Build context for this realization
             name: Unique dispatcher name
             priority: Execution priority (lower = earlier)
                      Suggested ranges:
@@ -87,32 +98,45 @@ class BaseDispatcher(ABC):
                      500-699: Main compilation
                      700-999: Post-processing
         """
+        self.context = context
         self.name = name
         self.priority = priority
         self.logger = get_logger(f"Dispatcher({name})")
 
+    def get_tool(self, name: str, required: bool = True) -> dict:
+        """Get tool configuration from context
+
+        Helper method that delegates to self.context.get_tool().
+
+        Args:
+            name: Tool identifier
+            required: If True, raise error if tool not found
+
+        Returns:
+            Tool configuration dictionary
+        """
+        return self.context.get_tool(name, required=required)
+
     @abstractmethod
-    async def process(self, context: BuildContext) -> None:
+    async def process(self) -> None:
         """Process the pending work queue
 
         Must be implemented by subclasses.
-        Use context.filter_pending(), context.add_pending(), context.remove_pending(), etc.
+        Use self.context.filter_pending(), self.context.add_pending(),
+        self.context.remove_pending(), etc.
         """
         ...
 
-    def get_clean_paths(self, context: BuildContext) -> set:
+    def get_clean_paths(self) -> set:
         """Return paths that should be cleaned by this dispatcher
 
         Default implementation returns the output path for this build context.
         Subclasses can override to clean additional or different paths.
 
-        Args:
-            context: Build context
-
         Returns:
             Set of Path objects to clean
         """
-        return {context.output_path}
+        return {self.context.output_path}
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name}, priority={self.priority})"
@@ -212,7 +236,7 @@ async def run_dispatcher_iteration(
         for dispatcher in registry:
             s = context.pending_modification_serial
             logger.debug(f"Running dispatcher: {dispatcher.name}")
-            await dispatcher.process(context)
+            await dispatcher.process()
             if s != context.pending_modification_serial:
                 logger.debug(f"  Changes happened")
 

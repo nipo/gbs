@@ -43,8 +43,11 @@ class GHDLSimulatePass(Pass):
             "vhdl-version": vhdl_version,
         }
 
-    def dispatchers(self) -> list[Dispatcher]:
+    def dispatchers(self, context) -> list[Dispatcher]:
         """Create GHDL dispatcher for execution
+
+        Args:
+            context: Build context to pass to dispatcher
 
         Returns:
             GHDLDispatcher singleton
@@ -53,6 +56,7 @@ class GHDLSimulatePass(Pass):
         ghdl_tool = self.config.get("ghdl_tool", "ghdl")
 
         return [GHDLDispatcher(
+            context=context,
             vhdl_std=vhdl_std,
             ghdl_tool=ghdl_tool
         )]

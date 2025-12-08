@@ -35,9 +35,10 @@ class GowinDispatcher(BaseDispatcher):
 
     def __init__(
         self,
+        context: BuildContext,
         gowin_tool: str = "gowin",
     ):
-        super().__init__("gowin", priority=600)
+        super().__init__(context, "gowin", priority=600)
         self.gowin_tool = gowin_tool
         self.output_base_name = "project"
         self._session: Session | None = None
@@ -47,17 +48,17 @@ class GowinDispatcher(BaseDispatcher):
         self._pin_cst_task: Task | None = None
         self._timing_sdc_task: Task | None = None
 
-    def _get_session(self, context: BuildContext) -> Session:
+    def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
         if self._session is None:
-            gowin_config = context.get_tool(self.gowin_tool)
+            gowin_config = self.context.get_tool(self.gowin_tool)
             gowin_path = Path(gowin_config["path"])
             gw_sh = gowin_path / "IDE" / "bin" / "gw_sh"
 
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
-            self._session = Session(gw_sh, context.output_path, self.logger)
+            self._session = Session(gw_sh, self.context.output_path, self.logger)
 
         return self._session
 
@@ -106,10 +107,7 @@ class GowinDispatcher(BaseDispatcher):
         # Call module-level function for actual parsing
         return parse_device_csv(gowin_path, device, self.logger)
 
-    async def process(
-        self,
-        context: BuildContext
-    ) -> None:
+    async def process(self) -> None:
         """Process HDL sources and constraints
 
         Creates all tasks on first call with HDL sources.
@@ -117,10 +115,10 @@ class GowinDispatcher(BaseDispatcher):
         """
 
         # Get target from output group configuration
-        if not context.project:
+        if not self.context.project:
             raise ValueError("No project configured")
 
-        target = context.get_target()
+        target = self.context.get_target()
         device = target.get("part")
         if not device:
             # No target device configured - skip Gowin backend (simulation-only project)
@@ -128,23 +126,22 @@ class GowinDispatcher(BaseDispatcher):
             return
 
         # Get output base name
-        output_base_name = self.output_base_name or context.get_topcell()
+        output_base_name = self.output_base_name or self.context.get_topcell()
 
         # Check if we have HDL sources
-        has_hdl = bool(list(context.filter_pending(file_type=["vhdl", "verilog"])))
+        has_hdl = bool(list(self.context.filter_pending(file_type=["vhdl", "verilog"])))
 
         if has_hdl and self._pin_cst_task is None:
             # First call with HDL sources - create all tasks
             self.logger.debug("Creating all Gowin build tasks")
-            await self._create_all_tasks(context, target, output_base_name)
+            await self._create_all_tasks(target, output_base_name)
 
         elif self._pin_cst_task is not None:
             # Subsequent calls - add new constraint files to existing tasks
-            await self._update_constraint_inputs(context)
+            await self._update_constraint_inputs()
 
     async def _create_all_tasks(
         self,
-        context: BuildContext,
         target: dict,
         output_base_name: str
     ) -> None:
@@ -154,11 +151,11 @@ class GowinDispatcher(BaseDispatcher):
         Stores references to constraint aggregation tasks for dynamic input updates.
         """
 
-        session = self._get_session(context)
+        session = self._get_session()
 
         # Define resource paths
-        netlist_file = context.output_path / "impl" / "gwsynthesis" / f"{output_base_name}.vg"
-        netlist_resource = context.get_resource(
+        netlist_file = self.context.output_path / "impl" / "gwsynthesis" / f"{output_base_name}.vg"
+        netlist_resource = self.context.get_resource(
             netlist_file,
             file_type="gowin-netlist",
             library="work",
@@ -168,27 +165,27 @@ class GowinDispatcher(BaseDispatcher):
 
         # Virtual resource that indicates project has been initialized in gw_sh session
         # This is volatile - the session state doesn't persist across builds
-        init_marker_resource = context.get_virtual_resource("gowin_project_init")
+        init_marker_resource = self.context.get_virtual_resource("gowin_project_init")
 
         # Get HDL sources in dependency order
-        vhdl_sources = list(context.filter_pending(file_type=["vhdl"]))
-        verilog_sources = list(context.filter_pending(file_type=["verilog"]))
+        vhdl_sources = list(self.context.filter_pending(file_type=["vhdl"]))
+        verilog_sources = list(self.context.filter_pending(file_type=["verilog"]))
 
         # Get constraint files (may be empty on first call)
-        cst_sources = list(context.filter_pending(file_type=["gowin-cst"]))
-        sdc_sources = list(context.filter_pending(file_type=["gowin-sdc"]))
-        serdes_config_sources = list(context.filter_pending(file_type=["gowin-serdes-config"]))
+        cst_sources = list(self.context.filter_pending(file_type=["gowin-cst"]))
+        sdc_sources = list(self.context.filter_pending(file_type=["gowin-sdc"]))
+        serdes_config_sources = list(self.context.filter_pending(file_type=["gowin-serdes-config"]))
 
         # Define constraint file paths
-        pin_cst_file = context.output_path / "aggregate_pins.cst"
-        timing_sdc_file = context.output_path / "aggregate_timing.sdc"
-        pin_cst_resource = context.get_resource(
+        pin_cst_file = self.context.output_path / "aggregate_pins.cst"
+        timing_sdc_file = self.context.output_path / "aggregate_timing.sdc"
+        pin_cst_resource = self.context.get_resource(
             pin_cst_file,
             file_type="gowin-cst",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        timing_sdc_resource = context.get_resource(
+        timing_sdc_resource = self.context.get_resource(
             timing_sdc_file,
             file_type="gowin-sdc",
             typology=ResourceTypology.INTERMEDIATE,
@@ -196,15 +193,15 @@ class GowinDispatcher(BaseDispatcher):
         )
 
         # Define bitstream output
-        bitstream_file = context.output_path / "impl" / "pnr" / f"{output_base_name}.fs"
-        bitstream_bin_file = context.output_path / "impl" / "pnr" / f"{output_base_name}.bin"
-        bitstream_resource = context.get_resource(
+        bitstream_file = self.context.output_path / "impl" / "pnr" / f"{output_base_name}.fs"
+        bitstream_bin_file = self.context.output_path / "impl" / "pnr" / f"{output_base_name}.bin"
+        bitstream_resource = self.context.get_resource(
             bitstream_file,
             file_type="gowin-fs",
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name
         )
-        bitstream_bin_resource = context.get_resource(
+        bitstream_bin_resource = self.context.get_resource(
             bitstream_bin_file,
             file_type="gowin-bin",
             typology=ResourceTypology.OUTPUT,
@@ -216,11 +213,11 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create resources for bundled IEEE library files (math_real)
         # These will be generated by a task
-        ieee_dir = context.output_path / "ieee"
+        ieee_dir = self.context.output_path / "ieee"
         ieee_file_resources = []
         for filename in ["math_real.vhdl", "math_real-body.vhdl"]:
             ieee_path = ieee_dir / filename
-            resource = context.get_resource(
+            resource = self.context.get_resource(
                 ieee_path,
                 file_type='vhdl',
                 library='ieee',
@@ -233,7 +230,7 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create task to copy bundled IEEE files
         task.CopyBundledIeeeFiles(
-            context=context,
+            context=self.context,
             outputs=ieee_file_resources
         )
 
@@ -247,7 +244,7 @@ class GowinDispatcher(BaseDispatcher):
         serdes_csr_resource = None
         if serdes_config_sources:
             # Get device info to determine klut_count for tool selection
-            gowin_config = context.get_tool(self.gowin_tool)
+            gowin_config = self.context.get_tool(self.gowin_tool)
             gowin_path = Path(gowin_config["path"])
             device = target.get("part")
             device_info = get_device_info(gowin_path, device, self.logger)
@@ -258,8 +255,8 @@ class GowinDispatcher(BaseDispatcher):
                 )
             else:
                 # Create CSR output path
-                serdes_csr_file = context.output_path / "serdes_init.csr"
-                serdes_csr_resource = context.get_resource(
+                serdes_csr_file = self.context.output_path / "serdes_init.csr"
+                serdes_csr_resource = self.context.get_resource(
                     serdes_csr_file,
                     file_type="gowin-serdes-init",
                     typology=ResourceTypology.INTERMEDIATE,
@@ -275,7 +272,7 @@ class GowinDispatcher(BaseDispatcher):
 
                 # Create SerDes to CSR conversion task
                 task.SerDesToCsr(
-                    context=context,
+                    context=self.context,
                     gowin_tool=self.gowin_tool,
                     klut_count=device_info.klut_count,
                     inputs=[toml_resource],
@@ -283,7 +280,7 @@ class GowinDispatcher(BaseDispatcher):
                 )
 
                 # Add CSR to pending queue
-                context.add_pending(serdes_csr_resource)
+                self.context.add_pending(serdes_csr_resource)
 
                 self.logger.info(f"SerDes CSR will be generated from {serdes_config_sources[0].path}")
 
@@ -295,25 +292,25 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create project init task
         init_task = task.ProjectInit(
-            context=context,
+            context=self.context,
             session=session,
             gowin_tool=self.gowin_tool,
             output_base_name=output_base_name,
-            output_dir=context.output_path,
+            output_dir=self.context.output_path,
             inputs=init_inputs,
             outputs=[init_marker_resource],
         )
 
         # Create synthesis task
         synth_task = task.Synthesis(
-            context=context,
+            context=self.context,
             session=session,
             inputs=[init_marker_resource],
             outputs=[netlist_resource]
         )
 
         # Add netlist to pending queue
-        context.add_pending(netlist_resource)
+        self.context.add_pending(netlist_resource)
 
         # Use constraint sources directly (they already have file_type metadata)
         cst_input_resources = list(cst_sources)
@@ -322,7 +319,7 @@ class GowinDispatcher(BaseDispatcher):
         # Create pin constraint aggregation task (.cst files)
         # Store reference for dynamic input updates
         self._pin_cst_task = task.AggregateConstraints(
-            context=context,
+            context=self.context,
             file_type="gowin-cst",
             inputs=cst_input_resources,
             outputs=[pin_cst_resource]
@@ -331,7 +328,7 @@ class GowinDispatcher(BaseDispatcher):
         # Create timing constraint aggregation task (.sdc files)
         # Store reference for dynamic input updates
         self._timing_sdc_task = task.AggregateConstraints(
-            context=context,
+            context=self.context,
             file_type="gowin-sdc",
             inputs=sdc_input_resources,
             outputs=[timing_sdc_resource]
@@ -339,28 +336,25 @@ class GowinDispatcher(BaseDispatcher):
 
         # Create PnR task (depends on init + netlist + constraints)
         pnr_task = task.PnR(
-            context=context,
+            context=self.context,
             session=session,
             inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
             outputs=[bitstream_resource, bitstream_bin_resource]
         )
 
         # Add bitstreams to pending queue
-        context.add_pending(bitstream_resource)
-        context.add_pending(bitstream_bin_resource)
+        self.context.add_pending(bitstream_resource)
+        self.context.add_pending(bitstream_bin_resource)
 
-    async def _update_constraint_inputs(
-        self,
-        context: BuildContext
-    ) -> None:
+    async def _update_constraint_inputs(self) -> None:
         """Add new constraint files as inputs to existing aggregation tasks
 
         Called on subsequent process() iterations when new constraint files appear.
         """
 
         # Get all constraint files from pending queue
-        cst_sources = list(context.filter_pending(file_type=["gowin-cst"]))
-        sdc_sources = list(context.filter_pending(file_type=["gowin-sdc"]))
+        cst_sources = list(self.context.filter_pending(file_type=["gowin-cst"]))
+        sdc_sources = list(self.context.filter_pending(file_type=["gowin-sdc"]))
 
         # Get current input paths from tasks
         existing_cst_paths = {r.path for r in self._pin_cst_task.inputs}

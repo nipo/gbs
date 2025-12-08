@@ -63,9 +63,12 @@ class Plugin(ABC):
         """
         return []
 
-    def generic_dispatchers(self) -> list['Dispatcher']:
+    def generic_dispatchers(self, context: 'BuildContext') -> list['Dispatcher']:
         """Enumerate generic dispatchers that can provide useful
         behavior with any backend
+
+        Args:
+            context: Build context to pass to dispatcher constructors
 
         Returns:
             List of Dispatcher instances

@@ -388,6 +388,9 @@ class Resource(BuildStep):
 
 class Task(BuildStep):
     """A build task that awaits inputs, runs, and resolves outputs
+
+    Tasks can optionally hold a reference to their creating dispatcher to access
+    tool configuration and other dispatcher-level state without parameter passing.
     """
 
     def __init__(
@@ -396,7 +399,8 @@ class Task(BuildStep):
         name: str,
         inputs: list[BuildStep],
         outputs: list[BuildStep],
-        description: str = ""
+        description: str = "",
+        dispatcher: 'Dispatcher | None' = None
     ):
         """Initialize task
 
@@ -406,11 +410,13 @@ class Task(BuildStep):
             inputs: Input resources (files or virtual)
             outputs: Output resources (files or virtual)
             description: Human-readable description
+            dispatcher: Optional reference to creating dispatcher (for tool config access)
         """
         super().__init__(context, name)
         self.description = description or name
         self.inputs = inputs
         self.outputs = outputs
+        self.dispatcher = dispatcher
 
         for o in outputs:
             o.dependency_add(self)

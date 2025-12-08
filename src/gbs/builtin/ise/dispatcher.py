@@ -45,10 +45,11 @@ class IseDispatcher(BaseDispatcher):
 
     def __init__(
         self,
+        context: BuildContext,
         tool: str,
         target: dict[str, str] = {},
     ):
-        super().__init__("ise", priority=600)
+        super().__init__(context, "ise", priority=600)
         self.output_base_name = "project"
         self.target = target
         self.device = target["part"]
@@ -62,37 +63,31 @@ class IseDispatcher(BaseDispatcher):
         self.trce_task = None
         self.bitgen_task = None
 
-    async def process(
-        self,
-        context: BuildContext
-    ) -> None:
+    async def process(self) -> None:
         """Process HDL sources and constraints
 
         Creates all tasks on first call with HDL sources.
         """
 
         # Get target from project config
-        if not context.project:
+        if not self.context.project:
             raise ValueError("No project configured")
 
         # Get output base name
-        output_base_name = self.output_base_name or context.get_topcell()
+        output_base_name = self.output_base_name or self.context.get_topcell()
 
         if not self.xst_task:
-            await self._task_graph_create(context)
+            await self._task_graph_create()
 
-        await self._sources_hookup(context)
+        await self._sources_hookup()
 
-    async def _sources_hookup(
-        self,
-        context: BuildContext,
-    ) -> None:
+    async def _sources_hookup(self) -> None:
         # Add HDL input resources
-        sources = list(context.filter_pending(file_type=["vhdl", "verilog"]))
+        sources = list(self.context.filter_pending(file_type=["vhdl", "verilog"]))
         if sources:
             self.logger.debug(f"Adding {len(sources)} XST sources")
         for resource in sources:
-            dependents = context.remove_pending(resource.path)
+            dependents = self.context.remove_pending(resource.path)
             for dep in dependents:
                 self.xst_task.dependency_add(dep)
 
@@ -100,11 +95,11 @@ class IseDispatcher(BaseDispatcher):
             self.xst_task.dependency_add(resource)
 
         # Add UCF input resources
-        sources = list(context.filter_pending(file_type=["xilinx-ucf"]))
+        sources = list(self.context.filter_pending(file_type=["xilinx-ucf"]))
         if sources:
             self.logger.debug(f"Adding {len(sources)} UCF sources")
         for resource in sources:
-            dependents = context.remove_pending(resource.path)
+            dependents = self.context.remove_pending(resource.path)
             for dep in dependents:
                 self.net_task.dependency_add(dep)
 
@@ -112,86 +107,83 @@ class IseDispatcher(BaseDispatcher):
             self.net_task.inputs.append(resource)
             self.net_task.dependency_add(resource)
 
-    async def _task_graph_create(
-        self,
-        context: BuildContext,
-    ) -> None:
+    async def _task_graph_create(self) -> None:
         """Create all ISE build tasks
 
         Creates the full chain: XST -> NGDBUILD -> MAP -> PAR -> TRCE -> BITGEN
         """
-        config = context.get_tool(self.tool)
+        config = self.context.get_tool(self.tool)
         ise_path = Path(config["path"])
 
-        env_resource = context.get_resource(
+        env_resource = self.context.get_resource(
             ise_path / "ISE_DS" / "settings64.sh",
             file_type="ise-settings-sh",
             typology=ResourceTypology.SOURCE
         )
 
         # Define intermediate file paths
-        ngc_path = context.output_path / "syn" / f"project.ngc"
-        edif_path = context.output_path / "syn" / f"project.edif"
-        bmm_path = context.output_path / "func" / f"project.bmm"
-        ngd_path = context.output_path / "func" / f"project.ngd"
-        map_path = context.output_path / "map" / f"project.map.ncd"
-        pcf_path = context.output_path / "map" / f"project.map.pcf"
-        par_path = context.output_path / "par" / f"project.par.ncd"
-        twr_path = context.output_path / "par" / f"project.twr"
-        bit_path = context.output_path / f"project.bit"
+        ngc_path = self.context.output_path / "syn" / f"project.ngc"
+        edif_path = self.context.output_path / "syn" / f"project.edif"
+        bmm_path = self.context.output_path / "func" / f"project.bmm"
+        ngd_path = self.context.output_path / "func" / f"project.ngd"
+        map_path = self.context.output_path / "map" / f"project.map.ncd"
+        pcf_path = self.context.output_path / "map" / f"project.map.pcf"
+        par_path = self.context.output_path / "par" / f"project.par.ncd"
+        twr_path = self.context.output_path / "par" / f"project.twr"
+        bit_path = self.context.output_path / f"project.bit"
 
         # Create resources for all files
-        ngc_resource = context.get_resource(
+        ngc_resource = self.context.get_resource(
             ngc_path,
             file_type="ise-netlist-xst",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        edif_resource = context.get_resource(
+        edif_resource = self.context.get_resource(
             edif_path,
             file_type="ise-netlist",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        bmm_resource = context.get_resource(
+        bmm_resource = self.context.get_resource(
             bmm_path,
             file_type="ise-bmm",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        ngd_resource = context.get_resource(
+        ngd_resource = self.context.get_resource(
             ngd_path,
             file_type="ise-netlist-functional",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        map_resource = context.get_resource(
+        map_resource = self.context.get_resource(
             map_path,
             file_type="ise-netlist-partial",
             library="work",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        pcf_resource = context.get_resource(
+        pcf_resource = self.context.get_resource(
             pcf_path,
             file_type="ise-physical-constraints",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        par_resource = context.get_resource(
+        par_resource = self.context.get_resource(
             par_path,
             file_type="ise-netlist-full",
             library="work",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        twr_resource = context.get_resource(
+        twr_resource = self.context.get_resource(
             twr_path,
             file_type="ise-timing-report",
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name
         )
-        bit_resource = context.get_resource(
+        bit_resource = self.context.get_resource(
             bit_path,
             file_type="ise-bitstream",
             typology=ResourceTypology.OUTPUT,
@@ -200,7 +192,7 @@ class IseDispatcher(BaseDispatcher):
 
         # Run XST synthesis
         self.xst_task = task.Xst(
-            context=context,
+            context=self.context,
             device=self.device,
             inputs=[env_resource],
             outputs=[ngc_resource],
@@ -208,25 +200,25 @@ class IseDispatcher(BaseDispatcher):
 
         # Generate BMM file (placeholder)
         self.bmm_task = task.BmmGenerate(
-            context=context,
+            context=self.context,
             outputs=[bmm_resource],
         )
 
         # Convert Netlist
         self.net_task = task.NetlistConvert(
-            context=context,
+            context=self.context,
             inputs=[env_resource, ngc_resource, bmm_resource],
             outputs=[ngd_resource],
         )
         self.edif_task = task.EdifConvert(
-            context=context,
+            context=self.context,
             inputs=[env_resource, ngc_resource],
             outputs=[edif_resource],
         )
 
         # Physical Mapping
         self.map_task = task.Map(
-            context=context,
+            context=self.context,
             device=self.device,
             inputs=[env_resource, ngd_resource],
             outputs=[map_resource, pcf_resource],
@@ -234,30 +226,30 @@ class IseDispatcher(BaseDispatcher):
 
         # Place and Route
         self.par_task = task.Par(
-            context=context,
+            context=self.context,
             inputs=[env_resource, map_resource],
             outputs=[par_resource],
         )
 
         # Run Timing Analysis
         self.trce_task = task.Trce(
-            context=context,
+            context=self.context,
             inputs=[env_resource, par_resource, pcf_resource],
             outputs=[twr_resource],
         )
 
         # Run BITGEN
         self.bitgen_task = task.Bitgen(
-            context=context,
+            context=self.context,
             inputs=[env_resource, par_resource],
             outputs=[bit_resource],
         )
 
         # Add outputs to pending queue
-        context.add_pending(ngc_resource)
-        context.add_pending(edif_resource)
-        context.add_pending(ngd_resource)
-        context.add_pending(map_resource)
-        context.add_pending(par_resource)
-        context.add_pending(twr_resource)
-        context.add_pending(bit_resource)
+        self.context.add_pending(ngc_resource)
+        self.context.add_pending(edif_resource)
+        self.context.add_pending(ngd_resource)
+        self.context.add_pending(map_resource)
+        self.context.add_pending(par_resource)
+        self.context.add_pending(twr_resource)
+        self.context.add_pending(bit_resource)

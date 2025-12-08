@@ -164,7 +164,9 @@ def test_pass_no_execute_method():
 def test_pass_dispatchers_default():
     """Test that default dispatchers() returns empty list"""
     pass_inst = MockPass({})
-    assert pass_inst.dispatchers() == []
+    from gbs.build import BuildContext
+    ctx = BuildContext()
+    assert pass_inst.dispatchers(ctx) == []
 
 
 def test_pass_config_stored():

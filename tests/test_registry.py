@@ -58,13 +58,15 @@ class MockBackendA(BaseBackend):
         from gbs.backend.dispatcher import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
-            def __init__(self):
-                super().__init__("test_dispatcher_a")
+            def __init__(self, context):
+                super().__init__(context, "test_dispatcher_a")
 
-            async def process(self, context):
+            async def process(self):
                 pass
 
-        return TestDispatcher()
+        from gbs.build import BuildContext
+        ctx = BuildContext()
+        return TestDispatcher(ctx)
 
 
 class MockBackendB(BaseBackend):
@@ -85,10 +87,12 @@ class MockBackendB(BaseBackend):
             def __init__(self):
                 super().__init__("test_dispatcher_b")
 
-            async def process(self, context):
+            async def process(self):
                 pass
 
-        return TestDispatcher()
+        from gbs.build import BuildContext
+        ctx = BuildContext()
+        return TestDispatcher(ctx)
 
 
 def test_registry_creation():
