@@ -100,7 +100,7 @@ class Xst(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         device: str,
         inputs: list,
         outputs: list,
@@ -179,7 +179,7 @@ class BmmGenerate(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         outputs: list,
     ):
         super().__init__(
@@ -206,7 +206,7 @@ class EdifConvert(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
     ):
@@ -241,7 +241,7 @@ class NetlistConvert(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
     ):
@@ -292,7 +292,7 @@ class Map(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         device: str,
         inputs: list,
         outputs: list,
@@ -351,7 +351,7 @@ class Par(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
     ):
@@ -399,7 +399,7 @@ class Trce(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
     ):
@@ -438,7 +438,7 @@ class Bitgen(IseTask):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
     ):

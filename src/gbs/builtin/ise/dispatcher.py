@@ -44,10 +44,10 @@ class IseDispatcher(BaseDispatcher):
     """
 
     def __init__(
-        self,
-        context: BuildContext,
-        tool: str,
-        target: dict[str, str] = {},
+            self,
+            context: BuildContext,
+            tool: str,
+            target: dict[str, str] = {},
     ):
         super().__init__(context, "ise", tool_name=tool, priority=600)
         self.output_base_name = "project"
