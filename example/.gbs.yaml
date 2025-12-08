@@ -25,7 +25,7 @@ tools:
     variant: V1.9.11.03
     config:
       # This path is where "IDE" and "Programmer" directories are
-      path: /opt/Gowin/GowinIDE.app/Contents/Resources/Gowin_EDA
+      path: /opt/Gowin/current
       message:
         level_force:
           EX4800: INFO
@@ -34,9 +34,15 @@ tools:
           EX4319: INFO
           EX4196: INFO
 
+  # ISE
+  - name: ise
+    variant: 14.7
+    config:
+      path: /opt/Xilinx/14.7
+
 # Common Repositories
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation
 repositories:
-  - path: /Users/nipo/projects/nsl_clean
+  - path: /Users/nipo/projects/nsl
     loader: nsl-tree

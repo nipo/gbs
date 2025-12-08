@@ -1,6 +1,11 @@
+gbs-build
 build
 *.p
 *.o
 *.cf
 top
 tb
+simulate
+simulate.gz
+blink.bin
+blink.fs
