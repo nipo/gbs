@@ -472,11 +472,6 @@ def load_project(path: Path, gbs_config=None) -> Project:
             logger.warning(f"Invalid max_parallel value in {path}, ignoring")
             max_parallel = None
 
-    # Check for deprecated root-level target configuration
-    if "target" in data:
-        logger.warning(f"Project {path}: 'target' at root level is deprecated. "
-                      f"Move 'target' into output group configuration.")
-
     # Load root partition (inline definition)
     # The root partition is always placed in the "work" library
     root_data = data["root"]
