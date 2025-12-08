@@ -365,7 +365,8 @@ Performs work, awaiting inputs and producing outputs:
 .. code-block:: python
 
    class Task(BuildStep):
-       def __init__(self, context, name, inputs, outputs, description=""):
+       def __init__(self, dispatcher, name, inputs, outputs, description=""):
+           self.dispatcher = dispatcher  # Reference to creating dispatcher
            self.inputs = inputs
            self.outputs = outputs
 
@@ -387,6 +388,12 @@ Performs work, awaiting inputs and producing outputs:
 
        def outputs_of_type(self, type: str) -> list[Resource]:
            """Filter outputs by file_type metadata"""
+
+Tasks hold a reference to their creating Dispatcher, which provides:
+
+- Access to ``dispatcher.context`` (BuildContext)
+- Access to dispatcher-specific configuration
+- Tool information via ``dispatcher.tool_name``
 
 Execution Flow
 --------------

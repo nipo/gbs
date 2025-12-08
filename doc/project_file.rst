@@ -11,10 +11,6 @@ Basic Structure
 
    name: project_name
 
-   # Optional: Target device configuration
-   target:
-     part: device_part_number
-
    # Root partition definition
    root:
      name: partition_name
@@ -32,6 +28,8 @@ Basic Structure
        topcell: entity_name
        filter_vars:
          variable: value
+       target:
+         part: device_part_number
        backend_config:
          backend.module:
            option: value
@@ -50,36 +48,6 @@ Required. Project name used for identification.
 .. code-block:: yaml
 
    name: my_fpga_project
-
-Target Configuration
---------------------
-
-Optional. Device-specific settings used by synthesis backends.
-
-target.part
-~~~~~~~~~~~
-
-Target device part number:
-
-.. code-block:: yaml
-
-   target:
-     part: GW5AT-LV60PG484AC1/I0   # Gowin
-     # or
-     part: xc6slx9-2tqg144          # Xilinx
-
-target.use_as_gpio
-~~~~~~~~~~~~~~~~~~
-
-Gowin-specific: Use special pins as GPIO:
-
-.. code-block:: yaml
-
-   target:
-     part: GW5AT-LV60PG484AC1/I0
-     use_as_gpio:
-       - done
-       - jtag
 
 Root Partition
 --------------
@@ -197,7 +165,34 @@ Filter variables for conditional source selection:
        filter_vars:
          vendor: gowin
          target-usage: synthesis
-         family: gw5a
+
+output[].target
+~~~~~~~~~~~~~~~
+
+Target device configuration (optional). Device-specific settings used by
+synthesis backends:
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       target:
+         part: GW5AT-LV60PG484AC1/I0   # Gowin
+         use_as_gpio:                  # Gowin-specific option
+           - done
+           - jtag
+
+     - name: xilinx_synthesis
+       target:
+         part: xc6slx9-2tqg144          # Xilinx
+
+**Common options:**
+
+- ``part``: Target device part number (required for synthesis)
+
+**Gowin-specific options:**
+
+- ``use_as_gpio``: List of special pins to use as GPIO (e.g., ``done``, ``jtag``)
 
 These variables are used to evaluate conditional groups in partitions.
 

@@ -60,44 +60,73 @@ referenced in configuration:
 
    repositories:
      - path: /path/to/source
-       loader: gbs.plugin.myloader.tree
+       loader: myloader
 
 Loader Interface
 ~~~~~~~~~~~~~~~~
 
-A loader module must provide a ``load()`` function:
+A loader must subclass ``RepositoryLoader`` and implement the ``load()`` method:
 
 .. code-block:: python
 
    # gbs/plugin/myloader/tree.py
 
    from pathlib import Path
+   from gbs.repository.loader import RepositoryLoader
    from gbs.repository.model import Repository, Library, Partition
 
-   def load(path: Path) -> Repository:
-       """Load repository from path
+   class MyTreeLoader(RepositoryLoader):
+       """Custom repository loader for my tree format
 
-       Args:
-           path: Root directory of the repository
-
-       Returns:
-           Repository object with libraries and partitions
+       The loader is instantiated with a path and provides a load()
+       method to load the repository from that path.
        """
-       repo = Repository(name=path.name, root=path)
 
-       # Scan path for libraries...
-       for lib_dir in path.iterdir():
-           if lib_dir.is_dir():
-               library = Library(name=lib_dir.name)
+       def load(self) -> Repository:
+           """Load repository from self.path
 
-               # Load partitions...
-               for part_file in lib_dir.glob("*.yaml"):
-                   partition = parse_partition(part_file)
-                   library.add_partition(partition)
+           Returns:
+               Repository object with libraries and partitions
 
-               repo.add_library(library)
+           Raises:
+               LoadError: If repository cannot be loaded
+           """
+           repo = Repository(name=self.path.name, root=self.path)
 
-       return repo
+           # Scan path for libraries...
+           for lib_dir in self.path.iterdir():
+               if lib_dir.is_dir():
+                   library = Library(name=lib_dir.name)
+
+                   # Load partitions...
+                   for part_file in lib_dir.glob("*.yaml"):
+                       partition = parse_partition(part_file)
+                       library.add_partition(partition)
+
+                   repo.add_library(library)
+
+           return repo
+
+Plugin Registration
+~~~~~~~~~~~~~~~~~~~
+
+Plugins must register their repository loaders via ``enumerate_repository_parsers()``:
+
+.. code-block:: python
+
+   # gbs/plugin/myloader/__init__.py
+
+   from gbs.plugins.plugin import Plugin
+   from .tree import MyTreeLoader
+
+   class MyLoaderPlugin(Plugin):
+       name = "gbs.plugin.myloader"
+
+       def enumerate_repository_parsers(self) -> dict[str, type]:
+           """Return dict of loader name -> RepositoryLoader class"""
+           return {
+               "myloader": MyTreeLoader,
+           }
 
 Complete Loader Example
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -108,51 +137,55 @@ Complete Loader Example
 
    from pathlib import Path
    import yaml
+   from gbs.repository.loader import RepositoryLoader
    from gbs.repository.model import (
        Repository, Library, Partition,
        ConditionalGroup, FilterCondition, SourceFile
    )
 
-   def load(path: Path) -> Repository:
-       """Load repository from custom format"""
-       repo = Repository(name=path.name, root=path)
+   class ManifestLoader(RepositoryLoader):
+       """Load repository from manifest.yaml format"""
 
-       # Read manifest file
-       manifest_path = path / "manifest.yaml"
-       if not manifest_path.exists():
+       def load(self) -> Repository:
+           """Load repository from self.path"""
+           repo = Repository(name=self.path.name, root=self.path)
+
+           # Read manifest file
+           manifest_path = self.path / "manifest.yaml"
+           if not manifest_path.exists():
+               return repo
+
+           with open(manifest_path) as f:
+               manifest = yaml.safe_load(f)
+
+           for lib_name, lib_def in manifest.get("libraries", {}).items():
+               library = Library(name=lib_name)
+
+               for part_name, part_def in lib_def.get("partitions", {}).items():
+                   partition = Partition(name=part_name)
+
+                   # Create default condition with sources
+                   condition = FilterCondition(expression="default")
+
+                   for source_def in part_def.get("sources", []):
+                       source = SourceFile(
+                           path=self.path / lib_name / source_def["file"],
+                           file_type=source_def.get("type", "vhdl"),
+                       )
+                       condition.sources.append(source)
+
+                   for dep in part_def.get("deps", []):
+                       condition.deps.append(dep)
+
+                   group = ConditionalGroup(name="default")
+                   group.conditions.append(condition)
+                   partition.groups.append(group)
+
+                   library.add_partition(partition)
+
+               repo.add_library(library)
+
            return repo
-
-       with open(manifest_path) as f:
-           manifest = yaml.safe_load(f)
-
-       for lib_name, lib_def in manifest.get("libraries", {}).items():
-           library = Library(name=lib_name)
-
-           for part_name, part_def in lib_def.get("partitions", {}).items():
-               partition = Partition(name=part_name)
-
-               # Create default condition with sources
-               condition = FilterCondition(expression="default")
-
-               for source_def in part_def.get("sources", []):
-                   source = SourceFile(
-                       path=path / lib_name / source_def["file"],
-                       file_type=source_def.get("type", "vhdl"),
-                   )
-                   condition.sources.append(source)
-
-               for dep in part_def.get("deps", []):
-                   condition.deps.append(dep)
-
-               group = ConditionalGroup(name="default")
-               group.conditions.append(condition)
-               partition.groups.append(group)
-
-               library.add_partition(partition)
-
-           repo.add_library(library)
-
-       return repo
 
 Backend Plugins
 ---------------
