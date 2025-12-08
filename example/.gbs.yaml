@@ -26,13 +26,13 @@ tools:
     config:
       # This path is where "IDE" and "Programmer" directories are
       path: /opt/Gowin/GowinIDE.app/Contents/Resources/Gowin_EDA
-    message:
-      level_force:
-        EX4800: INFO
-        CV0017: INFO
-        CV0018: INFO
-        EX4319: INFO
-        EX4196: INFO
+      message:
+        level_force:
+          EX4800: INFO
+          CV0017: INFO
+          CV0018: INFO
+          EX4319: INFO
+          EX4196: INFO
 
 # Common Repositories
 # This NSL library repository is used by all example projects
