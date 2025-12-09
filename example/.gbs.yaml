@@ -9,13 +9,30 @@ tools:
   - name: ghdl
     variant: system
     config:
-      executable: ghdl
+      executable: /opt/oss-cad-suite/bin/ghdl
 
   # NVC from PATH
   - name: nvc
     variant: system
     config:
       executable: nvc
+
+  # Yosys with GHDL plugin
+  - name: yosys
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/yosys
+      ghdl_plugin: /opt/oss-cad-suite/share/yosys/plugins/ghdl.so
+
+  - name: icepack
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/icepack
+
+  - name: nextpnr-ice40
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/nextpnr-ice40
 
   - name: gcc
     variant: system

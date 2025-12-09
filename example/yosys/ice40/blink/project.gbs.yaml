@@ -1,0 +1,36 @@
+name: blink
+
+root:
+  name: top
+  deps:
+    - nsl_hwdep.clock
+  sources:
+    - file_type: vhdl
+      files:
+        - blink.vhd
+    - file_type: ice40-pcf
+      files:
+        - blink.pcf
+
+output:
+  - name: pnr
+    topcell: top
+    backend_config:
+      gbs.builtin.ghdl:
+        vhdl_standard: "1993"
+      gbs.builtin.yosys:
+        yosys_tool: "yosys"
+        steps:
+          - flatten
+          - tribuf -logic
+          - deminout
+      gbs.builtin.nextpnr:
+        nextpnr_tool: "nextpnr-ice40"
+        part: up5k
+        package: sg48
+      gbs.builtin.icepack:
+        icepack_tool: "icepack"
+    outputs:
+      - type: ice40-bitstream
+        path: blink.bin
+
