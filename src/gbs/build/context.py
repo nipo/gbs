@@ -810,11 +810,13 @@ class BuildContext:
                 unsatisfied.append(resource)
         return unsatisfied
 
-    def populate_pending(self, build_set):
+    def populate_pending(self, build_set, types_with_library: set[str]):
         """Populate pending work queue from resolved build set
 
         Args:
             build_set: Resolved BuildSet from dependency resolver
+            types_with_library: Set of file types that require library classification.
+                               Types not in this set will have library=None.
 
         Returns:
             Number of resources added to pending queue
@@ -836,11 +838,16 @@ class BuildContext:
                     if source_file.variant:
                         file_type = f"{file_type}_{source_file.variant}"
 
+                    # Determine if this file should be associated with a library
+                    # Only types declared by passes as requiring library classification get library assignment
+                    # This allows constraint/config files (PCF, LPF, CST, etc.) to be excluded automatically
+                    use_library = lib_name if file_type in types_with_library else None
+
                     # Create Resource with SOURCE typology
                     res = self.get_resource(
                         source_file.path,
                         file_type=file_type,
-                        library=lib_name,
+                        library=use_library,
                         typology=ResourceTypology.SOURCE,
                         generated_by=None
                     )

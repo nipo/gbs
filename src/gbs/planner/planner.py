@@ -67,21 +67,25 @@ class BuildPlan:
         passes: Ordered list of PassMetadata (in planning order)
         filter_vars: Merged filter variables from all passes + output_group
         repositories: List of repositories to search for sources
+        types_with_library: Union of all file types requiring library classification
     """
     output_group: OutputGroup
     passes: list[PassMetadata]
     filter_vars: dict[str, Any]
     repositories: list[Repository]
+    types_with_library: set[str]
 
     def __init__(self,
                  output_group: OutputGroup,
                  passes: list[PassMetadata],
                  filter_vars: dict[str, Any],
-                 repositories: list[Repository]):
+                 repositories: list[Repository],
+                 types_with_library: set[str]):
         self.output_group = output_group
         self.passes = passes
         self.filter_vars = filter_vars
         self.repositories = repositories
+        self.types_with_library = types_with_library
     
     def __str__(self) -> str:
         return (
@@ -212,11 +216,17 @@ class BuildPlanner:
         if len(selected) != 1:
             raise PlanningError(f"Too many possibilities from {source_types} to {output_types}: {selected}")
 
+        # Collect union of all types_with_library from all passes
+        types_with_library = set()
+        for pass_meta in selected[0].passes:
+            types_with_library.update(pass_meta.types_with_library)
+
         return BuildPlan(
             output_group = output_group,
             passes = selected[0].passes,
             filter_vars = self._combine_filter_vars(output_group, selected[0].passes),
-            repositories = self.repositories)
+            repositories = self.repositories,
+            types_with_library = types_with_library)
         
     def _progress_to_sources(self,
                              output_group: OutputGroup,

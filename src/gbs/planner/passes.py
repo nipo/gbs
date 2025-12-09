@@ -62,6 +62,7 @@ class Pass:
     # Optional class attributes
     can_fork: bool = False
     priority: int = 100
+    types_with_library: set[str] = {"vhdl", "verilog"}  # Default HDL types requiring library classification
 
     def __init__(self,
                  config: dict[str, Any],
@@ -162,6 +163,11 @@ class PassMetadata:
     def output_types(self) -> set[str]:
         """Output file types"""
         return self.pass_obj.output_types
+
+    @property
+    def types_with_library(self) -> set[str]:
+        """File types that require library classification"""
+        return self.pass_obj.types_with_library
 
     def __repr__(self) -> str:
         return (

@@ -443,7 +443,8 @@ class PlanRealization:
         )
 
         # Populate pending work queue from plan's source fileset
-        self.build_ctx.populate_pending(self.source_fileset)
+        # Pass types_with_library from plan so only declared types get library classification
+        self.build_ctx.populate_pending(self.source_fileset, self.plan.types_with_library)
 
         # Add output goals to pending queue
         # These are the desired outputs that dispatchers will work backwards from

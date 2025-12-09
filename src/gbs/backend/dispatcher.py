@@ -230,7 +230,8 @@ async def run_dispatcher_iteration(
         registry.register(GHDLDispatcher())
 
         # Populate pending queue with source files
-        context.populate_pending(build_set)
+        types_with_library = {"vhdl", "verilog"}
+        context.populate_pending(build_set, types_with_library)
 
         iterations = await run_dispatcher_iteration(context, registry)
         print(f"Converged after {iterations} iterations")
