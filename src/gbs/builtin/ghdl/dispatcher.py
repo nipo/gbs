@@ -1,40 +1,65 @@
+"""GHDL Dispatchers - VHDL analysis and simulation"""
+
 from __future__ import annotations
-from typing import Any
+import subprocess
 from pathlib import Path
 
+from ...utils import expand_path
+from ...logging import get_logger
 from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Task, ResourceTypology
-from ...utils import expand_path
 from . import task
 
-class GHDLDispatcher(BaseDispatcher):
-    """GHDL backend that compiles VHDL designs
+logger = get_logger(__name__)
 
-    Supports both mcode and compiled (GCC/LLVM) GHDL backends.
 
-    Build process:
-    1. Detect GHDL backend type (mcode vs compiled)
-    2. Import and analyze each library in dependency order
-    3. For compiled: link with ghdl -c -e
-    4. For mcode: make/elaborate with ghdl -m -e, generate run script
+class GHDLBaseDispatcher(BaseDispatcher):
+    """Base dispatcher for GHDL-based dispatchers with common functionality
 
-    Priority: 500 (main compilation)
+    Provides shared functionality for GHDL analysis and simulation dispatchers:
+    - GHDL executable path lookup and caching
+    - GHDL backend type detection (mcode, gcc, llvm, jit)
+    - Library working directory management
+    - VHDL version string conversion
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         context: BuildContext,
+        name: str,
         vhdl_std: str = "1993",
-        ghdl_tool: str = "ghdl"
+        ghdl_tool: str = "ghdl",
+        priority: int = 500
     ):
-        super().__init__(context, "ghdl", tool_name=ghdl_tool, priority=500)
-        self.vhdl_std = vhdl_std
-        self.ghdl_tool = ghdl_tool  # Tool identifier for lookup
-        self._ghdl_executable: str | None = None  # Cached executable path
-        self._ghdl_backend_type: str | None = None  # Cached backend type
-        self._library_build: dict[str, tuple['Resource', Task]] = {}
-        self._linker: Task = None
+        """Initialize GHDL base dispatcher
 
+        Args:
+            context: Build context
+            name: Dispatcher name
+            vhdl_std: VHDL standard year (e.g., "1993", "2008")
+            ghdl_tool: Tool identifier for lookup (default: "ghdl")
+            priority: Dispatcher priority
+        """
+        super().__init__(context, name, tool_name=ghdl_tool, priority=priority)
+        self.vhdl_std = vhdl_std
+        self.ghdl_tool = ghdl_tool
+        self._ghdl_executable: str | None = None
+        self._ghdl_backend_type: str | None = None
+
+        # Convert VHDL standard to GHDL version string
+        self.ghdl_vhdl_version = self._convert_vhdl_version(vhdl_std)
+
+    @staticmethod
+    def _convert_vhdl_version(vhdl_std: str) -> str:
+        """Convert VHDL standard year to GHDL version string
+
+        Args:
+            vhdl_std: VHDL standard year (e.g., "1993", "2008")
+
+        Returns:
+            GHDL version string (e.g., "93c", "08")
+        """
         year_map = {
             "1987": "93c",
             "1993": "93c",
@@ -43,42 +68,28 @@ class GHDLDispatcher(BaseDispatcher):
             "2008": "08",
             "2019": "19",
         }
+        return year_map.get(vhdl_std, "93c")
 
-        self.ghdl_vhdl_version = year_map.get(vhdl_std, "93c")
-    
-
-    def _get_ghdl_config(self) -> tuple[str, str]:
-        """Get GHDL executable and backend type (cached)
+    def _get_ghdl_executable(self) -> str:
+        """Get GHDL executable path (cached)
 
         Returns:
-            Tuple of (executable_path, backend_type)
-
-        Raises:
-            RuntimeError: If GHDL cannot be configured
+            Executable path
         """
-        # Return cached values if available
-        if self._ghdl_executable is not None and self._ghdl_backend_type is not None:
-            return self._ghdl_executable, self._ghdl_backend_type
+        if self._ghdl_executable is None:
+            tool_config = self.context.get_tool(self.ghdl_tool, required=False)
+            if tool_config:
+                ghdl_executable = tool_config.get("executable", "ghdl")
+                # Expand ~ and environment variables in executable path
+                ghdl_executable = str(expand_path(ghdl_executable))
+                logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
+            else:
+                ghdl_executable = "ghdl"
+                logger.debug(f"Using default GHDL executable: {ghdl_executable}")
 
-        # Look up GHDL tool configuration (optional, falls back to default)
-        tool_config = self.context.get_tool(self.ghdl_tool, required=False)
-        if tool_config:
-            ghdl_executable = tool_config.get("executable", "ghdl")
-            # Expand ~ and environment variables in executable path
-            ghdl_executable = str(expand_path(ghdl_executable))
-            self.logger.debug(f"Using GHDL executable from config: {ghdl_executable}")
-        else:
-            ghdl_executable = "ghdl"
-            self.logger.debug(f"Using default GHDL executable: {ghdl_executable}")
+            self._ghdl_executable = ghdl_executable
 
-        # Detect backend type
-        backend_type = self._detect_ghdl_backend(ghdl_executable)
-
-        # Cache both values
-        self._ghdl_executable = ghdl_executable
-        self._ghdl_backend_type = backend_type
-
-        return ghdl_executable, backend_type
+        return self._ghdl_executable
 
     def _detect_ghdl_backend(self, ghdl_executable: str) -> str:
         """Detect GHDL backend type (mcode, gcc, llvm, or jit)
@@ -92,9 +103,6 @@ class GHDLDispatcher(BaseDispatcher):
         Raises:
             RuntimeError: If ghdl is not found or version cannot be parsed
         """
-        # Note: Don't check cache here - _get_ghdl_config handles caching
-        import subprocess
-
         try:
             result = subprocess.run(
                 [ghdl_executable, "--version"],
@@ -115,7 +123,7 @@ class GHDLDispatcher(BaseDispatcher):
                     words = line_lower.split()
                     for backend in ['jit', 'mcode', 'gcc', 'llvm']:
                         if backend in words:
-                            self.logger.info(f"Detected GHDL backend: {backend}")
+                            logger.info(f"Detected GHDL backend: {backend}")
                             return backend
 
             raise RuntimeError("Could not detect GHDL backend type from --version output")
@@ -125,10 +133,68 @@ class GHDLDispatcher(BaseDispatcher):
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"GHDL --version failed: {e}")
 
+    def _get_ghdl_config(self) -> tuple[str, str]:
+        """Get GHDL executable and backend type (cached)
+
+        Returns:
+            Tuple of (executable_path, backend_type)
+
+        Raises:
+            RuntimeError: If GHDL cannot be configured
+        """
+        # Return cached values if available
+        if self._ghdl_executable is not None and self._ghdl_backend_type is not None:
+            return self._ghdl_executable, self._ghdl_backend_type
+
+        # Get executable
+        self._ghdl_executable = self._get_ghdl_executable()
+
+        # Detect backend type
+        self._ghdl_backend_type = self._detect_ghdl_backend(self._ghdl_executable)
+
+        return self._ghdl_executable, self._ghdl_backend_type
+
     def library_workdir(self, library: str) -> Path:
+        """Get work directory for a library
+
+        Args:
+            library: Library name
+
+        Returns:
+            Path to library work directory
+        """
         return self.context.output_path / library
-        
+
+
+class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
+    """GHDL analysis dispatcher that converts VHDL to library intermediates
+
+    This dispatcher only performs analysis (ghdl -i/-a) and produces
+    .cf library intermediate files. These can be consumed by:
+    - GHDLSimulateDispatcher for simulation
+    - Yosys+GHDL for synthesis
+    - Other tools that can use GHDL libraries
+
+    Priority: 500 (main compilation)
+    """
+
+    def __init__(self,
+        context: BuildContext,
+        vhdl_std: str = "1993",
+        ghdl_tool: str = "ghdl"
+    ):
+        super().__init__(context, "ghdl-analyze", vhdl_std, ghdl_tool, priority=500)
+        self._library_build: dict[str, tuple['Resource', Task]] = {}
+
     def library_build_get(self, library: str) -> tuple['Resource', Task]:
+        """Get or create library build task and resource
+
+        Args:
+            library: Library name
+
+        Returns:
+            Tuple of (cf resource, import task)
+        """
         try:
             return self._library_build[library]
         except KeyError:
@@ -161,7 +227,7 @@ class GHDLDispatcher(BaseDispatcher):
         return cf_resource, t
 
     async def process(self) -> None:
-        """Compile VHDL design with GHDL"""
+        """Analyze VHDL sources into library intermediates"""
         # Get library dependency graph for correct inter-library dependencies
         # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
         lib_deps_graph = self.context._pending_library_dependency_graph_transitive()
@@ -176,27 +242,7 @@ class GHDLDispatcher(BaseDispatcher):
                     user_task.inputs.append(dep_cf)
                     user_task.dependency_add(dep_cf)
 
-
-        # Step 2.5: Compile new VHPIDIRECT C files
-        self._compile_vhpidirect_sources()
-
-        if not self._linker:
-            # Step 3 & 4: Elaborate/link
-            self._linker = self._create_elaboration_tasks(
-                self.context.get_topcell(),
-                self.context.get_topcell_library(),
-            )
-
-        # Ingress files to linker
-        for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
-            # Remove from pending (consuming the intermediate files)
-            dependents = self.context.remove_pending(resource.path)
-            self._linker.inputs.append(resource)
-            self._linker.dependency_add(resource)
-            for dep in dependents:
-                self._linker.dependency_add(dep)
-
-        # Get libraries in dependency order
+        # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
             if library_name is None:
                 continue
@@ -214,10 +260,52 @@ class GHDLDispatcher(BaseDispatcher):
                 task_obj.dependency_add(resource)
                 for dep in dependents:
                     task_obj.dependency_add(dep)
-            
+
+
+class GHDLSimulateDispatcher(GHDLBaseDispatcher):
+    """GHDL simulation dispatcher that creates simulator executable
+
+    This dispatcher takes GHDL library intermediates (.cf files) and:
+    1. Compiles VHPIDIRECT C sources (if any)
+    2. Elaborates/links the top-level entity
+    3. Creates a simulator executable
+
+    Supports both mcode and compiled (GCC/LLVM) GHDL backends.
+
+    Priority: 500 (main compilation)
+    """
+
+    def __init__(self,
+        context: BuildContext,
+        vhdl_std: str = "1993",
+        ghdl_tool: str = "ghdl"
+    ):
+        super().__init__(context, "ghdl-simulate", vhdl_std, ghdl_tool, priority=500)
+        self._linker: Task = None
+
+    async def process(self) -> None:
+        """Create simulator executable from GHDL library intermediates"""
+        # Step 1: Compile VHPIDIRECT C sources
+        self._compile_vhpidirect_sources()
+
+        if not self._linker:
+            # Step 2: Create elaboration/link task
+            self._linker = self._create_elaboration_tasks(
+                self.context.get_topcell(),
+                self.context.get_topcell_library(),
+            )
+
+        # Ingress files to linker (ghdl-cf and ghdl-vhpidirect-lib)
+        for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
+            # Remove from pending (consuming the intermediate files)
+            dependents = self.context.remove_pending(resource.path)
+            self._linker.inputs.append(resource)
+            self._linker.dependency_add(resource)
+            for dep in dependents:
+                self._linker.dependency_add(dep)
+
     def _compile_vhpidirect_sources(self):
-        """Compile VHPIDIRECT C sources to shared libraries
-        """
+        """Compile VHPIDIRECT C sources to shared libraries"""
         vhpidirect_count = 0
 
         # Filter for VHPIDIRECT C files
@@ -263,6 +351,9 @@ class GHDLDispatcher(BaseDispatcher):
         Args:
             topcell: Top-level entity name
             root_library: Root library name
+
+        Returns:
+            Elaboration task
         """
         _, backend_type = self._get_ghdl_config()
 
@@ -270,6 +361,7 @@ class GHDLDispatcher(BaseDispatcher):
             final_task_class = task.CompileLink
         else:
             final_task_class = task.MakeElab
+
         executable_path = self.context.output_path / "simulator.exe"
         executable_resource = self.context.get_resource(
             executable_path,
@@ -280,7 +372,7 @@ class GHDLDispatcher(BaseDispatcher):
         )
 
         link_task = final_task_class(
-            dispatcher = self,
+            dispatcher=self,
             topcell=topcell,
             root_library=root_library,
             inputs=[],

@@ -6,15 +6,17 @@ from pathlib import Path
 
 from ...backend.protocol import BaseBackend
 from ...planner.passes import Pass
-from .passes import GHDLSimulatePass
+from .passes import GHDLAnalyzePass, GHDLSimulatePass
 
 class GHDLBackend(BaseBackend):
-    """GHDL Backend for VHDL simulation
+    """GHDL Backend for VHDL analysis and simulation
 
-    Provides GHDL simulation pass and dispatcher for executing VHDL builds.
+    Provides two passes:
+    - GHDLAnalyzePass: Analyzes VHDL to library intermediates (ghdl-cf)
+    - GHDLSimulatePass: Creates simulator executable from libraries
 
     Configuration options:
-        - vhdl_standard: VHDL standard (e.g., "93c", "08", "2008")
+        - vhdl_standard: VHDL standard (e.g., "1993", "2008", "2019")
         - ghdl_tool: Tool identifier for lookup (default: "ghdl")
     """
 
@@ -41,8 +43,12 @@ class GHDLBackend(BaseBackend):
         """
         passes = []
 
-        # If any output type is ghdl-simulator or a generic simulator type,
-        # contribute the GHDL simulation pass
+        # Contribute analysis pass if ghdl-cf intermediates are needed
+        if "ghdl-cf" in output_types:
+            passes.append(GHDLAnalyzePass(config, project_config, gbs_config))
+
+        # Contribute simulation pass if simulator executable is needed
+        # The analysis pass will be pulled in automatically via input dependencies
         if "ghdl-simulator" in output_types or "simulator" in output_types:
             passes.append(GHDLSimulatePass(config, project_config, gbs_config))
 

@@ -68,7 +68,7 @@ class Import(Task):
         """Execute GHDL import"""
         sources = []
         p_flags = []
-        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
+        ghdl_executable = self.dispatcher._get_ghdl_executable()
 
         cf_out, = self.outputs_of_type("ghdl-cf")
         workdir = cf_out.path.parent
@@ -272,7 +272,7 @@ class MakeElab(Task):
 
         process = GhdlInvocation(argv = [
             ghdl_executable, "-e",
-            f"--workdir={self.root_workdir.resolve()}",
+            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
@@ -288,12 +288,12 @@ class MakeElab(Task):
         # Build load flags for VHPIDIRECT libraries
         load_flags = []
         for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
-            load_flags.append(f"--load={lib_src.path.resolve()}")
+            load_flags.append(f"--load={lib_res.path.resolve()}")
 
         # Create run script
         run_cmd = [
             ghdl_executable, "-r",
-            f"--workdir={self.root_workdir.resolve()}",
+            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",
