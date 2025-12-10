@@ -45,6 +45,30 @@ class PartitionTemplate:
     name: str
     groups: list[ConditionalGroup] = field(default_factory=list)
 
+    def get_all_file_types(self) -> set[str]:
+        """Get all possible file types from this template
+
+        Returns all file types that could appear in any conditional branch.
+        This is used for build planning before filter variables are known.
+
+        Returns:
+            Set of file type strings
+        """
+        file_types = set()
+
+        def collect_from_condition(condition: FilterCondition):
+            for source in condition.sources:
+                file_types.add(source.file_type)
+            for nested_group in condition.groups:
+                for nested_condition in nested_group.conditions:
+                    collect_from_condition(nested_condition)
+
+        for group in self.groups:
+            for condition in group.conditions:
+                collect_from_condition(condition)
+
+        return file_types
+
     def evaluate(self, filter_vars: dict[str, str], library_name: str) -> Partition:
         """Evaluate partition template with filter variables
 

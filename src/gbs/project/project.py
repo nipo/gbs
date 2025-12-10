@@ -222,7 +222,13 @@ class Project:
         all_repositories = self.repositories
 
         from ..planner.planner import BuildPlanner
-        planner = BuildPlanner(all_repositories, backends, self.model.raw_config, self.gbs_config)
+        planner = BuildPlanner(
+            all_repositories,
+            backends,
+            self.model.raw_config,
+            self.gbs_config,
+            root_partition_template=self.model.root_partition_template
+        )
         self.__realizations = []
 
         for output_group in self.model.output_groups:
