@@ -97,7 +97,8 @@ class BuildPlan:
 
 @dataclass
 class PartialPlan:
-    outputs: set[str]
+    required: set[str]
+    acceptable: set[str]
     passes: list[str]
 
     def __hash__(self):
@@ -125,7 +126,8 @@ class BuildPlanner:
         repositories: list[Repository],
         backends: list[Backend],
         project_config: dict[str, Any] | None = None,
-        gbs_config: 'GBSConfig | None' = None
+        gbs_config: 'GBSConfig | None' = None,
+        root_partition_template: Any = None
     ):
         """Initialize planner
 
@@ -134,6 +136,7 @@ class BuildPlanner:
             backends: List of backends that provide passes
             project_config: Project-level configuration (raw_config)
             gbs_config: GBS configuration (tools, etc.)
+            root_partition_template: Optional root partition template to include file types from
         """
         self.repositories = repositories
         self.backends = backends
@@ -145,6 +148,12 @@ class BuildPlanner:
         self.available_source_types = set()
         for repo in repositories:
             self.available_source_types.update(repo.file_types())
+
+        # Add file types from root partition template if provided
+        if root_partition_template is not None:
+            root_file_types = root_partition_template.get_all_file_types()
+            self.available_source_types.update(root_file_types)
+            self.logger.debug(f"Added {len(root_file_types)} file types from root partition template")
 
         self.logger.debug(
             f"Initialized planner with {len(repositories)} repositories, "
@@ -196,9 +205,13 @@ class BuildPlanner:
 
         self.logger.debug(f"Planning path {sorted(source_types)} -> {sorted(output_types)}")
 
-        initial_plan = PartialPlan(output_types, [])
+        initial_plan = PartialPlan(required = output_types,
+                                   acceptable = output_types,
+                                   passes = [])
         
         possibilities = self._progress_to_sources(output_group, source_types, initial_plan)
+
+        self.logger.debug(f"-> {possibilities}")
 
         selected = []
         for pp in possibilities:
@@ -230,43 +243,48 @@ class BuildPlanner:
         
     def _progress_to_sources(self,
                              output_group: OutputGroup,
-                             target_inputs: set(str),
+                             source_types: set(str),
                              partial_plan: PartialPlan) -> list[PartialPlan]:
-        candidates = self._query_backends(output_group, partial_plan.outputs)
+        if not (source_types - partial_plan.acceptable):
+            return [partial_plan]
+
+        self.logger.debug(
+            f"{' '*len(partial_plan.passes)} to go: {partial_plan.required}/{partial_plan.acceptable} with {partial_plan.passes}"
+        )
+
+        candidates = self._query_backends(output_group, partial_plan.acceptable)
 
         if not candidates:
+            self.logger.debug(f"No pass wanted to generate {partial_plan.acceptable}")
             return []
         
-        self.logger.debug(
-            f"{' '*len(partial_plan.passes)} to go: {partial_plan.outputs} with {partial_plan.passes}"
-        )
         self.logger.debug(f"{' '*len(partial_plan.passes)} candidates: {candidates}")
 
         ret = []
         for p in candidates:
             if p in partial_plan.passes:
+                self.logger.debug(f"{' '*len(partial_plan.passes)} avoiding loop with {p}")
                 continue
 
-            # Check if this pass produces any of the types we need
-            if not (p.output_types & partial_plan.outputs):
+            # Check if this pass produces any of the types we can convert
+            if not (p.output_types & partial_plan.acceptable):
+                self.logger.debug(f"{' '*len(partial_plan.passes)} does not fit {p}")
                 continue
 
-            # Calculate the new set of types we need to produce:
-            # - Remove what this pass produces
-            # - Add what this pass requires as input
-            new_outputs = (partial_plan.outputs - p.output_types) | p.input_types
+            # Calculate the new set of types we can accept
+            # - Remove what this pass produces from required
+            # - Add what this pass accepts as acceptable
+            required = partial_plan.required - p.output_types
+            acceptable = partial_plan.acceptable | p.input_types
 
-            # What inputs are still unsatisfied by available sources?
-            inputs_left = new_outputs - target_inputs
+            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, acceptable: {acceptable}, required: {required}")
 
-            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, new_outputs: {new_outputs}, unsatisfied: {inputs_left}")
-
-            n = PartialPlan(new_outputs, partial_plan.passes + [p])
-            if inputs_left:
-                for sub in self._progress_to_sources(output_group, target_inputs, n):
+            n = PartialPlan(acceptable = acceptable,
+                            required = required,
+                            passes = partial_plan.passes + [p])
+            for sub in self._progress_to_sources(output_group, source_types, n):
+                if (source_types & sub.acceptable) == source_types:
                     ret.append(sub)
-            else:
-                ret.append(n)
         return ret
     
     def _query_backends(
@@ -297,6 +315,10 @@ class BuildPlanner:
             # Ask backend for passes it can contribute
             passes = backend.contribute_passes(backend_config, desired_outputs, self.project_config, self.gbs_config)
 
+            self.logger.debug(
+                f"Backend {backend.name} contributed passes: {passes}"
+            )
+
             # Wrap in PassMetadata
             for pass_obj in passes:
                 metadata = PassMetadata(
@@ -305,10 +327,6 @@ class BuildPlanner:
                     backend_name=backend.name
                 )
                 candidates.append(metadata)
-
-                self.logger.debug(
-                    f"Backend {backend.name} contributed pass: {pass_obj.name}"
-                )
 
         return candidates
 
