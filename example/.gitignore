@@ -11,3 +11,4 @@ blink.bin
 blink.fs
 *.bit
 test-results
+*.fs
