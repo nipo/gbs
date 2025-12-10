@@ -94,26 +94,22 @@ def discover_repository_loaders():
 
     # Iterate over each plugin and get its repository parser classes
     for plugin in plugin_registry.get_all_plugins():
-        try:
-            # Get repository parser classes provided by this plugin (dict of name -> class)
-            parser_classes = plugin.enumerate_repository_parsers()
+        # Get repository parser classes provided by this plugin (dict of name -> class)
+        parser_classes = plugin.enumerate_repository_parsers()
 
-            # Register each parser class
-            for name, loader_class in parser_classes.items():
-                # Validate that it's a RepositoryLoader subclass
-                if not isinstance(loader_class, type) or not issubclass(loader_class, RepositoryLoader):
-                    logger.warning(
-                        f"Repository parser '{name}' from plugin {plugin.name} "
-                        f"is not a RepositoryLoader subclass"
-                    )
-                    continue
+        # Register each parser class
+        for name, loader_class in parser_classes.items():
+            # Validate that it's a RepositoryLoader subclass
+            if not isinstance(loader_class, type) or not issubclass(loader_class, RepositoryLoader):
+                logger.warning(
+                    f"Repository parser '{name}' from plugin {plugin.name} "
+                    f"is not a RepositoryLoader subclass"
+                )
+                continue
 
-                # Register the parser class
-                register_repository_loader(name, loader_class)
-                logger.debug(f"Registered repository parser: {name} from {plugin.name}")
-
-        except Exception as e:
-            logger.error(f"Error enumerating repository parsers from plugin {plugin.name}: {e}")
+            # Register the parser class
+            register_repository_loader(name, loader_class)
+            logger.debug(f"Registered repository parser: {name} from {plugin.name}")
 
     _loaders_discovered = True
     logger.info(f"Repository loader discovery complete: {len(_REPOSITORY_LOADERS)} loaders")
