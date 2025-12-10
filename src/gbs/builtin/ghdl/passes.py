@@ -72,7 +72,7 @@ class GHDLSimulatePass(Pass):
     Note: ghdl-vhpidirect-c is handled opportunistically by the dispatcher if present
     """
     name = "ghdl-simulate"
-    input_types = {"ghdl-cf"}
+    input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
     output_types = {"ghdl-simulator"}
 
     def filter_vars(self) -> dict[str, Any]:
