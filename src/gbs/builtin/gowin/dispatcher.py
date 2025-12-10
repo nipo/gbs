@@ -62,7 +62,10 @@ class GowinDispatcher(BaseDispatcher):
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
-            self._session = Session(gw_sh, self.context.output_path, self.logger)
+            self._session = Session(
+                argv=[str(gw_sh)],
+                cwd=self.context.output_path
+            )
 
         return self._session
 

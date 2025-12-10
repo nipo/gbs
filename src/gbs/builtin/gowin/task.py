@@ -7,6 +7,7 @@ from importlib.resources import files, as_file
 
 from ...build.context import BuildContext
 from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
+from ...build import tcl
 from ...utils import expand_path
 from .gw_sh import *
 from .device_info import parse_device_csv, get_device_info
@@ -93,15 +94,15 @@ class ProjectInit(GwShCommand):
 
             # Configure device
             self.logger.debug(f"Configuring device: {part_group} {part_number}")
-            await self.command_run(f"set_device -name {part_group} {part_number}")
+            await self.command_run(tcl.Command(["set_device", "-name", part_group, part_number]))
 
             # Set top module
             self.logger.debug(f"Setting top module: {topcell}")
-            await self.command_run(f"set_option -top_module {topcell}")
+            await self.command_run(tcl.Command(["set_option", "-top_module", topcell]))
 
             # Set output base name (for predictable output paths)
             self.logger.debug(f"Setting output base name: {self.output_base_name}")
-            await self.command_run(f"set_option -output_base_name {self.output_base_name}")
+            await self.command_run(tcl.Command(["set_option", "-output_base_name", self.output_base_name]))
 
             # Process vendor-specific options
             # use_as_gpio: list of pin names to configure as GPIO
@@ -110,11 +111,13 @@ class ProjectInit(GwShCommand):
                 self.logger.debug(f"Configuring GPIO pins: {use_as_gpio}")
                 for pin_name in use_as_gpio:
                     self.logger.debug(f"  Setting {pin_name} as GPIO")
-                    await self.command_run(f"set_option -use_{pin_name}_as_gpio 1")
+                    await self.command_run(tcl.Command(["set_option", f"-use_{pin_name}_as_gpio", "1"]))
 
-            # Filter inputs by type
-            hdl_inputs = [r for r in self.inputs if r.metadata.get('file_type') in ('vhdl', 'verilog')]
-            csr_inputs = [r for r in self.inputs if r.metadata.get('file_type') == 'gowin-serdes-init']
+            # Filter inputs by type (only Resources have metadata, not VirtualResources)
+            hdl_inputs = [r for r in self.inputs
+                         if isinstance(r, Resource) and r.metadata.get('file_type') in ('vhdl', 'verilog')]
+            csr_inputs = [r for r in self.inputs
+                         if isinstance(r, Resource) and r.metadata.get('file_type') == 'gowin-serdes-init']
 
             # Add HDL files in dependency order
             self.logger.debug(f"Adding {len(hdl_inputs)} HDL source files...")
@@ -125,12 +128,12 @@ class ProjectInit(GwShCommand):
                 file_type = resource.metadata.get('file_type')
                 file_path = resource.path
 
-                # Add file
+                # Add file (use tcl.String for proper path escaping)
                 self.logger.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
-                await self.command_run(f"add_file -type {file_type} {{{file_path}}}")
+                await self.command_run(tcl.Command(["add_file", "-type", file_type, str(file_path)]))
 
-                # Set library property
-                await self.command_run(f"set_file_prop -lib {{{lib_name}}} {{{file_path}}}")
+                # Set library property (use tcl.String for proper escaping)
+                await self.command_run(tcl.Command(["set_file_prop", "-lib", lib_name, str(file_path)]))
 
                 await self.update_progress(i / total)
 
@@ -138,12 +141,12 @@ class ProjectInit(GwShCommand):
             for csr_resource in csr_inputs:
                 csr_path = csr_resource.path
                 self.logger.info(f"Adding SerDes CSR file: {csr_path}")
-                await self.command_run(f"set_csr {{{csr_path}}}")
+                await self.command_run(tcl.Command(["set_csr", str(csr_path)]))
 
             # Add constraint files (even if they don't exist yet)
             for cst_file in [pin_cst_file, timing_sdc_file]:
                 if cst_file.exists() or True:  # Always add placeholder
-                    await self.command_run(f"add_file {{{cst_file.relative_to(self.output_dir)}}}")
+                    await self.command_run(tcl.Command(["add_file", str(cst_file.relative_to(self.output_dir))]))
 
             # Set project options (defaults + user overrides)
             default_options = {
@@ -163,12 +166,12 @@ class ProjectInit(GwShCommand):
             self.logger.debug(f"Setting {len(options)} project options...")
             for key, value in options.items():
                 self.logger.debug(f"  set_option -{key} {value}")
-                await self.command_run(f"set_option -{key} {value}")
+                await self.command_run(tcl.Command(["set_option", f"-{key}", str(value)]))
 
             # Inject random 32-bit user code (build ID)
             user_code = random.randbytes(4)
             self.logger.info(f"Injecting user_code: {user_code.hex()}")
-            await self.command_run(f"set_option -user_code {{{user_code.hex()}}}")
+            await self.command_run(tcl.Command(["set_option", "-user_code", user_code.hex()]))
 
             self.logger.info(f"Project initialization complete")
 
@@ -190,16 +193,16 @@ class Synthesis(LongRunningCommand):
         super().__init__(dispatcher,
             name = "gowin_synthesis",
             session = session,
+            command = tcl.Command(["run", "syn"]),
             inputs = inputs,
             outputs = outputs,
             description = "Gowin synthesis"
         )
-        
-    async def work(self) -> None:
-        """Run synthesis via gw_sh (project already initialized)"""
+
+    async def prepare(self) -> None:
+        """Ensure output directory exists before synthesis"""
         self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
-        return await super().work("run syn")
-        
+
 class PnR(LongRunningCommand):
     """Run Gowin place & route via gw_sh"""
 
@@ -213,15 +216,15 @@ class PnR(LongRunningCommand):
         super().__init__(dispatcher,
             name = "gowin_pnr",
             session = session,
+            command = tcl.Command(["run", "pnr"]),
             inputs = inputs,
             outputs = outputs,
             description = "Gowin PnR"
         )
 
-    async def work(self) -> None:
-        """Run place & route via gw_sh (project already initialized)"""
+    async def prepare(self) -> None:
+        """Ensure output directory exists before PnR"""
         self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
-        return await super().work("run pnr")
 
 class AggregateConstraints(Task):
     """Aggregate Gowin constraint files of a single type (.cst or .sdc)"""
@@ -249,8 +252,9 @@ class AggregateConstraints(Task):
         # Output file is the single output resource
         output_file = self.outputs[0].path
 
-        # Filter inputs by file_type from metadata (should all match)
-        resources = [r for r in self.inputs if r.metadata.get('file_type') == self.file_type]
+        # Filter inputs by file_type from metadata (should all match, only Resources have metadata)
+        resources = [r for r in self.inputs
+                    if isinstance(r, Resource) and r.metadata.get('file_type') == self.file_type]
 
         # Merge all constraint files
         constraints = []
