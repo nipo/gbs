@@ -846,47 +846,47 @@ class BuildContext:
         from .task import ResourceTypology
 
         # First pass: create all Resources and add to pending queue
-        partition_to_resources: dict[tuple[str, str], list['Resource']] = {}
+        partition_to_resources: dict[str, list['Resource']] = {}
 
-        for lib_name in build_set.libraries:
-            for part_name in build_set.partitions.get(lib_name, []):
-                files = build_set.files.get((lib_name, part_name), [])
-                partition_key = (lib_name, part_name)
-                partition_to_resources[partition_key] = []
+        # Iterate over partitions in the resolved build set
+        for partition_name in build_set.partitions:
+            files = build_set.sources.get(partition_name, [])
+            partition_to_resources[partition_name] = []
 
-                for source_file in files:
-                    # Map language to file type
-                    file_type = source_file.file_type
-                    if source_file.variant:
-                        file_type = f"{file_type}_{source_file.variant}"
+            # Extract library name from partition name (format: "library.partition")
+            lib_name = partition_name.split('.', 1)[0]
 
-                    # Determine if this file should be associated with a library
-                    # Only types declared by passes as requiring library classification get library assignment
-                    # This allows constraint/config files (PCF, LPF, CST, etc.) to be excluded automatically
-                    use_library = lib_name if file_type in types_with_library else None
+            for source_file in files:
+                # Map language to file type
+                file_type = source_file.file_type
+                if source_file.variant:
+                    file_type = f"{file_type}_{source_file.variant}"
 
-                    # Create Resource with SOURCE typology
-                    res = self.get_resource(
-                        source_file.path,
-                        file_type=file_type,
-                        library=use_library,
-                        typology=ResourceTypology.SOURCE,
-                        generated_by=None
-                    )
+                # Determine if this file should be associated with a library
+                # Only types declared by passes as requiring library classification get library assignment
+                # This allows constraint/config files (PCF, LPF, CST, etc.) to be excluded automatically
+                use_library = lib_name if file_type in types_with_library else None
 
-                    partition_to_resources[partition_key].append(res)
+                # Create Resource with SOURCE typology
+                res = self.get_resource(
+                    source_file.path,
+                    file_type=file_type,
+                    library=use_library,
+                    typology=ResourceTypology.SOURCE,
+                    generated_by=None
+                )
+
+                partition_to_resources[partition_name].append(res)
 
         # Second pass: compute source dependencies based on partition dependencies
         # and add resources to pending queue
-        for partition_key, resources in partition_to_resources.items():
-            lib_name, part_name = partition_key
-            partition_deps = build_set.partition_deps.get(partition_key, set())
+        for partition_name, resources in partition_to_resources.items():
+            partition_deps = build_set.partition_deps.get(partition_name, set())
 
             # Collect all dependency resources from dependent partitions
             source_deps = set()
-            for dep_lib, dep_part in partition_deps:
-                dep_partition_key = (dep_lib, dep_part)
-                dep_resources = partition_to_resources.get(dep_partition_key, [])
+            for dep_partition_name in partition_deps:
+                dep_resources = partition_to_resources.get(dep_partition_name, [])
                 source_deps.update(dep_resources)
 
             # Add each resource to pending queue with its source dependencies

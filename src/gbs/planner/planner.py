@@ -144,7 +144,7 @@ class BuildPlanner:
         # Compute available source file types
         self.available_source_types = set()
         for repo in repositories:
-            self.available_source_types.update(repo.file_types)
+            self.available_source_types.update(repo.file_types())
 
         self.logger.debug(
             f"Initialized planner with {len(repositories)} repositories, "
@@ -247,12 +247,21 @@ class BuildPlanner:
             if p in partial_plan.passes:
                 continue
 
-            inputs_handled = partial_plan.outputs | p.input_types
-            inputs_left = target_inputs - inputs_handled
+            # Check if this pass produces any of the types we need
+            if not (p.output_types & partial_plan.outputs):
+                continue
 
-            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, inputs: {inputs_handled}, unsatisfied: {inputs_left}")
+            # Calculate the new set of types we need to produce:
+            # - Remove what this pass produces
+            # - Add what this pass requires as input
+            new_outputs = (partial_plan.outputs - p.output_types) | p.input_types
 
-            n = PartialPlan(inputs_handled, partial_plan.passes + [p])
+            # What inputs are still unsatisfied by available sources?
+            inputs_left = new_outputs - target_inputs
+
+            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, new_outputs: {new_outputs}, unsatisfied: {inputs_left}")
+
+            n = PartialPlan(new_outputs, partial_plan.passes + [p])
             if inputs_left:
                 for sub in self._progress_to_sources(output_group, target_inputs, n):
                     ret.append(sub)

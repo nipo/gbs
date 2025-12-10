@@ -62,15 +62,17 @@ class GHDLSimulatePass(Pass):
     """Pass that creates a simulator executable from GHDL libraries
 
     This pass takes GHDL library intermediates (.cf files) and:
-    - Compiles VHPIDIRECT C sources (simulation-time C interface)
+    - Compiles VHPIDIRECT C sources (simulation-time C interface, if present)
     - Elaborates the top-level entity
     - Generates a simulator executable
 
-    Input types: ghdl-cf, ghdl-vhpidirect-c
+    Input types: ghdl-cf
     Output types: ghdl-simulator
+
+    Note: ghdl-vhpidirect-c is handled opportunistically by the dispatcher if present
     """
     name = "ghdl-simulate"
-    input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
+    input_types = {"ghdl-cf"}
     output_types = {"ghdl-simulator"}
 
     def filter_vars(self) -> dict[str, Any]:

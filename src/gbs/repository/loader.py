@@ -8,15 +8,7 @@ import yaml
 from pathlib import Path
 from typing import Any, Callable, Type
 
-from .model import (
-    SourceFile,
-    FilterCondition,
-    ConditionalGroup,
-    Partition,
-    Library,
-    Repository,
-)
-from ..project.model import ProjectModel as Project, OutputGroup, OutputFile
+from .model import Repository
 from ..logging import get_logger
 from ..utils import expand_path
 
@@ -142,238 +134,14 @@ def get_repository_loader(name: str) -> Type[RepositoryLoader]:
     )
 
 
-def load_yaml_file(path: Path) -> dict[str, Any]:
-    """Load and parse a YAML file
-
-    Args:
-        path: Path to YAML file
-
-    Returns:
-        Parsed YAML data
-
-    Raises:
-        LoadError: If file cannot be loaded or parsed
-    """
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            if data is None:
-                raise LoadError(f"Empty or invalid YAML file: {path}")
-            return data
-    except FileNotFoundError:
-        raise LoadError(f"File not found: {path}")
-    except yaml.YAMLError as e:
-        raise LoadError(f"YAML parse error in {path}: {e}")
-    except Exception as e:
-        raise LoadError(f"Error loading {path}: {e}")
-
-
-def load_sources(sources_data: list[dict[str, Any]], base_path: Path) -> list[SourceFile]:
-    """Load source files from YAML data
-
-    Args:
-        sources_data: List of source specifications
-        base_path: Base path for resolving relative file paths
-
-    Returns:
-        List of SourceFile objects
-    """
-    result = []
-
-    for source_spec in sources_data:
-        # Support both "file_type" (new) and "language" (backward compatibility)
-        file_type = source_spec.get("file_type") or source_spec.get("language")
-        if not file_type:
-            raise LoadError("Source specification missing 'file_type' (or 'language') field")
-        if "files" not in source_spec:
-            raise LoadError("Source specification missing 'files' field")
-
-        variant = source_spec.get("variant")
-
-        for file_path in source_spec["files"]:
-            result.append(SourceFile(
-                path=base_path / file_path,
-                file_type=file_type,
-                variant=variant
-            ))
-
-    return result
-
-
-def load_conditional_group(
-    name: str,
-    conditions_data: list[dict[str, Any]],
-    base_path: Path
-) -> ConditionalGroup:
-    """Load a conditional group from YAML data
-
-    Args:
-        name: Group name
-        conditions_data: List of condition specifications
-        base_path: Base path for resolving file paths
-
-    Returns:
-        ConditionalGroup object
-    """
-    conditions = []
-
-    for cond_data in conditions_data:
-        if "condition" not in cond_data:
-            raise LoadError(f"Condition in group '{name}' missing 'condition' field")
-
-        expression = cond_data["condition"]
-        deps = cond_data.get("deps", [])
-
-        # Load sources
-        sources_data = cond_data.get("sources", [])
-        sources = load_sources(sources_data, base_path)
-
-        # Load nested groups (recursive)
-        nested_groups = []
-        groups_data = cond_data.get("groups", {})
-        for group_name, group_conditions in groups_data.items():
-            nested_group = load_conditional_group(group_name, group_conditions, base_path)
-            nested_groups.append(nested_group)
-
-        condition = FilterCondition(
-            expression=expression,
-            deps=deps,
-            sources=sources,
-            groups=nested_groups
-        )
-        conditions.append(condition)
-
-    return ConditionalGroup(name=name, conditions=conditions)
-
-
-def load_partition(path: Path) -> Partition:
-    """Load a partition definition from a YAML file
-
-    The partition name is derived from the filename (basename without extension).
-    The YAML content is parsed as a FilterCondition (root of the partition) with
-    an implicit "condition: default".
-
-    Args:
-        path: Path to partition YAML file (.gbs.yaml)
-
-    Returns:
-        Partition object
-
-    Raises:
-        LoadError: If file cannot be loaded or is invalid
-    """
-    logger.debug(f"Loading partition from {path}")
-    data = load_yaml_file(path)
-
-    # Extract partition name from filename
-    # my_partition.gbs.yaml -> my_partition
-    name = path.stem
-    if name.endswith('.gbs'):
-        name = name[:-4]  # Remove .gbs if present (for .gbs.yaml files)
-
-    # Base path for resolving source files (relative to partition file)
-    base_path = path.parent
-
-    # The root YAML is a FilterCondition with implicit "condition: default"
-    # Parse sources at root level
-    sources_data = data.get("sources", [])
-    sources = load_sources(sources_data, base_path)
-
-    # Parse deps at root level
-    deps = data.get("deps", [])
-
-    # Load nested groups (if any)
-    nested_groups = []
-    groups_data = data.get("groups", {})
-    for group_name, group_conditions in groups_data.items():
-        if not isinstance(group_conditions, list):
-            raise LoadError(
-                f"Group '{group_name}' in partition '{name}' must be a list of conditions"
-            )
-        nested_group = load_conditional_group(group_name, group_conditions, base_path)
-        nested_groups.append(nested_group)
-
-    # Create root FilterCondition (implicit "default" condition)
-    root_condition = FilterCondition(
-        expression="default",
-        deps=deps,
-        sources=sources,
-        groups=nested_groups
-    )
-
-    # Wrap in a ConditionalGroup named "root"
-    root_group = ConditionalGroup(name="root", conditions=[root_condition])
-
-    # Create partition with the root group
-    partition = Partition(name=name, groups=[root_group])
-    logger.info(f"Loaded partition '{name}' from {path}")
-    return partition
-
-
-def load_library(path: Path, discover_partitions: bool = True) -> Library:
-    """Load a library definition from a YAML file
-
-    Args:
-        path: Path to library YAML file
-        discover_partitions: Whether to auto-load referenced partitions
-
-    Returns:
-        Library object
-
-    Raises:
-        LoadError: If file cannot be loaded or is invalid
-    """
-    logger.debug(f"Loading library from {path}")
-    data = load_yaml_file(path)
-
-    if "name" not in data:
-        raise LoadError(f"Library file {path} missing 'name' field")
-
-    name = data["name"]
-    description = data.get("description")
-    library = Library(name=name, description=description)
-
-    # Load partitions
-    if discover_partitions and "partitions" in data:
-        base_path = path.parent
-
-        for partition_spec in data["partitions"]:
-            if isinstance(partition_spec, str):
-                # Simple partition name/path
-                partition_path = base_path / partition_spec
-                if not partition_path.suffix:
-                    # Add .gbs.yaml extension
-                    partition_path = partition_path.with_suffix(".gbs.yaml")
-
-                if partition_path.exists():
-                    partition = load_partition(partition_path)
-                    library.add_partition(partition)
-                else:
-                    logger.warning(f"Partition file not found: {partition_path}")
-
-            elif isinstance(partition_spec, dict) and "pattern" in partition_spec:
-                # Glob pattern for auto-discovery
-                pattern = partition_spec["pattern"]
-                matches = list(base_path.glob(pattern))
-                logger.debug(f"Pattern '{pattern}' matched {len(matches)} files")
-
-                for match_path in matches:
-                    try:
-                        partition = load_partition(match_path)
-                        library.add_partition(partition)
-                    except LoadError as e:
-                        logger.warning(f"Failed to load partition from {match_path}: {e}")
-
-    logger.info(f"Loaded library '{name}' with {len(library.partitions)} partitions")
-    return library
-
-
 def load_repository(path: Path, discover_libraries: bool = True) -> Repository:
-    """Load a repository definition from a YAML file
+    """Load a repository using the plugin system
+
+    Delegates to the YAML repository loader plugin.
 
     Args:
-        path: Path to repository YAML file
-        discover_libraries: Whether to auto-load referenced libraries
+        path: Path to repository file
+        discover_libraries: Ignored (kept for backwards compatibility)
 
     Returns:
         Repository object
@@ -381,58 +149,13 @@ def load_repository(path: Path, discover_libraries: bool = True) -> Repository:
     Raises:
         LoadError: If file cannot be loaded or is invalid
     """
-    logger.debug(f"Loading repository from {path}")
-    data = load_yaml_file(path)
-
-    if "name" not in data:
-        raise LoadError(f"Repository file {path} missing 'name' field")
-
-    name = data["name"]
-    description = data.get("description")
-    root = path.parent
-    repository = Repository(name=name, root=root, description=description)
-
-    # Load libraries
-    if discover_libraries and "libraries" in data:
-        for library_spec in data["libraries"]:
-            if isinstance(library_spec, dict) and "path" in library_spec:
-                # Explicit path
-                lib_path = root / library_spec["path"]
-                if lib_path.is_dir():
-                    # Look for library definition file in directory
-                    for filename in ["library.gbs.yaml", "library.gbs"]:
-                        lib_file = lib_path / filename
-                        if lib_file.exists():
-                            lib_path = lib_file
-                            break
-
-                if lib_path.exists():
-                    try:
-                        library = load_library(lib_path)
-                        repository.add_library(library)
-                    except LoadError as e:
-                        logger.warning(f"Failed to load library from {lib_path}: {e}")
-                else:
-                    logger.warning(f"Library file not found: {lib_path}")
-
-            elif isinstance(library_spec, dict) and "pattern" in library_spec:
-                # Glob pattern for auto-discovery
-                pattern = library_spec["pattern"]
-                matches = list(root.glob(pattern))
-                logger.debug(f"Pattern '{pattern}' matched {len(matches)} files")
-
-                for match_path in matches:
-                    try:
-                        library = load_library(match_path)
-                        repository.add_library(library)
-                    except LoadError as e:
-                        logger.warning(f"Failed to load library from {match_path}: {e}")
-
-    logger.info(f"Loaded repository '{name}' with {len(repository.libraries)} libraries")
-    return repository
+    # Use YAML loader from plugin
+    loader_class = get_repository_loader("yaml")
+    loader = loader_class(path)
+    return loader.load()
 
 
-def load_project(path: Path, gbs_config=None) -> Project:
+def load_project(path: Path, gbs_config=None):
     """Load a project definition from a YAML file
 
     Args:
@@ -445,8 +168,23 @@ def load_project(path: Path, gbs_config=None) -> Project:
     Raises:
         LoadError: If file cannot be loaded or is invalid
     """
+    # Import here to avoid circular dependency
+    from ..project.model import ProjectModel as Project, OutputGroup, OutputFile
+
     logger.debug(f"Loading project from {path}")
-    data = load_yaml_file(path)
+
+    # Load YAML file
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            if data is None:
+                raise LoadError(f"Empty or invalid YAML file: {path}")
+    except FileNotFoundError:
+        raise LoadError(f"File not found: {path}")
+    except yaml.YAMLError as e:
+        raise LoadError(f"YAML parse error in {path}: {e}")
+    except Exception as e:
+        raise LoadError(f"Error loading {path}: {e}")
 
     # Required fields
     required_fields = ["name", "root", "output"]
@@ -472,44 +210,11 @@ def load_project(path: Path, gbs_config=None) -> Project:
     # Load root partition (inline definition)
     # The root partition is always placed in the "work" library
     root_data = data["root"]
-    if "name" not in root_data:
-        raise LoadError("Root partition must specify 'name'")
-
-    partition_name = root_data["name"]
     base_path = path.parent
 
-    # Parse sources at root level
-    sources_data = root_data.get("sources", [])
-    sources = load_sources(sources_data, base_path)
-
-    # Parse deps at root level
-    deps = root_data.get("deps", [])
-
-    # Load nested groups (if any)
-    nested_groups = []
-    groups_data = root_data.get("groups", {})
-    for group_name, group_conditions in groups_data.items():
-        if not isinstance(group_conditions, list):
-            raise LoadError(
-                f"Group '{group_name}' in root partition "
-                f"must be a list of conditions"
-            )
-        nested_group = load_conditional_group(group_name, group_conditions, base_path)
-        nested_groups.append(nested_group)
-
-    # Create root FilterCondition (implicit "default" condition)
-    root_condition = FilterCondition(
-        expression="default",
-        deps=deps,
-        sources=sources,
-        groups=nested_groups
-    )
-
-    # Wrap in a ConditionalGroup named "root"
-    root_group = ConditionalGroup(name="root", conditions=[root_condition])
-
-    # Create the root partition
-    root_partition = Partition(name=partition_name, groups=[root_group])
+    # Parse root partition template
+    from ..project.partition import parse_partition_template
+    root_partition_template = parse_partition_template(root_data, base_path)
 
     # Parse output groups
     output_data = data.get("output", [])
@@ -581,7 +286,7 @@ def load_project(path: Path, gbs_config=None) -> Project:
 
     project = Project(
         name=name,
-        root_partition=root_partition,
+        root_partition_template=root_partition_template,
         output_groups=output_groups,
         description=description,
         raw_config=data,
@@ -679,7 +384,7 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
     return repositories
 
 
-def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Project, list[Repository]]:
+def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Any, list[Repository]]:
     """Load a project and its specified repositories
 
     Convenience function that loads a project and any repositories specified

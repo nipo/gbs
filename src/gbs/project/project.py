@@ -17,7 +17,7 @@ from ..build.task import ResourceTypology
 from ..backend.protocol import Backend
 from ..backend.registry import get_backend_registry
 from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
-from ..repository.model import Repository, Library
+from ..repository.model import Repository
 from ..repository.model import SourceFileSet, Repository
 from ..planner.planner import BuildPlan
 
@@ -218,14 +218,8 @@ class Project:
         backends = backend_registry.get_all_backends()
         backend_names = backend_registry.list_backends()
 
-        # Create synthetic repository from project's root partition for planning
-        project_repo = Repository(name=self.model.name, root=Path("."))
-        project_library = Library(name=self.model.root_library_name)
-        project_library.add_partition(self.model.root_partition)
-        project_repo.add_library(project_library)
-
-        # Include project repo in repositories for planning
-        all_repositories = [project_repo] + self.repositories
+        # Include all repositories for planning
+        all_repositories = self.repositories
 
         from ..planner.planner import BuildPlanner
         planner = BuildPlanner(all_repositories, backends, self.model.raw_config, self.gbs_config)
@@ -233,10 +227,22 @@ class Project:
 
         for output_group in self.model.output_groups:
             plan = planner.plan(output_group)
+
+            # Evaluate root partition template with this output group's filter vars
+            root_partition = self.model.root_partition_template.evaluate(
+                plan.filter_vars,
+                self.model.root_library_name
+            )
+
+            # Resolve dependencies
+            from ..repository.resolver import DependencyResolver
+            resolver = DependencyResolver(plan.repositories, plan.filter_vars)
+            source_fileset = resolver.resolve([root_partition])
+
             realization = PlanRealization(
                 project = self,
                 plan = plan,
-                source_fileset = self.model.resolve(plan.repositories, plan.filter_vars),
+                source_fileset = source_fileset,
             )
 
             await realization.dispatch()
@@ -439,10 +445,13 @@ class PlanRealization:
             base_output_path = self.project.base_output_path)
 
         num_files = len(self.source_fileset.get_all_files())
-        num_libs = len(self.source_fileset.libraries)
+        # Extract unique library names from partition names (library.partition format)
+        library_names = {p.split('.', 1)[0] for p in self.source_fileset.partitions}
+        num_libs = len(library_names)
+        num_partitions = len(self.source_fileset.partitions)
         logger.info(f"  Output group '{self.plan.output_group.name}':")
         logger.info(f"    Topcell: {self.plan.output_group.topcell}")
-        logger.info(f"    Sources: {num_files} files in {num_libs} libraries")
+        logger.info(f"    Sources: {num_files} files in {num_partitions} partitions ({num_libs} libraries)")
         logger.info(f"    Passes: {self.plan.passes}")
         logger.info(f"    Outputs: {len(self.plan.output_group.outputs)}")
         logger.info(f"Dispatching output group '{self.plan.output_group.name}'...")

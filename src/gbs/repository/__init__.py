@@ -1,11 +1,8 @@
 """Repository system"""
-from .model import (SourceFile, FilterCondition, ConditionalGroup, Partition,
-                    Library, Repository, SourceFileSet)
-from .loader import load_repository, load_partition, load_library
+from .model import (SourceFile, Partition, Repository, SourceFileSet)
+from .loader import load_repository
 from .resolver import DependencyResolver
 from .filters import evaluate_filter
 
-__all__ = ["SourceFile", "FilterCondition", "ConditionalGroup", "Partition",
-           "Library", "Repository", "SourceFileSet", "load_repository",
-           "load_partition", "load_library", "DependencyResolver",
-           "evaluate_filter"]
+__all__ = ["SourceFile", "Partition", "Repository", "SourceFileSet",
+           "load_repository", "DependencyResolver", "evaluate_filter"]

@@ -104,14 +104,14 @@ class ProjectModel:
 
     Attributes:
         name: Project name
-        root_partition: The project's root partition (in "work" library)
+        root_partition_template: The project's root partition template (unevaluated)
         output_groups: List of output groups defining build targets and configurations
         description: Optional description
         raw_config: Raw configuration dictionary (for accessing backends etc)
         max_parallel: Maximum number of parallel tasks (None = use default from config)
     """
     name: str
-    root_partition: Any  # Partition from gbs.repository.model
+    root_partition_template: Any  # PartitionTemplate from gbs.project.partition
     output_groups: list[OutputGroup]
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)
@@ -124,27 +124,6 @@ class ProjectModel:
 
     def __str__(self) -> str:
         return f"ProjectModel({self.name}, {len(self.output_groups)} output groups)"
-
-    def resolve(
-            self,
-            repositories: list[Repository],
-            filter_vars: dict[str, str | int] | None = None,
-    ) -> SourceFileSet:
-        """Resolve project dependencies and create build file set
-
-        Args:
-            project: Project to resolve
-            repositories: Available repositories
-
-        Returns:
-            SourceFileSet with ordered partitions and files
-
-        Raises:
-            ResolutionError: If resolution fails
-        """
-        from ..repository.resolver import DependencyResolver
-        resolver = DependencyResolver(self, repositories, filter_vars)
-        return resolver.resolve()
 
 
 __all__ = [

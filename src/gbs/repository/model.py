@@ -3,9 +3,10 @@
 Data structures representing the GBS build system components.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional
 
 
 @dataclass
@@ -28,155 +29,78 @@ class SourceFile:
 
 
 @dataclass
-class FilterCondition:
-    """A single conditional branch within a group
-
-    Represents one branch of a conditional selection. Conditions are
-    evaluated in order within a group (first-match wins). A condition
-    can specify dependencies, sources, and nested conditional groups.
-
-    Attributes:
-        expression: Filter expression (e.g., "vendor = \"xilinx\"" or "default")
-        deps: List of partition dependencies (format: "library.partition")
-        sources: List of source files
-        groups: Nested conditional groups (for hierarchical conditions)
-    """
-    expression: str
-    deps: list[str] = field(default_factory=list)
-    sources: list[SourceFile] = field(default_factory=list)
-    groups: list['ConditionalGroup'] = field(default_factory=list)
-
-    def is_default(self) -> bool:
-        """Check if this is a default (catch-all) condition"""
-        return self.expression.strip() == "default"
-
-
-@dataclass
-class ConditionalGroup:
-    """A group of mutually exclusive conditions
-
-    Conditions within a group are evaluated in order. The first matching
-    condition wins, and no further conditions are evaluated. This implements
-    a switch/case-like semantic.
-
-    Attributes:
-        name: Group name (for debugging and documentation)
-        conditions: List of conditions (evaluated in order, first-match wins)
-    """
-    name: str
-    conditions: list[FilterCondition] = field(default_factory=list)
-
-    def __str__(self) -> str:
-        return f"ConditionalGroup({self.name}, {len(self.conditions)} conditions)"
-
-
-@dataclass
 class Partition:
-    """A partition within a library
+    """An enumerated partition within a library
 
-    Partitions group related source files and can depend on other partitions.
-    They contain conditional groups that define sources and dependencies
-    based on filter variables.
-
-    Note: Partitions have no direct YAML representation. The partition name
-    is derived from the filename, and the YAML content is parsed as a
-    FilterCondition (the root of the partition).
+    This is an expanded view of a repository partition when filter vars
+    have been applied. All conditional logic has been resolved.
 
     Attributes:
-        name: Partition name (derived from filename)
-        groups: List of conditional groups (all groups are evaluated)
+        name: Partition name (format: "library.partition")
+        sources: List of source files
+        deps: Set of dependencies to other partitions (format: "library.partition")
     """
     name: str
-    groups: list[ConditionalGroup] = field(default_factory=list)
+    sources: list[SourceFile] = field(default_factory=list)
+    deps: set[str] = field(default_factory=set)
 
     def __str__(self) -> str:
-        return f"Partition({self.name}, {len(self.groups)} groups)"
+        return f"Partition({self.name}, {len(self.sources)} sources, {len(self.deps)} deps)"
 
 
-@dataclass
-class Library:
-    """A library containing multiple partitions
+class Repository(ABC):
+    """A repository containing multiple libraries and partitions
 
-    Libraries provide symbol name scoping and group related partitions.
-
-    Attributes:
-        name: Library name
-        partitions: Dictionary of partition name -> Partition
-        description: Optional description
-    """
-    name: str
-    partitions: dict[str, Partition] = field(default_factory=dict)
-    description: Optional[str] = None
-
-    def __str__(self) -> str:
-        return f"Library({self.name}, {len(self.partitions)} partitions)"
-
-    def add_partition(self, partition: Partition):
-        """Add a partition to this library"""
-        self.partitions[partition.name] = partition
-
-    def get_partition(self, name: str) -> Optional[Partition]:
-        """Get a partition by name"""
-        return self.partitions.get(name)
-
-
-@dataclass
-class Repository:
-    """A repository containing multiple libraries
-
-    Repositories group related libraries as a coherent set of functionality.
+    Instances of this ABC are repository enumeration plugins,
+    instantiated once per declared repository.
 
     Attributes:
         name: Repository name
         root: Root path of the repository
-        libraries: Dictionary of library name -> Library
-        description: Optional description
     """
-    name: str
-    root: Path
-    libraries: dict[str, Library] = field(default_factory=dict)
-    description: Optional[str] = None
 
-    def __str__(self) -> str:
-        return f"Repository({self.name}, {len(self.libraries)} libraries)"
+    def __init__(self, name: str, root: Path):
+        """Initialize repository
 
-    def add_library(self, library: Library):
-        """Add a library to this repository"""
-        self.libraries[library.name] = library
+        Args:
+            name: Repository name
+            root: Root path of the repository
+        """
+        self.name = name
+        self.root = root
 
-    def get_library(self, name: str) -> Optional[Library]:
-        """Get a library by name"""
-        return self.libraries.get(name)
-
-    @property
+    @abstractmethod
     def file_types(self) -> set[str]:
-        """Get set of all file types provided by this repository
+        """Get set of all file types possibly provided by this repository
 
         This is used by the build planner to determine what file types
-        are available as sources. Computed by scanning all source files
-        in all partitions across all libraries.
+        are available as sources. Implementation may return more file
+        types than actually selected for a build.
 
         Returns:
             Set of file type strings (e.g., {"vhdl", "verilog", "systemverilog"})
         """
-        types = set()
-        for library in self.libraries.values():
-            for partition in library.partitions.values():
-                # Scan all conditional groups and their conditions
-                for group in partition.groups:
-                    for condition in group.conditions:
-                        # Add file types from sources in this condition
-                        for source in condition.sources:
-                            types.add(source.file_type)
-                        # Recursively scan nested groups
-                        def scan_nested_groups(groups):
-                            for g in groups:
-                                for c in g.conditions:
-                                    for s in c.sources:
-                                        types.add(s.file_type)
-                                    scan_nested_groups(c.groups)
-                        scan_nested_groups(condition.groups)
-        return types
+        pass
+
+    @abstractmethod
+    def partition_lookup(self, partition_name: str, filter_vars: dict[str, str]) -> Optional[Partition]:
+        """Get a partition by name with filter variables applied
+
+        Partition name is in "library.partition" format. The repository
+        enumerates and filters the partition based on filter_vars, returning
+        an expanded Partition with resolved sources and dependencies.
+
+        Args:
+            partition_name: Partition name in "library.partition" format
+            filter_vars: Filter variables (e.g., {"target": "simulation", "tool": "ghdl"})
+
+        Returns:
+            Expanded Partition object if found, None otherwise
+        """
+        pass
+
+    def __str__(self) -> str:
+        return f"Repository({self.name})"
 
 
 @dataclass
@@ -187,48 +111,33 @@ class SourceFileSet:
     dependency traversal and filtering.
 
     Attributes:
-        libraries: Ordered list of libraries (in dependency order)
-        partitions: Dictionary mapping library name to ordered partition list
-        files: Dictionary mapping (library, partition) to source files
-        partition_deps: Dictionary mapping (library, partition) to set of (lib, part) dependencies
+        partitions: Ordered list of partition names (in dependency order)
+        sources: Dictionary mapping partition name to source files
+        partition_deps: Dictionary mapping partition name to set of dependency partition names
     """
-    libraries: list[str] = field(default_factory=list)
-    partitions: dict[str, list[str]] = field(default_factory=dict)
-    files: dict[tuple[str, str], list[SourceFile]] = field(default_factory=dict)
-    partition_deps: dict[tuple[str, str], set[tuple[str, str]]] = field(default_factory=dict)
+    partitions: list[str] = field(default_factory=list)
+    sources: dict[str, list[SourceFile]] = field(default_factory=dict)
+    partition_deps: dict[str, set[str]] = field(default_factory=dict)
 
     def __str__(self) -> str:
-        total_files = sum(len(f) for f in self.files.values())
-        return f"SourceFileSet({len(self.libraries)} libraries, {total_files} files)"
+        total_files = sum(len(f) for f in self.sources.values())
+        return f"SourceFileSet({len(self.partitions)} partitions, {total_files} files)"
 
-    def add_partition(self, library: str, partition: str, files: list[SourceFile], deps: list[tuple[str, str]] = None):
-        """Add a partition with its files to the build set
+    def add_partition(self, partition: Partition):
+        """Add a partition to the build set
 
         Args:
-            library: Library name
-            partition: Partition name
-            files: Source files in the partition
-            deps: List of (library, partition) tuples this partition depends on
+            partition: Partition to add
         """
-        if library not in self.partitions:
-            self.libraries.append(library)
-            self.partitions[library] = []
+        if partition.name not in self.partitions:
+            self.partitions.append(partition.name)
 
-        if partition not in self.partitions[library]:
-            self.partitions[library].append(partition)
-
-        self.files[(library, partition)] = files
-
-        # Store partition dependencies
-        if deps is not None:
-            self.partition_deps[(library, partition)] = set(deps)
-        else:
-            self.partition_deps[(library, partition)] = set()
+        self.sources[partition.name] = partition.sources
+        self.partition_deps[partition.name] = partition.deps
 
     def get_all_files(self) -> list[SourceFile]:
         """Get all source files in build order"""
         result = []
-        for library in self.libraries:
-            for partition in self.partitions.get(library, []):
-                result.extend(self.files.get((library, partition), []))
+        for partition_name in self.partitions:
+            result.extend(self.sources.get(partition_name, []))
         return result
