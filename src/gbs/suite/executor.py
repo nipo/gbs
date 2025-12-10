@@ -190,6 +190,11 @@ class SuiteExecutor:
             # Load project
             project = Project.load_from_file(project_path, gbs_config=self.gbs_config)
 
+            # Set suite-scoped output directory to prevent cross-contamination
+            # Format: gbs-build/suite/<project_name>/
+            suite_output_base = Path("gbs-build") / "suite" / proj_ref.name
+            project.set_base_output_path(suite_output_base)
+
             # Override max_parallel if specified
             if proj_ref.max_parallel is not None:
                 project.set_max_parallel(proj_ref.max_parallel)

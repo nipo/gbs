@@ -25,7 +25,8 @@ class BuildContext:
         project_config: Optional[dict[str, Any]] = None,
         project: Optional[Any] = None,
         gbs_config: Optional[Any] = None,
-        semaphore: Optional[asyncio.Semaphore] = None
+        semaphore: Optional[asyncio.Semaphore] = None,
+        base_output_path: Optional[Path] = None
     ):
         """Initialize build context
 
@@ -36,6 +37,8 @@ class BuildContext:
             gbs_config: Optional GBSConfig instance for tool lookup
             semaphore: Optional shared semaphore for parallel execution control
                       (if provided, max_parallel is ignored)
+            base_output_path: Optional base path for build outputs (defaults to "gbs-build")
+                             Suite builds use this to scope projects to separate directories
         """
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None
@@ -49,11 +52,14 @@ class BuildContext:
         self.logger = get_logger("BuildContext")
         self.__messages: list[ToolMessage] = []
 
+        # Base output path (for suite scoping)
+        self._base_output_path = base_output_path or Path("gbs-build")
+
         # Output group context (set when building a specific output group)
         self._topcell: Optional[str] = None
         self._topcell_library: Optional[str] = None
         self._output_group: Optional[Any] = None  # OutputGroup instance
-        self.output_path = Path("gbs-build") / "undefined_yet"
+        self.output_path = self._base_output_path / "undefined_yet"
 
         # Progress tracking
         self._progress_condition: Optional[asyncio.Condition] = None
@@ -218,7 +224,7 @@ class BuildContext:
         self._topcell = topcell
         self._topcell_library = topcell_library or (self.project.root_library_name if self.project else "work")
         self._output_group = output_group
-        self.output_path = Path("gbs-build") / output_group.name
+        self.output_path = self._base_output_path / output_group.name
 
     def get_topcell(self) -> Optional[str]:
         """Get the current output group topcell name

@@ -68,6 +68,7 @@ class Project:
         self.repositories = repositories
         self.path = path
         self.gbs_config = gbs_config
+        self.base_output_path = None  # Can be set for suite builds to scope output directories
         self.__realizations = None
 
         # Determine max_parallel using precedence chain:
@@ -106,6 +107,16 @@ class Project:
         if self._semaphore is not None:
             raise ValueError("Cannot change max_parallel after semaphore is initialized")
         self._max_parallel = max_parallel
+
+    def set_base_output_path(self, base_output_path: Path):
+        """Set base output path for this project
+
+        Used by suite executor to scope project builds to separate directories.
+
+        Args:
+            base_output_path: Base directory for build outputs
+        """
+        self.base_output_path = base_output_path
 
     @classmethod
     def load_from_file(cls, path: Path, gbs_config=None) -> 'Project':
@@ -424,7 +435,8 @@ class PlanRealization:
         self.build_ctx = BuildContext(
             project = self.project.model,
             gbs_config = self.project.gbs_config,
-            semaphore = self.project.semaphore)
+            semaphore = self.project.semaphore,
+            base_output_path = self.project.base_output_path)
 
         num_files = len(self.source_fileset.get_all_files())
         num_libs = len(self.source_fileset.libraries)
