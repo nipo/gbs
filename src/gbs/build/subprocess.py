@@ -5,6 +5,7 @@ of gbs using asyncio.
 from __future__ import annotations
 from pathlib import Path
 import asyncio
+import os
 from .message import *
 from .. import logging
 
@@ -27,9 +28,18 @@ class MessageSubprocess:
     """
     def __init__(self,
                  argv: list[str],
-                 cwd: Path = Path(".")):
+                 cwd: Path = Path("."),
+                 env: dict[str, str] | None = None):
+        """Initialize MessageSubprocess
+
+        Args:
+            argv: Command and arguments to execute
+            cwd: Working directory for the subprocess
+            env: Additional environment variables to inject (merged with current environment)
+        """
         self.argv = argv
         self.cwd = cwd
+        self.env = env
         self.process = None
         self.__queue = asyncio.Queue()
         self.logger = logging.get_logger(self.__class__.__name__)
@@ -110,13 +120,21 @@ class MessageSubprocess:
             return
 
         self.logger.debug(f"Launching process with argv={self.argv}")
-        
+
+        # Merge additional environment variables with current environment
+        process_env = None
+        if self.env:
+            process_env = os.environ.copy()
+            process_env.update(self.env)
+            self.logger.debug(f"Injecting environment variables: {list(self.env.keys())}")
+
         self.process = await asyncio.create_subprocess_exec(
             *self.argv,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self.cwd),
+            env=process_env,
         )
 
         self.stdout_task = asyncio.create_task(

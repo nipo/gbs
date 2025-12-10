@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import os
 from .. import logging
 import re
 from typing import AsyncIterator
@@ -26,9 +27,17 @@ class Session:
     """
     promt : str = "$ "
 
-    def __init__(self, argv: list[str], cwd: Path = Path(".")):
+    def __init__(self, argv: list[str], cwd: Path = Path("."), env: dict[str, str] | None = None):
+        """Initialize shell session
+
+        Args:
+            argv: Command and arguments to execute
+            cwd: Working directory for the subprocess
+            env: Additional environment variables to inject (merged with current environment)
+        """
         self.argv = argv
         self.cwd = cwd
+        self.env = env
         self.__process = None
         self.__queue = asyncio.Queue()
         self.__logger = logging.get_logger(self.__class__.__name__)
@@ -103,12 +112,20 @@ class Session:
 
             self.cwd.mkdir(parents = True, exist_ok = True)
 
+            # Merge additional environment variables with current environment
+            process_env = None
+            if self.env:
+                process_env = os.environ.copy()
+                process_env.update(self.env)
+                self.__logger.debug(f"Injecting environment variables: {list(self.env.keys())}")
+
             self.__process = await asyncio.create_subprocess_exec(
                 *self.argv,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.cwd),
+                env=process_env,
             )
 
             self.stdout_task = asyncio.create_task(
