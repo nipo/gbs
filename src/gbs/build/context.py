@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from ..logging import get_logger, get_log_file
 from .message import *
-from .task import VirtualResource, Resource
+from .task import VirtualResource, Resource, Stamp
 import asyncio
 
 class BuildContext:
@@ -174,6 +174,22 @@ class BuildContext:
                 r.metadata.update(metadata)
 
         return self._resources[path]
+
+    def get_stamp(self, name) -> Stamp:
+        from .task import ResourceTypology
+
+        path = self.output_path / name
+        path = path.resolve()
+        try:
+            return self._resources[path]
+        except KeyError:
+            pass
+
+        r = Stamp(self, path)
+
+        self._resources[path] = r
+
+        return r
 
     def get_virtual_resource(self, name: str) -> 'VirtualResource':
         """Get or create a VirtualResource (singleton)

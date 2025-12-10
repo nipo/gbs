@@ -231,43 +231,42 @@ class BuildStep(asyncio.Future):
     def launch(self) -> asyncio.Task:
         if self.task:
             return self.task
-        self.logger.debug("launch")
         self.task = asyncio.create_task(self.__worker())
         return self.task
 
     async def __worker(self):
         # Initialize progress
-        await self.update_progress(0.0, "Starting")
+        await self.update_progress(0.0, "Waiting")
 
         # Wait for all dependencies if any
         deps_failed = None
         pending = self.depends_on
+        failing = []
         while pending:
-            self.logger.debug("Waiting pending %s", pending)
+            self.logger.debug("%s Blocked by %s", self.name, pending)
             done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
             for fut in done:
-                self.logger.debug("- done: %s", fut)
                 try:
                     r = fut.result()
                 except Exception as e:
                     deps_failed = PrerequisiteFailed(fut)
+                    failing.append(fut)
 
         if deps_failed is not None:
-            self.logger.debug("Some deps failed: %s", deps_failed)
-            await self.update_progress(1.0, "Failed (dependency)")
+            self.logger.debug("%s deps failed: %s", self.name, deps_failed)
+            await self.update_progress(.001, f"Prereq failed: {failing}")
             self.__mark_done(deps_failed)
             return
 
-        self.logger.debug("Starting work")
+        await self.update_progress(0.001, "Starting")
         try:
             await self._work()
         except Exception as e:
-            self.logger.debug("Work failed: %s", e)
+            self.logger.debug("%s failed: %s", self.name, e)
             await self.update_progress(1.0, "Failed")
             self.__mark_done(e)
             return
 
-        self.logger.debug("Work done")
         # Auto-complete if not already at 100%
         if self.progress < 1.0:
             await self.update_progress(1.0, "Complete")
@@ -412,6 +411,21 @@ class Resource(BuildStep):
         if not self.exists():
             raise BuildError(f"File {self.path} missing")
 
+class Stamp(Resource):
+    """A build stamp
+    """
+
+    def __init__(
+        self,
+        context: BuildContext,
+        path: Path,
+    ):
+        super().__init__(context, path, file_type = "build-stamp")
+
+    def touch(self):
+        self.path.parent.mkdir(exist_ok = True, parents = True)
+        self.path.write_text("")
+        
 class Task(BuildStep):
     """A build task that awaits inputs, runs, and resolves outputs
 
@@ -501,7 +515,10 @@ class Task(BuildStep):
             self.logger.info(f"Task {self.name}: up-to-date, skipping")
             return
         else:
-            return await self.work()
+            ret = await self.work()
+            for stamp in self.outputs_of_type("build-stamp"):
+                stamp.touch()
+            return ret
 
     async def work(self) -> None:
         """Execute the task work
