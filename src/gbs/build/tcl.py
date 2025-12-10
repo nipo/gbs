@@ -263,10 +263,12 @@ class CommandTask(Task):
         had_error = False
 
         await self.prepare()
-        
+
         cmd = self.command()
         async for msg in self.session.interact(cmd):
-            had_error |= (msg.severity == MessageSeverity.ERROR)
+            # Check for errors (skip non-ToolMessage objects like progress indicators)
+            if hasattr(msg, 'severity'):
+                had_error |= (msg.severity == MessageSeverity.ERROR)
             await self.message_handle(msg)
         if had_error:
             raise BuildError("Command generated error messages")
