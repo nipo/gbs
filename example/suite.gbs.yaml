@@ -48,3 +48,11 @@ projects:
     path: gowin/nsl_cdc_demo
     tags: [gowin, nsl, cdc]
     skip: true  # Skip by default (may require additional setup)
+
+  - name: ice40-synth
+    path: yosys/ice40/blink
+    tags: [synth, yosys, ice40]
+
+  - name: gowin-synth
+    path: gowin/tang_60k/blink
+    tags: [synth, gowin]
