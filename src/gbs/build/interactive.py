@@ -7,6 +7,7 @@ that maintain state between commands (TCL interpreters, shells, etc.).
 from __future__ import annotations
 import asyncio
 import os
+import pty
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Generic, TypeVar
 from pathlib import Path
@@ -38,21 +39,39 @@ class Session(ABC, Generic[CommandT]):
     prompt: str = "% "
     """Prompt string matched against stdout to detect command completion"""
 
-    def __init__(self, argv: list[str], cwd: Path = Path("."), env: dict[str, str] | None = None):
+    def __init__(
+        self,
+        argv: list[str],
+        cwd: Path = Path("."),
+        env: dict[str, str] | None = None,
+        use_pty: bool = False,
+    ):
         """Initialize interactive session
 
         Args:
             argv: Command and arguments to execute
             cwd: Working directory for the subprocess
             env: Additional environment variables to inject (merged with current environment)
+            use_pty: Use pseudo-tty instead of pipes for stdin/stdout. Some tools
+                     (like Vivado) require a tty for proper interactive behavior.
         """
         self.argv = argv
         self.cwd = cwd
         self.env = env
+        self.use_pty = use_pty
         self._process = None
         self._queue = asyncio.Queue()
         self._logger = logging.get_logger(self.__class__.__name__)
         self._lock = asyncio.Lock()
+
+        # PTY-specific state
+        self._pty_master_fd: int | None = None
+        self._pty_master_file = None
+        self._pty_transport = None
+
+        # Abstracted I/O (set in _launch)
+        self._stdout_stream = None
+        self._stdin_writer = None
 
     @property
     def returncode(self):
@@ -137,12 +156,84 @@ class Session(ABC, Generic[CommandT]):
             await self._queue.put(msg)
         await self._queue.put(None)
 
+    async def _launch_with_pipes(self, process_env):
+        """Launch process with pipe-based I/O"""
+        self._process = await asyncio.create_subprocess_exec(
+            *self.argv,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self.cwd),
+            env=process_env,
+        )
+
+        self._stdout_stream = self._process.stdout
+        self._stdin_writer = self._process.stdin
+
+        self.stdout_task = asyncio.create_task(
+            self._stream_handler(self._process.stdout, self.stdout_transform))
+        self.stderr_task = asyncio.create_task(
+            self._stream_handler(self._process.stderr, self.stderr_transform))
+
+    async def _launch_with_pty(self, process_env):
+        """Launch process with pseudo-tty for stdin/stdout"""
+        # Create pty pair
+        master_fd, slave_fd = pty.openpty()
+        self._pty_master_fd = master_fd
+
+        try:
+            # Launch process with slave as stdin/stdout, keep stderr as pipe
+            self._process = await asyncio.create_subprocess_exec(
+                *self.argv,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.cwd),
+                env=process_env,
+            )
+        finally:
+            # Close slave fd in parent - child has its own copy
+            os.close(slave_fd)
+
+        # Wrap master fd in async stream reader
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+
+        # Open master fd as file object for read pipe
+        self._pty_master_file = os.fdopen(master_fd, 'rb', buffering=0)
+        self._pty_transport, _ = await loop.connect_read_pipe(
+            lambda: protocol, self._pty_master_file
+        )
+
+        self._stdout_stream = reader
+
+        # Create a simple writer wrapper for the pty master fd
+        class PtyWriter:
+            def __init__(self, fd):
+                self._fd = fd
+
+            def write(self, data: bytes):
+                os.write(self._fd, data)
+
+            async def drain(self):
+                # PTY writes are synchronous, no drain needed
+                pass
+
+        self._stdin_writer = PtyWriter(master_fd)
+
+        # Start stream handlers
+        self.stdout_task = asyncio.create_task(
+            self._stream_handler(self._stdout_stream, self.stdout_transform))
+        self.stderr_task = asyncio.create_task(
+            self._stream_handler(self._process.stderr, self.stderr_transform))
+
     async def _launch(self):
         """Launch the interpreter process"""
         async with self._lock:
             if self._process:
                 return
-            self._logger.debug(f"Launching interpreter with argv={self.argv}")
+            self._logger.debug(f"Launching interpreter with argv={self.argv} (pty={self.use_pty})")
 
             await self.prepare()
 
@@ -155,19 +246,10 @@ class Session(ABC, Generic[CommandT]):
                 process_env.update(self.env)
                 self._logger.debug(f"Injecting environment variables: {list(self.env.keys())}")
 
-            self._process = await asyncio.create_subprocess_exec(
-                *self.argv,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self.cwd),
-                env=process_env,
-            )
-
-            self.stdout_task = asyncio.create_task(
-                self._stream_handler(self._process.stdout, self.stdout_transform))
-            self.stderr_task = asyncio.create_task(
-                self._stream_handler(self._process.stderr, self.stderr_transform))
+            if self.use_pty:
+                await self._launch_with_pty(process_env)
+            else:
+                await self._launch_with_pipes(process_env)
 
         await self.session_init()
 
@@ -193,8 +275,8 @@ class Session(ABC, Generic[CommandT]):
         cmd_str = self._cmd_serialize(cmd)
         self._logger.debug(f"send {cmd_str}")
 
-        self._process.stdin.write(f"{cmd_str}\n".encode('utf-8'))
-        await self._process.stdin.drain()
+        self._stdin_writer.write(f"{cmd_str}\n".encode('utf-8'))
+        await self._stdin_writer.drain()
 
     async def prepare(self):
         """Pre-launch preparation hook
@@ -243,6 +325,15 @@ class Session(ABC, Generic[CommandT]):
                 await self._process.wait()
             finally:
                 self._process = None
+
+                # Clean up PTY resources
+                if self._pty_transport:
+                    self._pty_transport.close()
+                    self._pty_transport = None
+                # Note: closing transport closes the underlying file,
+                # which closes the fd, so we don't close _pty_master_fd separately
+                self._pty_master_file = None
+                self._pty_master_fd = None
 
 
 class CommandTask(Task, Generic[CommandT]):
