@@ -34,6 +34,7 @@ class GHDLAnalyzePass(Pass):
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
         return {
+            "target-usage": "simulation",
             "compiler": "ghdl",
             "vhdl-version": vhdl_std,
         }
