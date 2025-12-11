@@ -405,6 +405,68 @@ class SuiteExecutor:
 
         return projects_to_build
 
+    def list_projects(self) -> list[tuple[ProjectReference, Optional[Path]]]:
+        """List all projects in the suite with their project files
+
+        Returns:
+            List of (ProjectReference, project_file_path) tuples.
+            project_file_path is None if the file couldn't be found.
+        """
+        projects_with_files = []
+
+        for proj_ref in self.suite.projects:
+            try:
+                project_file = self._find_project_file(proj_ref.path)
+                projects_with_files.append((proj_ref, project_file))
+            except ExecutionError as e:
+                logger.warning(f"Project '{proj_ref.name}': {e}")
+                projects_with_files.append((proj_ref, None))
+
+        return projects_with_files
+
+    async def clean_suite(self, dry_run: bool = False) -> dict[str, Optional[str]]:
+        """Clean all projects in the suite
+
+        Uses the same base output path logic as build_suite().
+
+        Args:
+            dry_run: If True, show what would be cleaned without actually cleaning
+
+        Returns:
+            Dictionary mapping project name to error message (None if successful)
+        """
+        from ..project import Project
+
+        results = {}
+
+        for proj_ref in self.suite.projects:
+            if proj_ref.skip:
+                results[proj_ref.name] = "skipped"
+                continue
+
+            try:
+                # Find project file
+                project_path = self._find_project_file(proj_ref.path)
+
+                # Load project
+                project = Project.load_from_file(project_path, gbs_config=self.gbs_config)
+
+                # Set the SAME suite-scoped output directory as build_suite()
+                # Format: gbs-build/suite/<project_name>/
+                suite_output_base = Path("gbs-build") / "suite" / proj_ref.name
+                project.set_base_output_path(suite_output_base)
+
+                # Clean project
+                await project.clean(dry_run=dry_run)
+
+                results[proj_ref.name] = None  # Success
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"Failed to clean project '{proj_ref.name}': {error_msg}")
+                results[proj_ref.name] = error_msg
+
+        return results
+
 
 __all__ = [
     'SuiteExecutor',

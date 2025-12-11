@@ -204,10 +204,11 @@ async def build(
 @click.pass_context
 async def list(ctx, verbose):
     """List all projects in a suite"""
-    from ..suite import load_suite
+    from ..suite import load_suite, SuiteExecutor
 
     logger = get_logger()
     suite_file = get_suite_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
 
     try:
         # Load suite
@@ -218,13 +219,21 @@ async def list(ctx, verbose):
             click.echo(f"Description: {suite_def.description}")
         click.echo()
 
-        click.echo(f"Projects ({len(suite_def.projects)}):")
-        for proj in suite_def.projects:
+        # Use executor to list projects (ensures consistent project file discovery)
+        executor = SuiteExecutor(suite_def, gbs_config=gbs_config)
+        projects_with_files = executor.list_projects()
+
+        click.echo(f"Projects ({len(projects_with_files)}):")
+        for proj, project_file in projects_with_files:
             status = "(skipped)" if proj.skip else ""
-            click.echo(f"  • {proj.name} {status}")
+            status_mark = "" if project_file else " [ERROR: project file not found]"
+            click.echo(f"  • {proj.name} {status}{status_mark}")
 
             if verbose:
-                click.echo(f"      Path: {proj.path}")
+                if project_file:
+                    click.echo(f"      Path: {project_file}")
+                else:
+                    click.echo(f"      Path: {proj.path} (not found)")
                 if proj.output_groups:
                     click.echo(f"      Output groups: {', '.join(proj.output_groups)}")
                 if proj.depends_on:
@@ -250,9 +259,9 @@ async def clean(ctx, dry_run):
     """Clean all projects in a suite
 
     Removes build directories and generated files for all projects.
+    Uses the same base output path logic as build.
     """
-    from ..suite import load_suite
-    from ..project import Project
+    from ..suite import load_suite, SuiteExecutor
 
     logger = get_logger()
     suite_file = get_suite_file(ctx)
@@ -264,28 +273,16 @@ async def clean(ctx, dry_run):
 
         click.echo(f"Cleaning suite '{suite_def.name}' ({len(suite_def.projects)} projects)...")
 
-        for proj_ref in suite_def.projects:
-            if proj_ref.skip:
-                continue
+        # Use executor to clean (ensures consistent base_output_path as build)
+        executor = SuiteExecutor(suite_def, gbs_config=gbs_config)
+        results = await executor.clean_suite(dry_run=dry_run)
 
-            try:
-                # Find and load project
-                project_path = proj_ref.path
-                if project_path.is_dir():
-                    project_path = project_path / "project.gbs.yaml"
-
-                if not project_path.exists():
-                    click.echo(f"  - {proj_ref.name}: project file not found")
-                    continue
-
-                project = Project.load_from_file(project_path, gbs_config=gbs_config)
-
-                click.echo(f"  Cleaning {proj_ref.name}...")
-                await project.clean(dry_run=dry_run)
-
-            except Exception as e:
-                logger.warning(f"Failed to clean project '{proj_ref.name}': {e}")
-                click.echo(f"  - {proj_ref.name}: {e}", err=True)
+        # Report results
+        for proj_name, error in results.items():
+            if error == "skipped":
+                click.echo(f"  - {proj_name}: skipped")
+            elif error:
+                click.echo(f"  - {proj_name}: ERROR - {error}", err=True)
 
         click.echo()
         if dry_run:
