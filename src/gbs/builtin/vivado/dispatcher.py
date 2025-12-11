@@ -1,0 +1,163 @@
+"""Vivado Dispatcher
+
+Dispatcher implementation for Xilinx Vivado FPGA synthesis flow
+in non-project (in-memory) mode.
+"""
+
+from __future__ import annotations
+from typing import Any
+from pathlib import Path
+
+from ...backend.dispatcher import BaseDispatcher
+from ...build.context import BuildContext
+from ...build.task import ResourceTypology
+from ...utils import expand_path
+from .task import NonProjectBuild
+from .vivado_tcl import Session
+
+
+# Accepted input file types
+ACCEPTED_INPUT_TYPES = {
+    "vhdl",
+    "verilog",
+    "xilinx-xci",
+    "xilinx-xdc",
+    "xilinx-constraints-tcl",
+    "vivado-block-design",
+    "vivado-init-tcl",
+}
+
+# Output file types and their default filenames
+OUTPUT_FILES = {
+    "vivado-routing-report": "routing-report.txt",
+    "vivado-timing-report": "timing-report.txt",
+    "vivado-power-report": "power-report.txt",
+    "vivado-usage-report": "usage-report.txt",
+    "vivado-netlist-edif": "pnr-netlist.edif",
+    "vivado-drc-report": "drc-report.txt",
+    "vivado-bitstream": "final.bit",
+}
+
+
+class VivadoDispatcher(BaseDispatcher):
+    """Vivado FPGA synthesis backend (non-project mode)
+
+    Workflow:
+      First process() call:
+        - Creates single build task with no inputs declared
+        - Attaches output resources for all output types
+
+      Subsequent process() calls:
+        - Attaches any pending files of accepted input types to the task
+        - HDL files are added in library dependency order
+
+    Priority: 600 (synthesis/backend compilation)
+    """
+
+    def __init__(
+        self,
+        context: BuildContext,
+        vhdl_std: str = "2008",
+        vivado_tool: str = "vivado",
+        target: dict[str, str] | None = None,
+    ):
+        super().__init__(context, "vivado", tool_name=vivado_tool, priority=600)
+        self.vivado_tool = vivado_tool
+        self.vhdl_std = vhdl_std
+        self.target = target or {}
+        self._session: Session | None = None
+        self._build_task: NonProjectBuild | None = None
+
+    def _get_session(self) -> Session:
+        """Get or create shared Vivado TCL session"""
+        if self._session is None:
+            vivado_config = self.context.get_tool(self.vivado_tool)
+            vivado_path = expand_path(vivado_config["path"])
+
+            # Vivado executable
+            vivado_exe = vivado_path / "bin" / "vivado"
+            if not vivado_exe.exists():
+                # Try Windows path
+                vivado_exe = vivado_path / "bin" / "vivado.bat"
+
+            if not vivado_exe.exists():
+                raise RuntimeError(f"Vivado not found at {vivado_path}")
+
+            self._session = Session(
+                argv=[
+                    str(vivado_exe),
+                    "-mode", "tcl",
+                    "-nojournal",
+                    "-nolog",
+                ],
+                cwd=self.context.output_path,
+                use_pty=True,  # Vivado requires a tty for proper interactive behavior
+            )
+
+        return self._session
+
+    async def process(self) -> None:
+        """Process input files
+
+        On first call, creates the build task with output resources.
+        On every call, attaches any pending files of accepted types to the task.
+        """
+        if self._build_task is None:
+            await self._create_build_task()
+
+        # Attach any pending files of accepted types
+        await self._attach_pending_inputs()
+
+    async def _create_build_task(self) -> None:
+        """Create the single build task with output resources"""
+        session = self._get_session()
+        part = self.target.get("part")
+
+        if not part:
+            raise RuntimeError("Vivado backend requires 'part' in target configuration")
+
+        # Create output resources
+        outputs = []
+        for file_type, filename in OUTPUT_FILES.items():
+            path = self.context.output_path / filename
+            resource = self.context.get_resource(
+                path,
+                file_type=file_type,
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
+            outputs.append(resource)
+            self.context.add_pending(resource)
+
+        # Create the build task with no inputs (inputs added dynamically)
+        self._build_task = NonProjectBuild(
+            dispatcher=self,
+            session=session,
+            part=part,
+            inputs = [],
+            outputs=outputs,
+        )
+
+        self.logger.info(f"Created Vivado build task for part {part}")
+
+    async def _attach_pending_inputs(self) -> None:
+        """Attach any pending files of accepted types to the build task"""
+        existing_paths = {r.path for r in self._build_task.inputs}
+
+        for file_type in ACCEPTED_INPUT_TYPES:
+            for source in list(self.context.filter_pending(file_type=file_type)):
+                if source.path in existing_paths:
+                    continue
+
+                self.logger.debug(f"Attaching input: {source.path} (type={file_type})")
+
+                resource = self.context.get_resource(source.path)
+                resource.metadata = {
+                    'file_type': file_type,
+                    'library': source.library,
+                    'variant': getattr(source, 'variant', None),
+                }
+
+                self._build_task.inputs.append(resource)
+                self._build_task.dependency_add(resource)
+                self.context.remove_pending(source.path)

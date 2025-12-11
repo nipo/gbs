@@ -58,6 +58,12 @@ tools:
     config:
       path: /opt/Xilinx/14.7
 
+  # Vivado
+  - name: vivado
+    variant: 2019.2
+    config:
+      path: /opt/Xilinx/Vivado/2019.2
+
 # Common Repositories
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation
