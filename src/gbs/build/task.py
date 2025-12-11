@@ -114,7 +114,7 @@ class BuildStep(asyncio.Future):
             progress: Progress value 0.0 to 1.0
             message: Optional status message
         """
-        progress = max(0.0, min(1.0, progress))
+        progress = max(0.0, min(1.0, progress or 0.))
 
         # Update own state
         if self.progress_started is None:
@@ -262,7 +262,7 @@ class BuildStep(asyncio.Future):
         try:
             await self._work()
         except Exception as e:
-            self.logger.debug("%s failed: %s", self.name, e)
+            self.logger.exception("%s excepted", self.name)
             await self.update_progress(1.0, "Failed")
             self.__mark_done(e)
             return
