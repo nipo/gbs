@@ -290,35 +290,20 @@ class Project:
 
         Delegates to each output group's realization to clean their build artifacts.
         Dispatchers decide what paths to clean based on what they created.
-        If gbs-build/ becomes empty, it is also removed.
+        If base output path becomes empty, it is also removed.
 
         Args:
             dry_run: If True, show what would be deleted without actually deleting
         """
         import click
 
-        # Track all cleaned paths to check if gbs-build becomes empty
+        # Track all cleaned paths to check if base output path becomes empty
         all_cleaned_paths = set()
 
         # Clean each realization by asking its dispatchers what to clean
         async for realization in self.realizations():
             cleaned_paths = realization.clean(dry_run)
             all_cleaned_paths |= cleaned_paths
-
-        # After cleaning all realizations, check if gbs-build is empty
-        gbs_build_dir = Path("gbs-build")
-        if gbs_build_dir.exists():
-            try:
-                is_empty = not any(gbs_build_dir.iterdir())
-                if is_empty:
-                    if dry_run:
-                        click.echo(f"Would remove empty: {gbs_build_dir}/")
-                    else:
-                        click.echo(f"Removing empty directory: {gbs_build_dir}/")
-                        gbs_build_dir.rmdir()
-            except OSError:
-                # Directory might not be empty or might have permission issues
-                pass
             
     async def show_graph(self):
         """Show build dependency graph
@@ -605,33 +590,20 @@ class PlanRealization:
             dry_run: If True, just return paths without cleaning
 
         Returns:
-            Set of paths that were/would be cleaned
+            Set of paths that were cleaned (or would be cleaned if dry_run)
         """
         import click
-        import shutil
+        from ..utils import clean_paths
 
         # Collect paths to clean from all dispatchers
         paths_to_clean = set()
         for dispatcher in self.dispatcher_registry.get_dispatchers_ordered():
             dispatcher_paths = dispatcher.get_clean_paths()
             paths_to_clean |= dispatcher_paths
+        paths_to_clean |= self.build_ctx.to_clean()
 
-        # Clean or report paths
-        for path in sorted(paths_to_clean):
-            if path.exists():
-                if dry_run:
-                    click.echo(f"Would remove: {path}/")
-                else:
-                    click.echo(f"Removing: {path}/")
-                    if path.is_dir():
-                        shutil.rmtree(path)
-                    else:
-                        path.unlink()
-            else:
-                if not dry_run:
-                    click.echo(f"Already clean: {path}/ (does not exist)")
-
-        return paths_to_clean
+        # Clean paths using utility function
+        return clean_paths(paths_to_clean, dry_run=dry_run, echo_func=click.echo)
 
 __all__ = [
     'LoadError',

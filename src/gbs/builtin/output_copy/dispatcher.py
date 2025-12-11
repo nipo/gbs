@@ -96,3 +96,24 @@ class OutputCopyDispatcher(BaseDispatcher):
 
             # Update the resource to reflect it now has a producer
             dest_resource.generated_by = self.name
+
+            # Track output paths for cleaning
+            if not hasattr(self, '_output_paths'):
+                self._output_paths = set()
+            self._output_paths.add(dest_path)
+
+    def get_clean_paths(self) -> set:
+        """Return paths that should be cleaned by this dispatcher
+
+        Includes both the working directory and any output files we copied.
+
+        Returns:
+            Set of Path objects to clean
+        """
+        paths = {self.context.output_path}
+
+        # Add any output files we copied
+        if hasattr(self, '_output_paths'):
+            paths |= self._output_paths
+
+        return paths
