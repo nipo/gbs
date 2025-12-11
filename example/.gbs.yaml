@@ -64,6 +64,12 @@ tools:
     config:
       path: /opt/Xilinx/Vivado/2019.2
 
+  # QuestaSim
+  - name: questa
+    variant: altera-fse
+    config:
+      path: /opt/Altera/prime/questa_fse
+
 # Common Repositories
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation

@@ -1,0 +1,21 @@
+name: hello
+
+root:
+  name: top
+  deps:
+    - nsl_data.text
+    - nsl_simulation.assertions
+  sources:
+    - file_type: vhdl
+      files:
+        - top.vhd
+
+output:
+  - name: simulation
+    topcell: top
+    filter_vars: {}
+    backend_config: {}
+    outputs:
+      - type: questa-simulator
+        path: sim.exe
+
