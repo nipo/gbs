@@ -55,17 +55,31 @@ class GowinDispatcher(BaseDispatcher):
 
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
-        if self._session is None:
-            gw_sh = self.gowin_path / "IDE" / "bin" / "gw_sh"
+        if self._session is not None:
+            return self._session
 
-            if not gw_sh.exists():
-                raise RuntimeError(f"gw_sh not found at {gw_sh}")
+        gw_sh = self.gowin_path / "IDE" / "bin" / "gw_sh"
 
-            self._session = Session(
-                argv=[str(gw_sh)],
-                cwd=self.context.output_path,
-                use_pty=True,
-            )
+        if not gw_sh.exists():
+            raise RuntimeError(f"gw_sh not found at {gw_sh}")
+
+        gw_lib = self.gowin_path / "IDE" / "lib"
+
+        env = {"QT_QPA_PLATFORM":"offscreen"}
+
+        import platform
+
+        if platform.system() == "Darwin":
+            env["DYLD_LIBRARY_PATH"] = str(gw_lib)
+        elif platform.system() == "Linux":
+            env["LD_LIBRARY_PATH"] = str(gw_lib)
+
+        self._session = Session(
+            argv=[str(gw_sh)],
+            cwd=self.context.output_path,
+            env = env,
+            use_pty=True,
+        )
 
         return self._session
 
