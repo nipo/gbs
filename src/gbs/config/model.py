@@ -54,10 +54,12 @@ class GBSConfig:
     - Tools: Extend list, but (name, variant) tuples override
     - Repositories: Extend list unconditionally
     - max_parallel: Override (higher priority wins)
+    - max_log_count: Override (higher priority wins)
     """
     tools: list[ToolConfig] = field(default_factory=list)
     repositories: list[dict] = field(default_factory=list)
     max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
+    max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name' or 'name:variant'
@@ -178,10 +180,23 @@ class GBSConfig:
                 logger.warning(f"Invalid max_parallel value in {path}, ignoring")
                 max_parallel = None
 
+        # Parse max_log_count
+        max_log_count = data.get('max_log_count')
+        if max_log_count is not None:
+            try:
+                max_log_count = int(max_log_count)
+                if max_log_count < 0:
+                    logger.warning(f"max_log_count must be >= 0 in {path}, ignoring")
+                    max_log_count = None
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid max_log_count value in {path}, ignoring")
+                max_log_count = None
+
         return cls(
             tools=tools,
             repositories=repositories,
-            max_parallel=max_parallel
+            max_parallel=max_parallel,
+            max_log_count=max_log_count,
         )
 
     @classmethod
@@ -223,8 +238,12 @@ class GBSConfig:
         # max_parallel: override wins if set, otherwise keep base
         merged_max_parallel = override.max_parallel if override.max_parallel is not None else base.max_parallel
 
+        # max_log_count: override wins if set, otherwise keep base
+        merged_max_log_count = override.max_log_count if override.max_log_count is not None else base.max_log_count
+
         return cls(
             tools=merged_tools,
             repositories=merged_repos,
-            max_parallel=merged_max_parallel
+            max_parallel=merged_max_parallel,
+            max_log_count=merged_max_log_count,
         )

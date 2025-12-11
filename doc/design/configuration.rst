@@ -189,6 +189,31 @@ Repositories can be specified at any configuration level:
 Repositories are loaded in order. If multiple repositories define the
 same library, the first one wins.
 
+Global Settings
+---------------
+
+These settings can be specified at any configuration level (global, tree,
+or project). Later levels override earlier ones.
+
+``max_parallel``
+   Maximum number of parallel build tasks. If not set, GBS uses a
+   system-dependent default.
+
+   .. code-block:: yaml
+
+      max_parallel: 4
+
+``max_log_count``
+   Maximum number of log files to keep in ``.gbs/logs/``. Old logs are
+   automatically removed at startup, keeping only the most recent ones.
+   Set to ``0`` to disable cleanup and keep all logs. Default is ``10``.
+
+   .. code-block:: yaml
+
+      max_log_count: 20   # Keep 20 most recent logs
+      # or
+      max_log_count: 0    # Keep all logs (disable cleanup)
+
 Configuration Merging
 ---------------------
 

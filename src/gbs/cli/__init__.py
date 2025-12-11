@@ -60,6 +60,9 @@ def get_project_file(ctx) -> Path:
     return project_file
 
 
+DEFAULT_MAX_LOG_COUNT = 10
+
+
 @click.group(cls = ReMatchGroup)
 @click.version_option()
 @click.option(
@@ -84,12 +87,16 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     A build system for FPGA and ASIC gateware projects.
     """
     # Set up logging
-    setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
+    gbs_logger = setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
     logger = get_logger()
 
     # Load GBS configuration
     logger.debug("Loading GBS configuration...")
     gbs_config = GBSConfig.load()
+
+    # Cleanup old logs based on config (0 = keep all)
+    max_log_count = gbs_config.max_log_count if gbs_config.max_log_count is not None else DEFAULT_MAX_LOG_COUNT
+    gbs_logger.cleanup_old_logs(max_log_count)
 
     # Store in context for subcommands
     ctx.ensure_object(dict)

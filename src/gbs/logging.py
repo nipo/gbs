@@ -99,6 +99,39 @@ class GBSLogger:
         """
         return self.logger
 
+    def cleanup_old_logs(self, max_log_count: int) -> None:
+        """Remove old log files, keeping only the most recent ones
+
+        Args:
+            max_log_count: Maximum number of log files to keep.
+                           If 0, keep all logs (no cleanup).
+        """
+        if max_log_count == 0:
+            self.logger.debug("Log cleanup disabled (max_log_count=0)")
+            return
+
+        # Find all log files (excluding symlinks like latest.log)
+        log_files = []
+        for f in self.log_dir.iterdir():
+            if f.is_file() and not f.is_symlink() and f.suffix == ".log":
+                log_files.append(f)
+
+        if len(log_files) <= max_log_count:
+            self.logger.debug(f"Log cleanup: {len(log_files)} logs, keeping {max_log_count}, nothing to remove")
+            return
+
+        # Sort by modification time (newest first)
+        log_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+        # Remove old logs
+        logs_to_remove = log_files[max_log_count:]
+        for log_file in logs_to_remove:
+            try:
+                log_file.unlink()
+                self.logger.debug(f"Removed old log: {log_file.name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to remove old log {log_file}: {e}")
+
 
 # Global logger instance
 _logger_instance: Optional[GBSLogger] = None
