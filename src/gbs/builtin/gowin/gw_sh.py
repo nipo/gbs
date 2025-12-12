@@ -99,15 +99,6 @@ class Session(tcl.Session):
             if msg:
                 yield msg
 
-    async def session_init(self):
-        """Initialize gw_sh session with tcl_interactive mode
-
-        Sends initial setup commands to gw_sh after the process starts.
-        """
-        # Set tcl_interactive mode and consume initial prompt
-        await self.execute(tcl.Command(["set", "tcl_interactive", "1"]))
-
-
 class GwShCommand(tcl.CommandTask):
     """Base task class for Gowin gw_sh commands
 

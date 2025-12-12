@@ -31,6 +31,28 @@ class GowinSynthesizePass(Pass):
     input_types = {"vhdl", "verilog", "gowin-cst", "gowin-sdc", "gowin-serdes-config"}
     output_types = {"gowin-fs", "gowin-netlist"}
 
+    def __init__(self,
+                 config: dict[str, Any],
+                 project_config: dict[str, Any] | None = None,
+                 gbs_config: 'GBSConfig | None' = None):
+        super().__init__(config, project_config, gbs_config)
+
+        self.vhdl_std = self.config.get("vhdl_standard", "1993")
+        self.device = self.config.get("target", {}).get("part")
+        self.gowin_path = None
+        self.device_info = None
+        self.gowin_tool = None
+
+        if self.gbs_config:
+            self.gowin_tool = self.config.get("gowin_tool", "gowin")
+            tool_config = self.gbs_config.get_tool(self.gowin_tool)
+            if tool_config and tool_config.config.get("path"):
+                self.gowin_path = expand_path(tool_config.config["path"])
+
+        if self.device and self.gowin_path:
+            from .device_info import get_device_info
+            self.device_info = get_device_info(self.gowin_path, self.device)
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for Gowin synthesis
 
@@ -40,45 +62,16 @@ class GowinSynthesizePass(Pass):
         Returns:
             Dictionary with filter variables
         """
-        # Get vhdl_standard from config, default to "1993"
-        vhdl_std = self.config.get("vhdl_standard", "1993")
-
         filter_vars = {
             "target-usage": "synthesis",
             "vendor": "gowin",
             "hwdep": "gowin",
-            "vhdl-version": vhdl_std,
+            "vhdl-version": self.vhdl_std,
         }
 
-        # Get device from backend config (populated from output group's target)
-        target = self.config.get("target", {})
-        device = target.get("part")
-        if not device:
-            return filter_vars
-
-        filter_vars["target_part"] = device
-
-        # Look up device in Gowin CSV if gbs_config provides tool path
-        if self.gbs_config:
-            gowin_tool = self.config.get("gowin_tool", "gowin")
-            tool_config = self.gbs_config.get_tool(gowin_tool)
-            if tool_config and tool_config.config.get("path"):
-                # Expand ~ and environment variables in tool path
-                gowin_path = expand_path(tool_config.config["path"])
-                csv_path = gowin_path / "IDE" / "data" / "device" / "device_info.csv"
-
-                if csv_path.exists():
-                    try:
-                        with open(csv_path, 'r', encoding='utf-8') as f:
-                            reader = csv.reader(f)
-                            for row in reader:
-                                if len(row) < 4:
-                                    continue
-                                if row[1].strip() == device.strip():
-                                    filter_vars["target_part_name"] = row[3].strip()
-                                    break
-                    except Exception:
-                        pass  # Silently ignore CSV parsing errors during planning
+        if self.device_info:
+            filter_vars["target_part"] = self.device_info.part
+            filter_vars["target_part_name"] = self.device_info.family
 
         return filter_vars
 
@@ -91,11 +84,10 @@ class GowinSynthesizePass(Pass):
         Returns:
             GowinDispatcher instance
         """
-        vhdl_std = self.config.get("vhdl_standard", "1993")
-        gowin_tool = self.config.get("gowin_tool", "gowin")
-
         return [GowinDispatcher(
             context=context,
-            vhdl_std = vhdl_std,
-            gowin_tool=gowin_tool,
+            vhdl_std = self.vhdl_std,
+            gowin_tool = self.gowin_tool,
+            gowin_path = self.gowin_path,
+            device_info = self.device_info,
         )]

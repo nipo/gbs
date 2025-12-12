@@ -9,7 +9,7 @@ from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from . import task
 from .gw_sh import Session
-from .device_info import get_device_info, parse_device_csv
+from .device_info import DeviceInfo, get_device_info
 
 class GowinDispatcher(BaseDispatcher):
     """Gowin FPGA synthesis backend
@@ -36,83 +36,38 @@ class GowinDispatcher(BaseDispatcher):
     def __init__(
         self,
             context: BuildContext,
-            vhdl_std: str = "1993",
-            gowin_tool: str = "gowin",
+            vhdl_std: str,
+            gowin_tool: str,
+            gowin_path: Path,
+            device_info: DeviceInfo
     ):
         super().__init__(context, "gowin", tool_name=gowin_tool, priority=600)
         self.gowin_tool = gowin_tool
+        self.gowin_path = gowin_path
         self.output_base_name = "project"
+        self.vhdl_std = vhdl_std
+        self.device_info = device_info
         self._session: Session | None = None
-        self._device_info: dict[str, str] | None = None  # Cached device characteristics
 
         # Task references (created on first process() call with HDL)
         self._pin_cst_task: Task | None = None
         self._timing_sdc_task: Task | None = None
 
-        if vhdl_std != "1993":
-            raise NotImplementedError("Non-93 support is not implemented.")
-        
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
         if self._session is None:
-            gowin_config = self.context.get_tool(self.gowin_tool)
-            gowin_path = Path(gowin_config["path"])
-            gw_sh = gowin_path / "IDE" / "bin" / "gw_sh"
+            gw_sh = self.gowin_path / "IDE" / "bin" / "gw_sh"
 
             if not gw_sh.exists():
                 raise RuntimeError(f"gw_sh not found at {gw_sh}")
 
             self._session = Session(
                 argv=[str(gw_sh)],
-                cwd=self.context.output_path
+                cwd=self.context.output_path,
+                use_pty=True,
             )
 
         return self._session
-
-    def _parse_device_csv(self, gowin_path: Path, device: str) -> tuple[str, str]:
-        """Parse Gowin device CSV to get device characteristics and set_device parameters
-
-        Wrapper around module-level parse_device_csv that caches device info.
-
-        Args:
-            gowin_path: Path to Gowin installation
-            device: Device part number from project config (e.g., "GW1NR-LV9QN88PC6/I5")
-
-        Returns:
-            Tuple of (part_group, part_number) for set_device command
-
-        Side effects:
-            Populates self._device_info with device characteristics for filter variables
-        """
-        # Parse device info if not already cached
-        if self._device_info is None:
-            csv_path = gowin_path / "IDE" / "data" / "device" / "device_info.csv"
-
-            if csv_path.exists():
-                try:
-                    with open(csv_path, 'r', encoding='utf-8') as f:
-                        reader = csv.reader(f)
-
-                        for row in reader:
-                            if len(row) < 10:
-                                continue
-
-                            if row[1].strip() == device.strip():
-                                # Cache device characteristics for filter variables
-                                self._device_info = {
-                                    "part": device,
-                                    "part_name": row[3].strip() if len(row) > 3 else "",
-                                    "family": row[3].strip() if len(row) > 3 else "",
-                                    "package": row[6].strip() if len(row) > 6 else "",
-                                    "voltage": row[7].strip() if len(row) > 7 else "",
-                                    "speed": row[8].strip() if len(row) > 8 else "",
-                                }
-                                break
-                except Exception as e:
-                    self.logger.debug(f"Could not cache device info: {e}")
-
-        # Call module-level function for actual parsing
-        return parse_device_csv(gowin_path, device, self.logger)
 
     async def process(self) -> None:
         """Process HDL sources and constraints
@@ -125,9 +80,7 @@ class GowinDispatcher(BaseDispatcher):
         if not self.context.project:
             raise ValueError("No project configured")
 
-        target = self.context.get_target()
-        device = target.get("part")
-        if not device:
+        if not self.device_info:
             # No target device configured - skip Gowin backend (simulation-only project)
             self.logger.debug("No target device configured, skipping Gowin backend")
             return
@@ -141,7 +94,7 @@ class GowinDispatcher(BaseDispatcher):
         if has_hdl and self._pin_cst_task is None:
             # First call with HDL sources - create all tasks
             self.logger.debug("Creating all Gowin build tasks")
-            await self._create_all_tasks(target, output_base_name)
+            await self._create_all_tasks(output_base_name)
 
         elif self._pin_cst_task is not None:
             # Subsequent calls - add new constraint files to existing tasks
@@ -149,7 +102,6 @@ class GowinDispatcher(BaseDispatcher):
 
     async def _create_all_tasks(
         self,
-        target: dict,
         output_base_name: str
     ) -> None:
         """Create all Gowin build tasks on first call
@@ -250,15 +202,9 @@ class GowinDispatcher(BaseDispatcher):
         # Must be done before ProjectInit since CSR file is added to project
         serdes_csr_resource = None
         if serdes_config_sources:
-            # Get device info to determine klut_count for tool selection
-            gowin_config = self.context.get_tool(self.gowin_tool)
-            gowin_path = Path(gowin_config["path"])
-            device = target.get("part")
-            device_info = get_device_info(gowin_path, device, self.logger)
-
-            if device_info.klut_count is None:
+            if self.device_info.klut_count is None:
                 self.logger.warning(
-                    f"SerDes config found but device {device} doesn't appear to support SerDes"
+                    f"SerDes config found but device {self.device_info} doesn't appear to support SerDes"
                 )
             else:
                 # Create CSR output path
@@ -281,7 +227,7 @@ class GowinDispatcher(BaseDispatcher):
                 task.SerDesToCsr(
                     dispatcher=self,
                     gowin_tool=self.gowin_tool,
-                    klut_count=device_info.klut_count,
+                    klut_count=self.device_info.klut_count,
                     inputs=[toml_resource],
                     outputs=[serdes_csr_resource]
                 )

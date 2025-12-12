@@ -10,7 +10,6 @@ from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
 from ...build import tcl
 from ...utils import expand_path
 from .gw_sh import *
-from .device_info import parse_device_csv, get_device_info
 from ...build.subprocess import MessageSubprocess
 
 class CopyBundledIeeeFiles(Task):
@@ -75,26 +74,20 @@ class ProjectInit(GwShCommand):
         try:
             # Compute values from context
             target = self.dispatcher.context.get_target()
-            device = target.get("part")
             topcell = self.dispatcher.context.get_topcell()
 
             # Prepare paths
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Get Gowin tool config and parse device CSV
-            gowin_config = self.dispatcher.context.get_tool(self.gowin_tool)
-            gowin_path = Path(gowin_config["path"])
-            part_group, part_number = parse_device_csv(gowin_path, device, self.logger)
-
             # Compute constraint file paths
             pin_cst_file = self.output_dir / "aggregate_pins.cst"
             timing_sdc_file = self.output_dir / "aggregate_timing.sdc"
 
-            self.logger.info(f"Initializing Gowin project for {device}")
+            self.logger.info(f"Initializing Gowin project for {self.dispatcher.device_info}")
 
             # Configure device
-            self.logger.debug(f"Configuring device: {part_group} {part_number}")
-            await self.command_run(tcl.Command(["set_device", "-name", part_group, part_number]))
+            self.logger.debug(f"Configuring device: {self.dispatcher.device_info.family} {self.dispatcher.device_info.part}")
+            await self.command_run(tcl.Command(["set_device", "-name", self.dispatcher.device_info.family, self.dispatcher.device_info.part]))
 
             # Set top module
             self.logger.debug(f"Setting top module: {topcell}")
@@ -294,7 +287,6 @@ class SerDesToCsr(Task):
         Args:
             context: Build context
             gowin_tool: Tool identifier for Gowin installation lookup
-            klut_count: Device klut category ("15k", "60k", "138k")
             inputs: List with single TOML config file resource
             outputs: List with single CSR output file resource
         """
@@ -305,7 +297,6 @@ class SerDesToCsr(Task):
             description="Convert SerDes TOML to CSR"
         )
         self.gowin_tool = gowin_tool
-        self.klut_count = klut_count
 
     async def work(self) -> None:
         """Execute SerDes TOML to CSR conversion"""
@@ -320,7 +311,7 @@ class SerDesToCsr(Task):
         # Build tool path
         tool_path = (
             gowin_path / "IDE" / "bin" / "serdes_toml_to_csr.dist" /
-            f"serdes_toml_to_csr_{self.klut_count}.bin"
+            f"serdes_toml_to_csr_{self.dispatcher.device_info.klut_count}.bin"
         )
 
         if not tool_path.exists():
