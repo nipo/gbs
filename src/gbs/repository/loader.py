@@ -326,22 +326,21 @@ def _load_single_repository(repo_spec: dict[str, Any], project_base_path: Path) 
     # Get loader (default to YAML loader)
     loader_name = repo_spec.get("loader", None)
 
-    try:
-        if loader_name:
-            # Use custom loader - get the class and instantiate it with path
-            loader_class = get_repository_loader(loader_name)
-            logger.info(f"Loading repository from {repo_path} using {loader_name}")
-            loader_instance = loader_class(repo_path)
-            repository = loader_instance.load()
-        else:
-            # Use default YAML loader
-            logger.info(f"Loading repository from {repo_path} using default YAML loader")
-            repository = load_repository(repo_path)
+    if loader_name:
+        # Use custom loader - get the class and instantiate it with path
+        loader_class = get_repository_loader(loader_name)
+        logger.info(f"Loading repository from {repo_path} using {loader_name}")
+        loader_instance = loader_class(repo_path)
+        repository = loader_instance.load()
+    else:
+        # Use default YAML loader
+        logger.info(f"Loading repository from {repo_path} using default YAML loader")
+        repository = load_repository(repo_path)
 
-        return repository
-    except LoadError as e:
-        logger.warning(f"Failed to load repository from {repo_path}: {e}")
-        return None
+    if "name" in repo_spec:
+        repository.name = repo_spec["name"]
+
+    return repository
 
 
 def load_repositories_from_project(project_data: dict[str, Any], project_base_path: Path, gbs_config=None) -> list[Repository]:
