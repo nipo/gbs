@@ -237,12 +237,22 @@ class RichBackend(FeedbackBackend):
         is_transient = self._progress_transient.get(msg.task_id, False)
 
         # Get task info before marking complete
-        task = self.progress.tasks[rich_task_id]
-        task_description = task.description
+        try:
+            task = self.progress.tasks[rich_task_id]
+            task_description = task.description
+        except (IndexError, KeyError):
+            # Task may have been removed already, clean up tracking and return
+            del self._progress_tasks[msg.task_id]
+            if msg.task_id in self._progress_transient:
+                del self._progress_transient[msg.task_id]
+            return
 
         # Mark as complete
-        if task.total:
-            self.progress.update(rich_task_id, completed=task.total)
+        try:
+            if task.total:
+                self.progress.update(rich_task_id, completed=task.total)
+        except (IndexError, KeyError):
+            pass  # Task removed during update
 
         # For transient tasks, remove them and print completion message
         if is_transient:
@@ -263,14 +273,18 @@ class RichBackend(FeedbackBackend):
             # Don't print success message for transient tasks - they just disappear
         else:
             # For non-transient tasks, keep the bar visible and update description
-            if not msg.success:
-                self.progress.update(rich_task_id, description=f"[red]✗ {task_description}[/red]")
-            else:
-                self.progress.update(rich_task_id, description=f"[green]✓ {task_description}[/green]")
+            try:
+                if not msg.success:
+                    self.progress.update(rich_task_id, description=f"[red]✗ {task_description}[/red]")
+                else:
+                    self.progress.update(rich_task_id, description=f"[green]✓ {task_description}[/green]")
+            except (IndexError, KeyError):
+                pass  # Task removed during update
 
         # Remove from tracking
         del self._progress_tasks[msg.task_id]
-        del self._progress_transient[msg.task_id]
+        if msg.task_id in self._progress_transient:
+            del self._progress_transient[msg.task_id]
 
     async def _render_build_status(self, msg: BuildStatus):
         """Render build status with colors"""
