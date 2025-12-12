@@ -75,6 +75,11 @@ class BuildContext:
         # Build result flag
         self.build_failed = False
 
+        # Progress tracking for UI
+        self._total_steps = 0
+        self._completed_steps = 0
+        self._progress_task_id: Optional[str] = None
+
     def messages_get(
         self,
         severity: Optional[MessageSeverity] = None,
@@ -333,20 +338,83 @@ class BuildContext:
         """Get current progress version (non-blocking)"""
         return self._progress_version
 
+    def _on_step_start(self, step: 'BuildStep'):
+        """Called by BuildStep when a step starts executing
+
+        Args:
+            step: The BuildStep that is starting
+        """
+        # Only report progress for steps that should emit UI progress
+        if not step._EMIT_UI_PROGRESS:
+            return
+
+        if self._progress_task_id:
+            hub = get_global_hub()
+            from ..ui.messages import ProgressUpdate
+            hub.emit(ProgressUpdate(
+                task_id=self._progress_task_id,
+                completed=self._completed_steps,
+                message=step.name
+            ))
+
+    def _on_step_complete(self, step: 'BuildStep'):
+        """Called by BuildStep when a step completes
+
+        Args:
+            step: The BuildStep that completed
+        """
+        # Only count progress for steps that should emit UI progress
+        if not step._EMIT_UI_PROGRESS:
+            return
+
+        self._completed_steps += 1
+
+        # Update progress via FeedbackHub
+        if self._progress_task_id:
+            hub = get_global_hub()
+            from ..ui.messages import ProgressUpdate
+            hub.emit(ProgressUpdate(
+                task_id=self._progress_task_id,
+                completed=self._completed_steps
+            ))
+
     async def _launch(self) -> None:
         self.logger.debug("Launch")
+
+        # Initialize progress tracking - count only steps that emit UI progress (Tasks)
+        self._total_steps = sum(1 for s in self.steps if s._EMIT_UI_PROGRESS)
+        self._completed_steps = 0
+
+        # Start progress tracking via FeedbackHub
+        hub = get_global_hub()
+        from ..ui.messages import ProgressStart
+        import uuid
+        self._progress_task_id = uuid.uuid4().hex
+        hub.emit(ProgressStart(
+            task_id=self._progress_task_id,
+            description=f"Building {self._output_group.name if self._output_group else 'project'}",
+            total=self._total_steps
+        ))
+
         for s in self.steps:
             self.running.add(s.launch())
 
     async def progress_bar(self):
-        """Show progress bar for build (requires click library)"""
-        if click is None:
-            return
+        """Wait for all tasks to complete and mark progress done"""
         pending = self.running
-        with click.progressbar(length = len(pending), label = "Building") as bar:
-            while pending:
-                done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
-                bar.update(len(done))
+
+        # Wait for all tasks to complete (progress updates happen in _on_step_complete)
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
+
+        # Mark progress as complete
+        if self._progress_task_id:
+            hub = get_global_hub()
+            from ..ui.messages import ProgressEnd
+            hub.emit(ProgressEnd(
+                task_id=self._progress_task_id,
+                success=not self.build_failed
+            ))
 
     async def _cleanup(self) -> None:
         self.logger.debug("Cleanup")

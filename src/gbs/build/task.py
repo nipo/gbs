@@ -65,6 +65,10 @@ class BuildStep(asyncio.Future):
     A step in a build, either a task, an artifact, a dependency, etc.
     It is a node in the build graph.
     """
+
+    # Whether this type of BuildStep should emit UI progress bars
+    _EMIT_UI_PROGRESS = False
+
     def __init__(self, context: BuildContext, name: str):
         """Initialize resource
 
@@ -88,6 +92,10 @@ class BuildStep(asyncio.Future):
         self.progress_updated: Optional[float] = None
         self.completed: bool = False
 
+        # UI progress tracking
+        self._ui_progress_task_id: Optional[str] = None
+        self._ui_progress_failed: bool = False
+
         self.context.step_register(self)
 
     def dependency_add(self, dep: BuildStep) -> None:
@@ -104,7 +112,7 @@ class BuildStep(asyncio.Future):
         """Get progress as percentage (0-100)"""
         return int(self.progress * 100)
 
-    async def update_progress(self, progress: float, message: Optional[str] = None):
+    async def update_progress(self, progress: float, message: Optional[str] = None, failed: bool = False):
         """Update this step's progress
 
         Updates the step's own state and notifies BuildContext
@@ -113,6 +121,7 @@ class BuildStep(asyncio.Future):
         Args:
             progress: Progress value 0.0 to 1.0
             message: Optional status message
+            failed: Whether this progress update indicates failure
         """
         progress = max(0.0, min(1.0, progress or 0.))
 
@@ -124,6 +133,9 @@ class BuildStep(asyncio.Future):
         self.progress_message = message
         self.progress_updated = time.time()
 
+        if failed:
+            self._ui_progress_failed = True
+
         if progress >= 1.0:
             self.completed = True
 
@@ -131,6 +143,41 @@ class BuildStep(asyncio.Future):
 
         # Notify watchers
         await self.context.notify_progress_update()
+
+        # Emit UI progress updates only if this class type allows it
+        if not self._EMIT_UI_PROGRESS:
+            return
+
+        from ..ui.hub import get_global_hub
+        from ..ui.messages import ProgressStart, ProgressUpdate, ProgressEnd
+        import uuid
+
+        hub = get_global_hub()
+
+        # Start progress on first update (if not already started)
+        if self._ui_progress_task_id is None:
+            self._ui_progress_task_id = uuid.uuid4().hex
+            hub.emit(ProgressStart(
+                task_id=self._ui_progress_task_id,
+                description=self.name,
+                total=100,  # Percentage-based progress
+                transient=True  # Task progress bars are transient
+            ))
+
+        # Update progress
+        hub.emit(ProgressUpdate(
+            task_id=self._ui_progress_task_id,
+            completed=int(progress * 100),
+            message=message
+        ))
+
+        # End progress when complete
+        if progress >= 1.0:
+            hub.emit(ProgressEnd(
+                task_id=self._ui_progress_task_id,
+                success=not self._ui_progress_failed,
+                message=message if self._ui_progress_failed else None
+            ))
 
     async def add_message(
         self,
@@ -254,16 +301,19 @@ class BuildStep(asyncio.Future):
 
         if deps_failed is not None:
             self.logger.debug("%s deps failed: %s", self.name, deps_failed)
-            await self.update_progress(.001, f"Prereq failed: {failing}")
+            await self.update_progress(.001, f"Prereq failed: {failing}", failed=True)
             self.__mark_done(deps_failed)
             return
+
+        # Notify context that this step is starting
+        self.context._on_step_start(self)
 
         await self.update_progress(0.001, "Starting")
         try:
             await self._work()
         except Exception as e:
             self.logger.exception("%s excepted", self.name)
-            await self.update_progress(1.0, "Failed")
+            await self.update_progress(1.0, "Failed", failed=True)
             self.__mark_done(e)
             return
 
@@ -281,6 +331,9 @@ class BuildStep(asyncio.Future):
 
     def __mark_done(self, exc: Exception = None):
         """Mark step as done"""
+        # Update build context progress
+        self.context._on_step_complete(self)
+
         if exc:
             self.set_exception(exc)
         else:
@@ -432,6 +485,9 @@ class Task(BuildStep):
     Tasks can optionally hold a reference to their creating dispatcher to access
     tool configuration and other dispatcher-level state without parameter passing.
     """
+
+    # Tasks should emit UI progress bars when they report progress
+    _EMIT_UI_PROGRESS = True
 
     def __init__(
         self,

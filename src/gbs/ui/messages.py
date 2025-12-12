@@ -187,6 +187,7 @@ class ProgressStart:
     description: str
     total: Optional[int] = None  # None for indeterminate progress
     parent_id: Optional[str] = None  # For nested progress
+    transient: bool = False  # If True, progress bar disappears when complete
     timestamp: datetime = field(default_factory=datetime.now)
 
 
