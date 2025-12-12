@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 from ..logging import get_logger, get_log_file
+from ..ui import get_global_hub
 from .message import *
 from .task import VirtualResource, Resource, Stamp
 import asyncio
@@ -108,10 +109,16 @@ class BuildContext:
         return self.__messages.copy()
 
     def message_add(self, message: ToolMessage):
-        """
-        Add a message to the build context
+        """Add a message to the build context
+
+        Messages are both stored locally and emitted to the global FeedbackHub
+        for real-time display.
         """
         self.__messages.append(message)
+
+        # Emit to hub for real-time display
+        hub = get_global_hub()
+        hub.emit(message)
 
     @property
     def semaphore(self) -> asyncio.Semaphore:

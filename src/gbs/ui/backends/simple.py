@@ -86,6 +86,10 @@ class SimpleBackend(FeedbackBackend):
 
     async def _render_tool_message(self, msg: ToolMessage):
         """Render a tool message (compiler-style output)"""
+        # Skip debug messages unless enabled
+        if msg.severity == MessageSeverity.DEBUG and not self.show_debug:
+            return
+
         # Use the message's __str__ which formats it properly
         text = str(msg)
 
