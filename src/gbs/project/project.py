@@ -275,12 +275,18 @@ class Project:
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
             >>> await proj.build()
         """
+        from ..ui import get_global_hub
+
+        hub = get_global_hub()
+
+        # Build each realization (output group)
         async for realization in self.realizations():
-            # Execute build tasks
-            logger.info(f"  Realizing build plan {realization.plan}...")
-            await realization.execute(
-                show_progress=(sys.stdout.isatty() and show_progress)
-            )
+            # Execute build tasks with progress tracking
+            async with hub.progress(f"Building {realization.plan.output_group.name}") as prog:
+                logger.info(f"  Realizing build plan {realization.plan}...")
+                await realization.execute(
+                    show_progress=(sys.stdout.isatty() and show_progress)
+                )
 
     async def clean(
         self,

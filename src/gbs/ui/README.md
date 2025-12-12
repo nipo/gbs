@@ -137,39 +137,83 @@ Structured JSON output for tool integration.
 backend = JSONBackend(output_file="build.json")
 ```
 
-## Migration Path
+## Integration Status
 
-### Phase 1: Foundation (Complete)
-- ✅ Create `gbs.ui` module
-- ✅ Implement message types
-- ✅ Implement FeedbackHub
-- ✅ Implement SimpleBackend
-- ✅ Test basic functionality
+### ✅ Phase 1: Foundation (Complete)
+- ✅ Created `gbs.ui` module with all core components
+- ✅ Implemented message types (ToolMessage, LogMessage, Progress*, BuildStatus)
+- ✅ Implemented FeedbackHub (async message router)
+- ✅ Implemented NullHub (null object pattern - no "if hub" guards needed)
+- ✅ Implemented SimpleBackend (plain text output with filtering)
+- ✅ Added comprehensive tests
 
-### Phase 2: Move ToolMessage
-- Move `ToolMessage` from `build/message.py` to `ui/messages.py`
-- Add backward-compat import in `build/message.py`
-- Update all imports gradually
+### ✅ Phase 2: ToolMessage Migration (Complete)
+- ✅ Moved `ToolMessage` from `build/message.py` to `ui/messages.py`
+- ✅ Added backward-compatibility shim in `build/message.py`
+- ✅ Enhanced with comparison operators and timestamp
+- ✅ All existing code works without changes
 
-### Phase 3: Integrate with CLI
-- Wrap CLI main() with FeedbackHub
-- Store hub in Click context
-- Set global hub for deep call stacks
+### ✅ Phase 3: CLI Integration (Complete)
+- ✅ Wrapped CLI main() with FeedbackHub initialization
+- ✅ Stored hub in Click context for subcommands
+- ✅ Set global hub for deep call stack access
+- ✅ Added cleanup via result_callback
+- ✅ Mode-aware backend (respects verbose/debug flags)
 
-### Phase 4: Convert Build System
-- Update BuildContext to use hub
-- Convert task output to use hub
-- Replace direct prints with hub.emit()
+### ✅ Phase 4: Build System Integration (Complete)
+- ✅ Updated BuildContext.message_add() to emit via hub
+- ✅ Tool messages now flow in real-time during builds
+- ✅ Messages both stored locally AND emitted to hub
+- ✅ DEBUG messages filtered correctly
 
-### Phase 5: Convert Suite Executor
-- Replace click.echo with hub.emit
-- Use hub.progress for suite builds
-- Emit BuildStatus messages
+### ✅ Phase 5: Suite Executor Integration (Complete)
+- ✅ Replaced click.echo with hub.emit in suite commands
+- ✅ Added hub.progress() for suite builds
+- ✅ Emits BuildStatus for each project (started/success/error)
+- ✅ Includes timing information
 
-### Phase 6: Add RichBackend
-- Implement RichBackend with colors and progress bars
-- Auto-detect terminal capabilities
-- Fall back to SimpleBackend for non-TTY
+### ✅ Phase 6: Project Build Integration (Complete)
+- ✅ Added progress tracking for individual projects
+- ✅ Nested progress: Suite → Project → Output Group
+- ✅ Clean hierarchical output with indentation
+- ✅ Automatic progress hiding in verbose mode
+
+### 🔄 Phase 7: Future Enhancements
+- ⏳ Add RichBackend with colors and fancy progress bars
+- ⏳ Convert remaining click.echo() calls to hub.log()
+- ⏳ Add JSONBackend for tool integration
+- ⏳ Add HTMLBackend for build reports
+
+## Current Output Examples
+
+### Normal Mode (with progress):
+```
+▸ Building suite 'gbs-examples' (6 projects)/6
+ice40-synth: started
+▸ Building pnr
+✓ Done
+ice40-synth: success (0.1s)
+amba: started
+▸ Building simulation
+[NOTICE] (EX0101) Current top module is "boundary"
+✓ Done
+amba: success (0.1s)
+✓ Done
+
+Suite Results:
+  Status: success
+  Duration: 9.4s
+```
+
+### Debug Mode (verbose output):
+```
+INFO: Building suite 'gbs-examples' with 5 projects
+ice40-synth: started
+[DEBUG] set_device {-name} {GW5AT-60B}
+[DEBUG] add_file {-type} {vhdl} {path/to/file.vhd}
+[NOTICE] (EX0101) Current top module is "boundary"
+ice40-synth: success (0.1s)
+```
 
 ## Example: Full Integration
 
