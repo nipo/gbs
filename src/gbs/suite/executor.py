@@ -16,6 +16,7 @@ from .model import (
     ProjectStatus, SuiteStatus
 )
 from ..logging import get_logger
+from ..ui import get_global_hub, BuildStatus
 
 logger = get_logger(__name__)
 
@@ -180,8 +181,15 @@ class SuiteExecutor:
         from ..project import Project
 
         start_time = time.time()
+        hub = get_global_hub()
 
         logger.info(f"Building project '{proj_ref.name}' at {proj_ref.path}")
+
+        # Emit start status
+        hub.emit(BuildStatus(
+            status="started",
+            target=proj_ref.name
+        ))
 
         try:
             # Find project file
@@ -226,6 +234,13 @@ class SuiteExecutor:
 
             logger.info(f"✓ Built project '{proj_ref.name}' in {duration:.1f}s")
 
+            # Emit success status
+            hub.emit(BuildStatus(
+                status="success",
+                target=proj_ref.name,
+                duration=duration
+            ))
+
             return ProjectResult(
                 project=proj_ref,
                 status=ProjectStatus.SUCCESS,
@@ -239,6 +254,14 @@ class SuiteExecutor:
             error_msg = str(e)
 
             logger.error(f"✗ Failed to build project '{proj_ref.name}': {error_msg}")
+
+            # Emit error status
+            hub.emit(BuildStatus(
+                status="error",
+                target=proj_ref.name,
+                duration=duration,
+                message=error_msg
+            ))
 
             return ProjectResult(
                 project=proj_ref,

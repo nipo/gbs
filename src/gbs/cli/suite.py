@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 from ..logging import get_logger
+from ..ui import get_global_hub, LogMessage, BuildStatus
 from .group import ReMatchGroup
 
 
@@ -144,9 +145,14 @@ async def build(
         # Create executor and build
         executor = SuiteExecutor(suite_def, gbs_config=gbs_config, changed_files=changed_files)
 
-        click.echo(f"Building suite '{suite_def.name}' with {len(suite_def.projects)} projects...")
+        hub = get_global_hub()
 
-        result = await executor.build_suite()
+        # Build suite with progress tracking
+        async with hub.progress(
+            f"Building suite '{suite_def.name}' ({len(suite_def.projects)} projects)",
+            total=len(suite_def.projects)
+        ) as prog:
+            result = await executor.build_suite()
 
         # Generate outputs
         if suite_def.settings.output.junit_xml:
@@ -157,7 +163,7 @@ async def build(
             logger.info(f"Writing summary JSON to {suite_def.settings.output.summary_json}")
             write_summary_json(result, suite_def.settings.output.summary_json)
 
-        # Print summary
+        # Emit summary via hub
         click.echo()
         click.echo("Suite Results:")
         click.echo(f"  Status: {result.status.value}")

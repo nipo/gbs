@@ -15,6 +15,7 @@ from .messages import (
 
 from .hub import (
     FeedbackHub,
+    NullHub,
     ProgressTracker,
     set_global_hub,
     get_global_hub,
@@ -35,6 +36,7 @@ __all__ = [
     "ProgressEnd",
     "BuildStatus",
     "FeedbackHub",
+    "NullHub",
     "ProgressTracker",
     "set_global_hub",
     "get_global_hub",

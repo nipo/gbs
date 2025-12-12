@@ -4,10 +4,12 @@ Main entry point for the gbs command.
 """
 
 import asyncclick as click
+import sys
 from pathlib import Path
 
 from ..logging import setup_logging, get_logger, get_log_file
 from ..config.model import GBSConfig
+from ..ui import FeedbackHub, SimpleBackend, set_global_hub
 from .group import ReMatchGroup
 
 
@@ -98,12 +100,26 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     max_log_count = gbs_config.max_log_count if gbs_config.max_log_count is not None else DEFAULT_MAX_LOG_COUNT
     gbs_logger.cleanup_old_logs(max_log_count)
 
+    # Create FeedbackHub for unified UI output
+    # Use SimpleBackend - can be enhanced with RichBackend later
+    backend = SimpleBackend(
+        show_progress=not verbose and not debug,
+        show_debug=debug
+    )
+    hub = FeedbackHub(backend)
+    await hub.__aenter__()
+
+    # Set as global hub
+    set_global_hub(hub)
+
     # Store in context for subcommands
     ctx.ensure_object(dict)
     ctx.obj["logger"] = logger
     ctx.obj["log_file"] = get_log_file()
     ctx.obj["gbs_config"] = gbs_config
     ctx.obj["allow_progress_bars"] = not verbose and not debug
+    ctx.obj["feedback_hub"] = hub
+    ctx.obj["_hub_cleanup"] = lambda: hub.__aexit__(None, None, None)
 
     logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
     logger.debug(f"Loaded {len(gbs_config.tools)} tools")
@@ -117,6 +133,16 @@ from .suite import suite
 cli.add_command(repo)
 cli.add_command(project)
 cli.add_command(suite)
+
+
+# Add result callback to cleanup hub
+@cli.result_callback()
+@click.pass_context
+async def cleanup_hub(ctx, result, **kwargs):
+    """Clean up FeedbackHub after command completes"""
+    if "_hub_cleanup" in ctx.obj:
+        await ctx.obj["_hub_cleanup"]()
+        set_global_hub(None)
 
 
 def main():

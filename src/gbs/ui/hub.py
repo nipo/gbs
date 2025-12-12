@@ -30,7 +30,7 @@ from .messages import (
 if TYPE_CHECKING:
     from .backends.base import FeedbackBackend
 
-__all__ = ["FeedbackHub", "ProgressTracker"]
+__all__ = ["FeedbackHub", "ProgressTracker", "NullHub"]
 
 
 class ProgressTracker:
@@ -246,8 +246,50 @@ class FeedbackHub:
         ))
 
 
+class NullHub:
+    """No-op hub for when no real hub is active
+
+    Provides the same interface as FeedbackHub but does nothing.
+    This allows code to call hub methods without checking if hub exists.
+    """
+
+    def emit(self, msg):
+        """No-op emit"""
+        pass
+
+    @asynccontextmanager
+    async def progress(
+        self,
+        description: str,
+        total: Optional[int] = None,
+        parent_id: Optional[str] = None
+    ):
+        """No-op progress context manager"""
+        tracker = type('NullProgressTracker', (), {
+            'task_id': 'null',
+            'update': lambda self, *args, **kwargs: None
+        })()
+        yield tracker
+
+    def log(self, level: str, message: str, source: Optional[str] = None):
+        """No-op log"""
+        pass
+
+    def tool_message(
+        self,
+        severity,
+        message: str,
+        file_path: Optional = None,
+        line: Optional[int] = None,
+        **kwargs
+    ):
+        """No-op tool message"""
+        pass
+
+
 # Global hub instance (set by CLI main())
 _global_hub: Optional[FeedbackHub] = None
+_null_hub = NullHub()
 
 
 def set_global_hub(hub: Optional[FeedbackHub]):
@@ -260,13 +302,14 @@ def set_global_hub(hub: Optional[FeedbackHub]):
     _global_hub = hub
 
 
-def get_global_hub() -> Optional[FeedbackHub]:
+def get_global_hub() -> FeedbackHub:
     """Get the global feedback hub instance
 
-    Returns None if no hub is active (e.g., during testing or
-    when run outside of normal CLI context).
+    Returns a NullHub if no hub is active (e.g., during testing or
+    when run outside of normal CLI context). This allows code to
+    unconditionally call hub methods without checking for None.
     """
-    return _global_hub
+    return _global_hub or _null_hub
 
 
 def emit(msg):
