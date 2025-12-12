@@ -5,6 +5,7 @@ Centralized system for all user-facing output.
 
 from .messages import (
     MessageSeverity,
+    LogLevel,
     ToolMessage,
     LogMessage,
     ProgressStart,
@@ -27,8 +28,16 @@ from .backends import (
     SimpleBackend,
 )
 
+# Conditionally import RichBackend if available
+try:
+    from .backends import RichBackend, is_rich_available
+    _has_rich = True
+except ImportError:
+    _has_rich = False
+
 __all__ = [
     "MessageSeverity",
+    "LogLevel",
     "ToolMessage",
     "LogMessage",
     "ProgressStart",
@@ -44,3 +53,6 @@ __all__ = [
     "FeedbackBackend",
     "SimpleBackend",
 ]
+
+if _has_rich:
+    __all__.extend(["RichBackend", "is_rich_available"])

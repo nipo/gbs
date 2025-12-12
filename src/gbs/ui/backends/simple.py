@@ -15,7 +15,7 @@ from typing import TextIO, Optional
 from .base import FeedbackBackend
 from ..messages import (
     ToolMessage, LogMessage, ProgressStart, ProgressUpdate,
-    ProgressEnd, BuildStatus, MessageSeverity
+    ProgressEnd, BuildStatus, MessageSeverity, LogLevel
 )
 
 __all__ = ["SimpleBackend"]
@@ -33,7 +33,8 @@ class SimpleBackend(FeedbackBackend):
         output: Optional[TextIO] = None,
         error: Optional[TextIO] = None,
         show_progress: bool = True,
-        show_debug: bool = False
+        min_severity: MessageSeverity = MessageSeverity.WARNING,
+        min_log_level: LogLevel = LogLevel.WARNING
     ):
         """Initialize simple backend
 
@@ -41,12 +42,14 @@ class SimpleBackend(FeedbackBackend):
             output: Stream for normal output (default: sys.stdout)
             error: Stream for error output (default: sys.stderr)
             show_progress: Whether to show progress messages
-            show_debug: Whether to show debug-level messages
+            min_severity: Minimum severity for ToolMessages to display
+            min_log_level: Minimum level for LogMessages to display
         """
         self.output = output or sys.stdout
         self.error = error or sys.stderr
         self.show_progress = show_progress
-        self.show_debug = show_debug
+        self.min_severity = min_severity
+        self.min_log_level = min_log_level
 
         # Track active progress tasks for indentation
         self._progress_stack: list[str] = []  # Stack of task IDs
@@ -86,8 +89,8 @@ class SimpleBackend(FeedbackBackend):
 
     async def _render_tool_message(self, msg: ToolMessage):
         """Render a tool message (compiler-style output)"""
-        # Skip debug messages unless enabled
-        if msg.severity == MessageSeverity.DEBUG and not self.show_debug:
+        # Filter based on minimum severity
+        if msg.severity < self.min_severity:
             return
 
         # Use the message's __str__ which formats it properly
@@ -101,12 +104,12 @@ class SimpleBackend(FeedbackBackend):
 
     async def _render_log_message(self, msg: LogMessage):
         """Render a log message"""
-        # Skip debug messages unless enabled
-        if msg.level == "debug" and not self.show_debug:
+        # Filter based on minimum log level
+        if msg.level < self.min_log_level:
             return
 
         # Route errors to stderr
-        stream = self.error if msg.level in ("error", "critical") else self.output
+        stream = self.error if msg.level >= LogLevel.ERROR else self.output
 
         stream.write(str(msg) + "\n")
         stream.flush()

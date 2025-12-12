@@ -13,6 +13,7 @@ from datetime import datetime
 
 __all__ = [
     "MessageSeverity",
+    "LogLevel",
     "ToolMessage",
     "LogMessage",
     "ProgressStart",
@@ -63,6 +64,49 @@ class MessageSeverity(Enum):
     def __ge__(self, other):
         """Allow severity comparison"""
         if not isinstance(other, MessageSeverity):
+            return NotImplemented
+        return not self < other
+
+
+class LogLevel(Enum):
+    """Log levels for general logging messages"""
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __lt__(self, other):
+        """Allow log level comparison"""
+        if not isinstance(other, LogLevel):
+            return NotImplemented
+        order = [
+            LogLevel.DEBUG,
+            LogLevel.INFO,
+            LogLevel.WARNING,
+            LogLevel.ERROR,
+            LogLevel.CRITICAL,
+        ]
+        return order.index(self) < order.index(other)
+
+    def __le__(self, other):
+        """Allow log level comparison"""
+        if not isinstance(other, LogLevel):
+            return NotImplemented
+        return self < other or self == other
+
+    def __gt__(self, other):
+        """Allow log level comparison"""
+        if not isinstance(other, LogLevel):
+            return NotImplemented
+        return not (self <= other)
+
+    def __ge__(self, other):
+        """Allow log level comparison"""
+        if not isinstance(other, LogLevel):
             return NotImplemented
         return not self < other
 
@@ -121,7 +165,7 @@ class LogMessage:
 
     Used for general logging output that doesn't fit the tool message format.
     """
-    level: str  # debug, info, warning, error, critical
+    level: LogLevel
     message: str
     source: Optional[str] = None  # Logger name or module
     timestamp: datetime = field(default_factory=datetime.now)

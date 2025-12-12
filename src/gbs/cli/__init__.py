@@ -10,7 +10,15 @@ from pathlib import Path
 from ..logging import setup_logging, get_logger, get_log_file
 from ..config.model import GBSConfig
 from ..ui import FeedbackHub, SimpleBackend, set_global_hub
+from ..ui.messages import MessageSeverity, LogLevel
 from .group import ReMatchGroup
+
+# Try to import Rich backend
+try:
+    from ..ui import RichBackend, is_rich_available
+    _has_rich = is_rich_available()
+except ImportError:
+    _has_rich = False
 
 
 def find_project_file() -> Path:
@@ -100,12 +108,34 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
     max_log_count = gbs_config.max_log_count if gbs_config.max_log_count is not None else DEFAULT_MAX_LOG_COUNT
     gbs_logger.cleanup_old_logs(max_log_count)
 
+    # Determine minimum severity based on flags
+    if debug:
+        min_severity = MessageSeverity.DEBUG
+        min_log_level = LogLevel.DEBUG
+    elif verbose:
+        min_severity = MessageSeverity.INFO
+        min_log_level = LogLevel.INFO
+    else:
+        min_severity = MessageSeverity.WARNING
+        min_log_level = LogLevel.WARNING
+
     # Create FeedbackHub for unified UI output
-    # Use SimpleBackend - can be enhanced with RichBackend later
-    backend = SimpleBackend(
-        show_progress=not verbose and not debug,
-        show_debug=debug
-    )
+    # Use RichBackend if available and stdout is a TTY, otherwise SimpleBackend
+    if _has_rich and sys.stdout.isatty() and not verbose and not debug:
+        backend = RichBackend(
+            show_progress=True,
+            min_severity=min_severity,
+            min_log_level=min_log_level
+        )
+        logger.debug("Using RichBackend for fancy terminal output")
+    else:
+        backend = SimpleBackend(
+            show_progress=not verbose and not debug,
+            min_severity=min_severity,
+            min_log_level=min_log_level
+        )
+        logger.debug("Using SimpleBackend for plain text output")
+
     hub = FeedbackHub(backend)
     await hub.__aenter__()
 
