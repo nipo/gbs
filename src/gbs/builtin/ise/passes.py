@@ -55,6 +55,7 @@ class IseSynthesizePass(Pass):
             "target_part": part,
             "part_name": m.group("name"),
             "part_speed": m.group("speed"),
+            "target_speed": m.group("speed").lstrip("-"),
             "part_package": m.group("package"),
             "vhdl-version": vhdl_std,
         }
