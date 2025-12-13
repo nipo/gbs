@@ -121,7 +121,8 @@ class RichBackend(FeedbackBackend):
         show_progress: bool = True,
         min_severity: MessageSeverity = MessageSeverity.WARNING,
         min_log_level: LogLevel = LogLevel.WARNING,
-        force_terminal: Optional[bool] = None
+        force_terminal: Optional[bool] = None,
+        file_url_template: Optional[str] = None
     ):
         """Initialize Rich backend
 
@@ -131,6 +132,9 @@ class RichBackend(FeedbackBackend):
             min_severity: Minimum severity for ToolMessages to display
             min_log_level: Minimum level for LogMessages to display
             force_terminal: Override terminal detection (None = auto-detect)
+            file_url_template: Template for file URLs in OSC 8 hyperlinks
+                              Supports {path}, {line}, {column} placeholders
+                              Default: "file://{path}#L{line}:{column}"
         """
         if not is_rich_available():
             raise ImportError(
@@ -146,6 +150,7 @@ class RichBackend(FeedbackBackend):
         self.show_progress = show_progress
         self.min_severity = min_severity
         self.min_log_level = min_log_level
+        self.file_url_template = file_url_template or "file://{path}#L{line}:{column}"
 
         # Create console
         self.console = Console(
@@ -264,15 +269,16 @@ class RichBackend(FeedbackBackend):
                 if msg.column is not None:
                     location += f":{msg.column}"
 
-            # Create file:// URL for OSC 8 hyperlink
-            # VS Code expects: file:///absolute/path#LN
+            # Create file URL for OSC 8 hyperlink using template
             from pathlib import Path
             abs_path = Path(msg.file_path).resolve()
-            file_url = f"file://{abs_path}"
-            if msg.line is not None:
-                file_url += f"#L{msg.line}"
-                if msg.column is not None:
-                    file_url += f":{msg.column}"
+
+            # Use template with placeholders: {path}, {line}, {column}
+            file_url = self.file_url_template.format(
+                path=abs_path,
+                line=msg.line if msg.line is not None else 1,
+                column=msg.column if msg.column is not None else 0
+            )
 
             # Add clickable location with hyperlink
             result.append(location, style=Style(color="white", bold=True, link=file_url))

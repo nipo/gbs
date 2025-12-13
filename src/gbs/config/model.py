@@ -60,6 +60,7 @@ class GBSConfig:
     repositories: list[dict] = field(default_factory=list)
     max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
+    file_url_template: Optional[str] = None  # Template for OSC 8 file URLs (None = use default)
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name' or 'name:variant'
@@ -192,11 +193,18 @@ class GBSConfig:
                 logger.warning(f"Invalid max_log_count value in {path}, ignoring")
                 max_log_count = None
 
+        # Parse file_url_template
+        file_url_template = data.get('file_url_template')
+        if file_url_template is not None and not isinstance(file_url_template, str):
+            logger.warning(f"file_url_template must be a string in {path}, ignoring")
+            file_url_template = None
+
         return cls(
             tools=tools,
             repositories=repositories,
             max_parallel=max_parallel,
             max_log_count=max_log_count,
+            file_url_template=file_url_template,
         )
 
     @classmethod
@@ -241,9 +249,13 @@ class GBSConfig:
         # max_log_count: override wins if set, otherwise keep base
         merged_max_log_count = override.max_log_count if override.max_log_count is not None else base.max_log_count
 
+        # file_url_template: override wins if set, otherwise keep base
+        merged_file_url_template = override.file_url_template if override.file_url_template is not None else base.file_url_template
+
         return cls(
             tools=merged_tools,
             repositories=merged_repos,
             max_parallel=merged_max_parallel,
             max_log_count=merged_max_log_count,
+            file_url_template=merged_file_url_template,
         )

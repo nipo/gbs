@@ -134,9 +134,13 @@ async def cli(ctx, verbose: bool, debug: bool, no_progress: bool, log_dir: Path 
         terminal_backend = RichBackend(
             show_progress=show_progress,
             min_severity=min_severity,
-            min_log_level=min_log_level
+            min_log_level=min_log_level,
+            file_url_template=gbs_config.file_url_template
         )
-        logger.debug("Using RichBackend for fancy terminal output")
+        if gbs_config.file_url_template:
+            logger.debug(f"Using RichBackend with custom file URL template: {gbs_config.file_url_template}")
+        else:
+            logger.debug("Using RichBackend for fancy terminal output")
     else:
         terminal_backend = SimpleBackend(
             show_progress=show_progress,
