@@ -183,6 +183,69 @@ class BuildStep(asyncio.Future):
                 message=message if self._ui_progress_failed else None
             ))
 
+    # Convenience methods for message emission
+    # These automatically include context (BuildStep name) and use the global hub
+
+    def emit_log(self, level: str, message: str):
+        """Emit a log message with automatic context
+
+        Args:
+            level: Log level (debug, info, warning, error, critical)
+            message: Log message
+        """
+        from ..ui.hub import get_global_hub
+        from ..ui.messages import LogMessage, LogLevel
+
+        level_map = {
+            'debug': LogLevel.DEBUG,
+            'info': LogLevel.INFO,
+            'warning': LogLevel.WARNING,
+            'error': LogLevel.ERROR,
+            'critical': LogLevel.CRITICAL,
+        }
+
+        hub = get_global_hub()
+        hub.emit(LogMessage(
+            level=level_map.get(level, LogLevel.INFO),
+            message=message,
+            source=self._log_name
+        ))
+
+    def emit_tool_message(
+        self,
+        severity: 'MessageSeverity',
+        message: str,
+        file_path: Optional['Path'] = None,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+        identifier: Optional[str] = None,
+        extended_message: Optional[str] = None
+    ):
+        """Emit a tool message (compiler-style diagnostic)
+
+        Args:
+            severity: Message severity
+            message: Main message text
+            file_path: Source file path
+            line: Line number
+            column: Column number
+            identifier: Error/warning identifier code
+            extended_message: Extended diagnostic information
+        """
+        from ..ui.hub import get_global_hub
+        from ..ui.messages import ToolMessage
+
+        hub = get_global_hub()
+        hub.emit(ToolMessage(
+            severity=severity,
+            message=message,
+            file_path=file_path,
+            line=line,
+            column=column,
+            identifier=identifier,
+            extended_message=extended_message
+        ))
+
     async def add_message(
         self,
         severity: MessageSeverity,

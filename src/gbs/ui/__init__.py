@@ -26,6 +26,7 @@ from .hub import (
 from .backends import (
     FeedbackBackend,
     SimpleBackend,
+    FileBackend,
 )
 
 # Conditionally import RichBackend if available
@@ -52,6 +53,7 @@ __all__ = [
     "emit",
     "FeedbackBackend",
     "SimpleBackend",
+    "FileBackend",
 ]
 
 if _has_rich:

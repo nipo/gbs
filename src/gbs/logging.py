@@ -2,6 +2,10 @@
 
 Provides file-based logging with configurable verbosity.
 All operations are logged to file for post-mortem analysis.
+
+This module now bridges Python logging to the FeedbackHub system,
+ensuring all log messages are captured in both traditional log files
+and the structured UI message system.
 """
 
 import logging
@@ -9,7 +13,59 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ui.hub import FeedbackHub
+
+
+class FeedbackHubHandler(logging.Handler):
+    """Logging handler that forwards log records to FeedbackHub
+
+    This bridges Python's logging system to the GBS UI message system,
+    ensuring all log messages are captured in structured output.
+    """
+
+    def __init__(self, hub: 'FeedbackHub'):
+        """Initialize handler
+
+        Args:
+            hub: FeedbackHub instance to emit messages to
+        """
+        super().__init__()
+        self.hub = hub
+
+    def emit(self, record: logging.LogRecord):
+        """Convert log record to LogMessage and emit to hub
+
+        Args:
+            record: Python logging record
+        """
+        try:
+            from .ui.messages import LogMessage, LogLevel
+
+            # Map Python logging levels to our LogLevel enum
+            level_map = {
+                logging.DEBUG: LogLevel.DEBUG,
+                logging.INFO: LogLevel.INFO,
+                logging.WARNING: LogLevel.WARNING,
+                logging.ERROR: LogLevel.ERROR,
+                logging.CRITICAL: LogLevel.CRITICAL,
+            }
+
+            level = level_map.get(record.levelno, LogLevel.INFO)
+            message = self.format(record)
+            source = record.name
+
+            # Emit LogMessage to hub
+            self.hub.emit(LogMessage(
+                level=level,
+                message=message,
+                source=source
+            ))
+        except Exception:
+            # Don't let logging errors crash the application
+            self.handleError(record)
 
 
 class GBSLogger:
@@ -98,6 +154,21 @@ class GBSLogger:
             The configured logger
         """
         return self.logger
+
+    def attach_feedback_hub(self, hub: 'FeedbackHub'):
+        """Attach a FeedbackHub handler to forward logs to UI system
+
+        This bridges Python logging to the FeedbackHub, ensuring all log
+        messages are captured in structured output.
+
+        Args:
+            hub: FeedbackHub instance to forward logs to
+        """
+        handler = FeedbackHubHandler(hub)
+        handler.setLevel(logging.DEBUG)  # Let hub backends filter by level
+        # Use simple formatter since FeedbackHub will handle formatting
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        self.logger.addHandler(handler)
 
     def cleanup_old_logs(self, max_log_count: int) -> None:
         """Remove old log files, keeping only the most recent ones

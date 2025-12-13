@@ -63,13 +63,19 @@ class FeedbackHub:
     ensuring proper ordering and preventing race conditions in output.
     """
 
-    def __init__(self, backend: FeedbackBackend):
+    def __init__(self, backend: FeedbackBackend | list[FeedbackBackend]):
         """Initialize feedback hub
 
         Args:
             backend: Rendering backend (e.g., SimpleBackend, RichBackend)
+                    Can be a single backend or a list of backends for multi-output
         """
-        self._backend = backend
+        # Support both single backend and list of backends
+        if isinstance(backend, list):
+            self._backends = backend
+        else:
+            self._backends = [backend]
+
         self._queue: Optional[asyncio.Queue] = None
         self._task: Optional[asyncio.Task] = None
         self._active_tasks: dict[str, ProgressStart] = {}  # Track active progress tasks
@@ -83,8 +89,9 @@ class FeedbackHub:
         self._queue = asyncio.Queue()
         self._started = True
 
-        # Start backend
-        await self._backend.start()
+        # Start all backends
+        for backend in self._backends:
+            await backend.start()
 
         # Start message processing task
         self._task = asyncio.create_task(self._process_messages())
@@ -103,8 +110,9 @@ class FeedbackHub:
         if self._task:
             await self._task
 
-        # Stop backend
-        await self._backend.stop()
+        # Stop all backends
+        for backend in self._backends:
+            await backend.stop()
 
         self._started = False
 
@@ -127,8 +135,9 @@ class FeedbackHub:
             elif isinstance(msg, ProgressEnd):
                 self._active_tasks.pop(msg.task_id, None)
 
-            # Render message via backend
-            await self._backend.render(msg)
+            # Render message via all backends
+            for backend in self._backends:
+                await backend.render(msg)
 
     def emit(self, msg):
         """Emit a message to be rendered
