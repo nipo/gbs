@@ -131,21 +131,39 @@ async def cli(ctx, verbose: bool, debug: bool, no_progress: bool, log_dir: Path 
     # Create FeedbackHub for unified UI output
     # Use RichBackend if available and stdout is a TTY, otherwise SimpleBackend
     if _has_rich and sys.stdout.isatty() and not verbose and not debug:
-        backend = RichBackend(
+        terminal_backend = RichBackend(
             show_progress=show_progress,
             min_severity=min_severity,
             min_log_level=min_log_level
         )
         logger.debug("Using RichBackend for fancy terminal output")
     else:
-        backend = SimpleBackend(
+        terminal_backend = SimpleBackend(
             show_progress=show_progress,
             min_severity=min_severity,
             min_log_level=min_log_level
         )
         logger.debug("Using SimpleBackend for plain text output")
 
-    hub = FeedbackHub(backend)
+    # Add FileBackend for structured logging to file
+    # This captures all UIReporter messages to the log file
+    from ..ui.backends.file import FileBackend
+    log_file_path = get_log_file()
+    if log_file_path:
+        file_backend = FileBackend(
+            file_path=log_file_path,
+            format='text',
+            min_severity=MessageSeverity.DEBUG,  # Log everything to file
+            min_log_level=LogLevel.DEBUG,         # Log everything to file
+            include_progress=True
+        )
+        backends = [terminal_backend, file_backend]
+        logger.debug(f"Added FileBackend logging to {log_file_path}")
+    else:
+        backends = [terminal_backend]
+        logger.warning("No log file available, FileBackend disabled")
+
+    hub = FeedbackHub(backends)
     await hub.__aenter__()
 
     # Set as global hub
