@@ -43,7 +43,7 @@ class CopyBundledIeeeFiles(Task):
             # Copy from resources
             with as_file(pkg_resources / filename) as src_path:
                 shutil.copy(src_path, output.path)
-            self.logger.info(f"Copied bundled {filename} to {output.path}")
+            self.info(f"Copied bundled {filename} to {output.path}")
 
 class ProjectInit(GwShCommand):
     """Initialize Gowin project in gw_sh session"""
@@ -83,27 +83,27 @@ class ProjectInit(GwShCommand):
             pin_cst_file = self.output_dir / "aggregate_pins.cst"
             timing_sdc_file = self.output_dir / "aggregate_timing.sdc"
 
-            self.logger.info(f"Initializing Gowin project for {self.dispatcher.device_info}")
+            self.info(f"Initializing Gowin project for {self.dispatcher.device_info}")
 
             # Configure device
-            self.logger.debug(f"Configuring device: {self.dispatcher.device_info.family} {self.dispatcher.device_info.part}")
+            self.debug(f"Configuring device: {self.dispatcher.device_info.family} {self.dispatcher.device_info.part}")
             await self.command_run(tcl.Command(["set_device", "-name", self.dispatcher.device_info.family, self.dispatcher.device_info.part]))
 
             # Set top module
-            self.logger.debug(f"Setting top module: {topcell}")
+            self.debug(f"Setting top module: {topcell}")
             await self.command_run(tcl.Command(["set_option", "-top_module", topcell]))
 
             # Set output base name (for predictable output paths)
-            self.logger.debug(f"Setting output base name: {self.output_base_name}")
+            self.debug(f"Setting output base name: {self.output_base_name}")
             await self.command_run(tcl.Command(["set_option", "-output_base_name", self.output_base_name]))
 
             # Process vendor-specific options
             # use_as_gpio: list of pin names to configure as GPIO
             use_as_gpio = target.get("use_as_gpio", [])
             if use_as_gpio:
-                self.logger.debug(f"Configuring GPIO pins: {use_as_gpio}")
+                self.debug(f"Configuring GPIO pins: {use_as_gpio}")
                 for pin_name in use_as_gpio:
-                    self.logger.debug(f"  Setting {pin_name} as GPIO")
+                    self.debug(f"  Setting {pin_name} as GPIO")
                     await self.command_run(tcl.Command(["set_option", f"-use_{pin_name}_as_gpio", "1"]))
 
             # Filter inputs by type (only Resources have metadata, not VirtualResources)
@@ -113,7 +113,7 @@ class ProjectInit(GwShCommand):
                          if isinstance(r, Resource) and r.metadata.get('file_type') == 'gowin-serdes-init']
 
             # Add HDL files in dependency order
-            self.logger.debug(f"Adding {len(hdl_inputs)} HDL source files...")
+            self.debug(f"Adding {len(hdl_inputs)} HDL source files...")
             total = len(hdl_inputs)
             for i, resource in enumerate(hdl_inputs):
                 # Get metadata attached to this resource
@@ -122,7 +122,7 @@ class ProjectInit(GwShCommand):
                 file_path = resource.path
 
                 # Add file (use tcl.String for proper path escaping)
-                self.logger.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
+                self.debug(f"  Adding {file_path.name} (lib={lib_name}, type={file_type})")
                 await self.command_run(tcl.Command(["add_file", "-type", file_type, str(file_path)]))
 
                 # Set library property (use tcl.String for proper escaping)
@@ -133,7 +133,7 @@ class ProjectInit(GwShCommand):
             # Add SerDes CSR file if present (after HDL files, before constraints)
             for csr_resource in csr_inputs:
                 csr_path = csr_resource.path
-                self.logger.info(f"Adding SerDes CSR file: {csr_path}")
+                self.info(f"Adding SerDes CSR file: {csr_path}")
                 await self.command_run(tcl.Command(["set_csr", str(csr_path)]))
 
             # Add constraint files (even if they don't exist yet)
@@ -156,19 +156,20 @@ class ProjectInit(GwShCommand):
             user_options = target.get("options", {})
             options = {**default_options, **user_options}
 
-            self.logger.debug(f"Setting {len(options)} project options...")
+            self.debug(f"Setting {len(options)} project options...")
             for key, value in options.items():
-                self.logger.debug(f"  set_option -{key} {value}")
+                self.debug(f"  set_option -{key} {value}")
                 await self.command_run(tcl.Command(["set_option", f"-{key}", str(value)]))
 
             # Inject random 32-bit user code (build ID)
             user_code = random.randbytes(4)
-            self.logger.info(f"Injecting user_code: {user_code.hex()}")
+            self.info(f"Injecting user_code: {user_code.hex()}")
             await self.command_run(tcl.Command(["set_option", "-user_code", user_code.hex()]))
 
-            self.logger.info(f"Project initialization complete")
+            self.info(f"Project initialization complete")
 
         except Exception as e:
+            self.error(f"Project init failed with exception: {e}")
             self.logger.error(f"Project init failed with exception: {e}", exc_info=True)
             raise
 
@@ -259,7 +260,7 @@ class AggregateConstraints(Task):
         output_file.write_text('\n'.join(constraints))
 
         constraint_type = "pin" if self.file_type == "gowin-cst" else "timing"
-        self.logger.info(f"Aggregated {len(resources)} {constraint_type} constraint files to {output_file}")
+        self.info(f"Aggregated {len(resources)} {constraint_type} constraint files to {output_file}")
 
 
 class SerDesToCsr(Task):
@@ -323,7 +324,7 @@ class SerDesToCsr(Task):
         # Ensure output directory exists
         csr_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"Converting SerDes config: {toml_file} -> {csr_file}")
+        self.info(f"Converting SerDes config: {toml_file} -> {csr_file}")
 
         # Run the conversion tool
         # Tool expects: serdes_toml_to_csr_<klut>.bin -o <output.csr> <input.toml>
@@ -332,6 +333,7 @@ class SerDesToCsr(Task):
         process = MessageSubprocess(
             argv = cmd,
             cwd = str(toml_file.parent),
+            parent_reporter = self  # Task is the parent
         )
 
         async for msg in process:
@@ -340,4 +342,4 @@ class SerDesToCsr(Task):
         if process.returncode != 0:
             raise RuntimeError(f"failed with return code {process.returncode}")
 
-        self.logger.info("complete")
+        self.info("complete")

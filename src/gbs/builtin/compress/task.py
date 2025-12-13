@@ -58,7 +58,7 @@ class GzipTask(Task):
 
     async def work(self) -> None:
         """Execute the gzip compression."""
-        self.logger.info(f"Compressing {self.source.path} -> {self.destination.path}")
+        self.info(f"Compressing {self.source.path} -> {self.destination.path}")
 
         # Run compression in thread pool to avoid blocking event loop
         async with self.dispatcher.context.semaphore:
@@ -68,4 +68,4 @@ class GzipTask(Task):
                 self.destination.path
             )
 
-        self.logger.info(f"Compressed to {self.destination.path}")
+        self.info(f"Compressed to {self.destination.path}")

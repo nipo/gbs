@@ -17,6 +17,7 @@ from .model import (
 )
 from ..logging import get_logger
 from ..ui import get_global_hub, BuildStatus
+from ..ui.reporter import UIReporter
 
 logger = get_logger(__name__)
 
@@ -26,7 +27,7 @@ class ExecutionError(Exception):
     pass
 
 
-class SuiteExecutor:
+class SuiteExecutor(UIReporter):
     """Orchestrates building multiple projects with dependency management
 
     Example:
@@ -49,6 +50,13 @@ class SuiteExecutor:
             gbs_config: Optional GBSConfig for project loading
             changed_files: Optional set of changed files for filtering
         """
+        # Initialize UIReporter (no parent - top level)
+        UIReporter.__init__(self,
+            reporter_name=f"SuiteExecutor({suite.name})",
+            reporter_logger=get_logger(f"SuiteExecutor({suite.name})"),
+            parent_reporter=None
+        )
+
         self.suite = suite
         self.gbs_config = gbs_config
         self.changed_files = changed_files or set()
@@ -68,13 +76,13 @@ class SuiteExecutor:
         # Determine build order based on dependencies
         build_order = self._topological_sort()
 
-        logger.info(f"Building suite '{self.suite.name}' with {len(build_order)} projects")
+        self.info(f"Building suite '{self.suite.name}' with {len(build_order)} projects")
 
         # Apply file-based filtering if enabled
         projects_to_build = build_order
         if self.suite.settings.filter.enabled and self.changed_files:
             projects_to_build = await self._filter_projects(build_order)
-            logger.info(f"File-based filtering: {len(projects_to_build)}/{len(build_order)} projects need rebuild")
+            self.info(f"File-based filtering: {len(projects_to_build)}/{len(build_order)} projects need rebuild")
 
         # Build projects in dependency order with parallelism
         semaphore = asyncio.Semaphore(self.suite.settings.max_parallel_projects)
@@ -103,13 +111,13 @@ class SuiteExecutor:
                     ))
 
                     if self.suite.settings.stop_on_failure:
-                        logger.error(f"Stopping suite execution after error in '{proj_ref.name}'")
+                        self.error(f"Stopping suite execution after error in '{proj_ref.name}'")
                         break
                 else:
                     project_results.append(result)
 
                     if result.status == ProjectStatus.FAILURE and self.suite.settings.stop_on_failure:
-                        logger.error(f"Stopping suite execution after failure in '{proj_ref.name}'")
+                        self.error(f"Stopping suite execution after failure in '{proj_ref.name}'")
                         break
 
             # Check if we should stop
@@ -181,15 +189,14 @@ class SuiteExecutor:
         from ..project import Project
 
         start_time = time.time()
-        hub = get_global_hub()
 
-        logger.info(f"Building project '{proj_ref.name}' at {proj_ref.path}")
+        self.info(f"Building project '{proj_ref.name}' at {proj_ref.path}")
 
         # Emit start status
-        hub.emit(BuildStatus(
+        self.emit_build_status(
             status="started",
             target=proj_ref.name
-        ))
+        )
 
         try:
             # Find project file
@@ -228,18 +235,18 @@ class SuiteExecutor:
                 for files in sources_by_group.values():
                     source_files.update(files)
             except Exception as e:
-                logger.warning(f"Failed to get source files for '{proj_ref.name}': {e}")
+                self.warning(f"Failed to get source files for '{proj_ref.name}': {e}")
 
             duration = time.time() - start_time
 
-            logger.info(f"✓ Built project '{proj_ref.name}' in {duration:.1f}s")
+            self.info(f"✓ Built project '{proj_ref.name}' in {duration:.1f}s")
 
             # Emit success status
-            hub.emit(BuildStatus(
+            self.emit_build_status(
                 status="success",
                 target=proj_ref.name,
                 duration=duration
-            ))
+            )
 
             return ProjectResult(
                 project=proj_ref,
@@ -253,15 +260,15 @@ class SuiteExecutor:
             duration = time.time() - start_time
             error_msg = str(e)
 
-            logger.error(f"✗ Failed to build project '{proj_ref.name}': {error_msg}")
+            self.error(f"✗ Failed to build project '{proj_ref.name}': {error_msg}")
 
             # Emit error status
-            hub.emit(BuildStatus(
+            self.emit_build_status(
                 status="error",
                 target=proj_ref.name,
                 duration=duration,
                 message=error_msg
-            ))
+            )
 
             return ProjectResult(
                 project=proj_ref,
@@ -398,7 +405,7 @@ class SuiteExecutor:
             if needs_rebuild_due_to_dep:
                 # Dependency needs rebuild, so we need to rebuild this too
                 projects_to_build.append(proj_ref)
-                logger.debug(f"Project '{proj_ref.name}': rebuild due to dependency")
+                self.debug(f"Project '{proj_ref.name}': rebuild due to dependency")
                 continue
 
             try:
@@ -416,14 +423,14 @@ class SuiteExecutor:
 
                 if needs_rebuild:
                     projects_to_build.append(proj_ref)
-                    logger.debug(f"Project '{proj_ref.name}': {reason}")
+                    self.debug(f"Project '{proj_ref.name}': {reason}")
                 else:
                     skipped_projects.add(proj_ref.name)
-                    logger.debug(f"Project '{proj_ref.name}': {reason}")
+                    self.debug(f"Project '{proj_ref.name}': {reason}")
 
             except Exception as e:
                 # If we can't determine, rebuild to be safe
-                logger.warning(f"Failed to check if '{proj_ref.name}' needs rebuild: {e}")
+                self.warning(f"Failed to check if '{proj_ref.name}' needs rebuild: {e}")
                 projects_to_build.append(proj_ref)
 
         return projects_to_build
@@ -442,7 +449,7 @@ class SuiteExecutor:
                 project_file = self._find_project_file(proj_ref.path)
                 projects_with_files.append((proj_ref, project_file))
             except ExecutionError as e:
-                logger.warning(f"Project '{proj_ref.name}': {e}")
+                self.warning(f"Project '{proj_ref.name}': {e}")
                 projects_with_files.append((proj_ref, None))
 
         return projects_with_files
@@ -485,7 +492,7 @@ class SuiteExecutor:
                 results[proj_ref.name] = None  # Success
             except Exception as e:
                 error_msg = str(e)
-                logger.warning(f"Failed to clean project '{proj_ref.name}': {error_msg}")
+                self.warning(f"Failed to clean project '{proj_ref.name}': {error_msg}")
                 results[proj_ref.name] = error_msg
 
         return results

@@ -86,12 +86,17 @@ DEFAULT_MAX_LOG_COUNT = 10
     help="Enable debug output (DEBUG level)"
 )
 @click.option(
+    "-P", "--no-progress",
+    is_flag=True,
+    help="Disable progress bars"
+)
+@click.option(
     "--log-dir",
     type=click.Path(path_type=Path),
     help="Custom directory for log files (default: .gbs/logs)"
 )
 @click.pass_context
-async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
+async def cli(ctx, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):
     """GBS: Gateware Build System
 
     A build system for FPGA and ASIC gateware projects.
@@ -119,18 +124,22 @@ async def cli(ctx, verbose: bool, debug: bool, log_dir: Path | None):
         min_severity = MessageSeverity.WARNING
         min_log_level = LogLevel.WARNING
 
+    # Determine if progress bars should be shown
+    # Disable if: verbose, debug, or --no-progress flag
+    show_progress = not verbose and not debug and not no_progress
+
     # Create FeedbackHub for unified UI output
     # Use RichBackend if available and stdout is a TTY, otherwise SimpleBackend
     if _has_rich and sys.stdout.isatty() and not verbose and not debug:
         backend = RichBackend(
-            show_progress=True,
+            show_progress=show_progress,
             min_severity=min_severity,
             min_log_level=min_log_level
         )
         logger.debug("Using RichBackend for fancy terminal output")
     else:
         backend = SimpleBackend(
-            show_progress=not verbose and not debug,
+            show_progress=show_progress,
             min_severity=min_severity,
             min_log_level=min_log_level
         )

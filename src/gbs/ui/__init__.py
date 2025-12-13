@@ -23,6 +23,8 @@ from .hub import (
     emit,
 )
 
+from .reporter import UIReporter
+
 from .backends import (
     FeedbackBackend,
     SimpleBackend,
@@ -51,6 +53,7 @@ __all__ = [
     "set_global_hub",
     "get_global_hub",
     "emit",
+    "UIReporter",
     "FeedbackBackend",
     "SimpleBackend",
     "FileBackend",

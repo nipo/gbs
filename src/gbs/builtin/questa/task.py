@@ -123,7 +123,7 @@ class GenerateBatchScript(Task):
         script_path.parent.mkdir(parents=True, exist_ok=True)
         script_path.write_text("\n".join(lines) + "\n")
 
-        self.logger.info(f"Generated batch script: {script_path}")
+        self.info(f"Generated batch script: {script_path}")
 
 
 class GenerateSimulatorScript(Task):
@@ -173,4 +173,4 @@ exec {self.vsim_executable} -batch -quiet -do {batch_script}
         script_path.write_text(script_content)
         script_path.chmod(0o755)
 
-        self.logger.info(f"Generated simulator script: {script_path}")
+        self.info(f"Generated simulator script: {script_path}")

@@ -40,7 +40,7 @@ class IcepackDispatcher(BaseDispatcher):
             else:
                 executable = "icepack"
             self._icepack_executable = str(expand_path(executable))
-            self.logger.debug(f"Using icepack executable: {self._icepack_executable}")
+            self.debug(f"Using icepack executable: {self._icepack_executable}")
 
         return self._icepack_executable
 
@@ -50,11 +50,11 @@ class IcepackDispatcher(BaseDispatcher):
         asc_resources = list(self.context.filter_pending(file_type=["ice40-asc"]))
 
         if not asc_resources:
-            self.logger.warning("No ice40 ASC bitstream found for icepack")
+            self.warning("No ice40 ASC bitstream found for icepack")
             return
 
         if len(asc_resources) > 1:
-            self.logger.warning(f"Multiple ASC files found, using first: {asc_resources[0].path}")
+            self.warning(f"Multiple ASC files found, using first: {asc_resources[0].path}")
 
         asc_resource = asc_resources[0]
         topcell = self.context.get_topcell()

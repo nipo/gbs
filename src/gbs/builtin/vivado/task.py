@@ -80,7 +80,7 @@ class NonProjectBuild(VivadoCommand):
         await self.update_progress(0.01, "Init")
 
         # Create in-memory project
-        self.logger.info(f"Creating in-memory project for part {self.part}")
+        self.info(f"Creating in-memory project for part {self.part}")
         await self.command_run(tcl.Command([
             "create_project", "-in_memory", "-part", self.part
         ]))
@@ -101,7 +101,7 @@ class NonProjectBuild(VivadoCommand):
 
         # Source init TCL files
         for resource in inputs_by_type.get('vivado-init-tcl', []):
-            self.logger.debug(f"Sourcing init TCL: {resource.path}")
+            self.debug(f"Sourcing init TCL: {resource.path}")
             await self.command_run(tcl.Command([
                 "source", tcl.String(str(resource.path))
             ]))
@@ -110,7 +110,7 @@ class NonProjectBuild(VivadoCommand):
             
         # Add block designs
         for resource in inputs_by_type.get('vivado-block-design', []):
-            self.logger.debug(f"Adding block design: {resource.path}")
+            self.debug(f"Adding block design: {resource.path}")
             await self.command_run(tcl.Command([
                 "set", "f",
                 tcl.Expansion(["add_files", tcl.String(str(resource.path))])
@@ -131,7 +131,7 @@ class NonProjectBuild(VivadoCommand):
             # VHDL files
             for resource in lib_files.get('vhdl', []):
                 vhdl_type = self._get_vhdl_file_type(resource)
-                self.logger.debug(f"Adding VHDL: {resource.path} (lib={library}, type={vhdl_type})")
+                self.debug(f"Adding VHDL: {resource.path} (lib={library}, type={vhdl_type})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -147,7 +147,7 @@ class NonProjectBuild(VivadoCommand):
 
             # Verilog files
             for resource in lib_files.get('verilog', []):
-                self.logger.debug(f"Adding Verilog: {resource.path} (lib={library})")
+                self.debug(f"Adding Verilog: {resource.path} (lib={library})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -163,7 +163,7 @@ class NonProjectBuild(VivadoCommand):
 
             # XCI (IP) files
             for resource in lib_files.get('xilinx-xci', []):
-                self.logger.debug(f"Adding XCI: {resource.path} (lib={library})")
+                self.debug(f"Adding XCI: {resource.path} (lib={library})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion(["read_ip", tcl.String(str(resource.path))])
@@ -176,7 +176,7 @@ class NonProjectBuild(VivadoCommand):
 
             # XDC constraint files
             for resource in lib_files.get('xilinx-xdc', []):
-                self.logger.debug(f"Adding XDC: {resource.path}")
+                self.debug(f"Adding XDC: {resource.path}")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -192,7 +192,7 @@ class NonProjectBuild(VivadoCommand):
 
             # TCL constraint files
             for resource in lib_files.get('xilinx-constraints-tcl', []):
-                self.logger.debug(f"Adding constraints TCL: {resource.path}")
+                self.debug(f"Adding constraints TCL: {resource.path}")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -208,7 +208,7 @@ class NonProjectBuild(VivadoCommand):
 
         # Set design properties
         userid = f"{random.randint(0, 0xFFFFFFFF):#010x}"
-        self.logger.debug(f"Setting USERID to {userid}")
+        self.debug(f"Setting USERID to {userid}")
         await self.command_run(tcl.Command([
             "set_property", "BITSTREAM.CONFIG.USERID", userid,
             tcl.Expansion(["current_design"])
@@ -222,7 +222,7 @@ class NonProjectBuild(VivadoCommand):
         ]))
 
         # Set top module
-        self.logger.debug(f"Setting top: {topcell} (lib={top_lib})")
+        self.debug(f"Setting top: {topcell} (lib={top_lib})")
         await self.command_run(tcl.Command([
             "set_property", "top_lib", top_lib, tcl.BareWord("$source_fileset_obj")
         ]))
@@ -247,7 +247,7 @@ class NonProjectBuild(VivadoCommand):
         await self.update_progress(0.3, f"Synth")
 
         # Synthesis
-        self.logger.info("Running synthesis")
+        self.info("Running synthesis")
         await self.command_run(tcl.Command([
             "synth_design", "-top", topcell, "-part", self.part, "-assert"
         ]))
@@ -255,25 +255,25 @@ class NonProjectBuild(VivadoCommand):
         await self.update_progress(0.4, f"Opt")
         
         # Optimization
-        self.logger.info("Running optimization")
+        self.info("Running optimization")
         await self.command_run(tcl.Command(["opt_design"]))
 
         await self.update_progress(0.5, f"Place")
         
         # Place
-        self.logger.info("Running placement")
+        self.info("Running placement")
         await self.command_run(tcl.Command(["place_design"]))
 
         await self.update_progress(0.6, f"Route")
 
         # Route
-        self.logger.info("Running routing")
+        self.info("Running routing")
         await self.command_run(tcl.Command(["route_design"]))
 
         await self.update_progress(0.7, f"Reports")
         
         # Generate reports
-        self.logger.info("Generating reports")
+        self.info("Generating reports")
         for rsrc in self.outputs_of_type("vivado-routing-report"):
             await self.command_run(tcl.Command([
                 "report_route_status", "-file",
@@ -315,11 +315,11 @@ class NonProjectBuild(VivadoCommand):
         await self.update_progress(0.9, f"Bitstream")
             
         # Generate bitstream
-        self.logger.info("Generating bitstream")
+        self.info("Generating bitstream")
         for rsrc in self.outputs_of_type("vivado-bitstream"):
             await self.command_run(tcl.Command([
                 "write_bitstream", "-force",
                 str(rsrc.path)
             ]))
 
-            self.logger.info(f"Bitstream saved to: {rsrc.path}")
+            self.info(f"Bitstream saved to: {rsrc.path}")

@@ -96,7 +96,7 @@ class GowinDispatcher(BaseDispatcher):
 
         if not self.device_info:
             # No target device configured - skip Gowin backend (simulation-only project)
-            self.logger.debug("No target device configured, skipping Gowin backend")
+            self.debug("No target device configured, skipping Gowin backend")
             return
 
         # Get output base name
@@ -107,7 +107,7 @@ class GowinDispatcher(BaseDispatcher):
 
         if has_hdl and self._pin_cst_task is None:
             # First call with HDL sources - create all tasks
-            self.logger.debug("Creating all Gowin build tasks")
+            self.debug("Creating all Gowin build tasks")
             await self._create_all_tasks(output_base_name)
 
         elif self._pin_cst_task is not None:
@@ -217,7 +217,7 @@ class GowinDispatcher(BaseDispatcher):
         serdes_csr_resource = None
         if serdes_config_sources:
             if self.device_info.klut_count is None:
-                self.logger.warning(
+                self.warning(
                     f"SerDes config found but device {self.device_info} doesn't appear to support SerDes"
                 )
             else:
@@ -232,7 +232,7 @@ class GowinDispatcher(BaseDispatcher):
 
                 # Get input TOML resource (use first if multiple)
                 if len(serdes_config_sources) > 1:
-                    self.logger.warning(
+                    self.warning(
                         f"Multiple SerDes configs found, using first: {serdes_config_sources[0].path}"
                     )
                 toml_resource = serdes_config_sources[0]
@@ -249,7 +249,7 @@ class GowinDispatcher(BaseDispatcher):
                 # Add CSR to pending queue
                 self.context.add_pending(serdes_csr_resource)
 
-                self.logger.info(f"SerDes CSR will be generated from {serdes_config_sources[0].path}")
+                self.info(f"SerDes CSR will be generated from {serdes_config_sources[0].path}")
 
         # Build init task inputs: HDL files + optional CSR
         init_inputs = list(hdl_input_resources)
@@ -330,7 +330,7 @@ class GowinDispatcher(BaseDispatcher):
         # Find new .cst files
         for source in cst_sources:
             if source.path not in existing_cst_paths:
-                self.logger.debug(f"Adding new .cst constraint: {source.path}")
+                self.debug(f"Adding new .cst constraint: {source.path}")
                 self._pin_cst_task.inputs.append(source)
                 # Set up dependency so task waits for this resource
                 self._pin_cst_task.dependency_add(source)
@@ -338,7 +338,7 @@ class GowinDispatcher(BaseDispatcher):
         # Find new .sdc files
         for source in sdc_sources:
             if source.path not in existing_sdc_paths:
-                self.logger.debug(f"Adding new .sdc constraint: {source.path}")
+                self.debug(f"Adding new .sdc constraint: {source.path}")
                 self._timing_sdc_task.inputs.append(source)
                 # Set up dependency so task waits for this resource
                 self._timing_sdc_task.dependency_add(source)

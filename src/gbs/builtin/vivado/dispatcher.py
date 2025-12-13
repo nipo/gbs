@@ -138,7 +138,7 @@ class VivadoDispatcher(BaseDispatcher):
             outputs=outputs,
         )
 
-        self.logger.info(f"Created Vivado build task for part {part}")
+        self.info(f"Created Vivado build task for part {part}")
 
     async def _attach_pending_inputs(self) -> None:
         """Attach any pending files of accepted types to the build task"""
@@ -149,7 +149,7 @@ class VivadoDispatcher(BaseDispatcher):
                 if source.path in existing_paths:
                     continue
 
-                self.logger.debug(f"Attaching input: {source.path} (type={file_type})")
+                self.debug(f"Attaching input: {source.path} (type={file_type})")
 
                 resource = self.context.get_resource(source.path)
                 resource.metadata = {

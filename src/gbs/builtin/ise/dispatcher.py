@@ -90,7 +90,7 @@ class IseDispatcher(BaseDispatcher):
         # Add HDL input resources
         sources = list(self.context.filter_pending(file_type=["vhdl", "verilog"]))
         if sources:
-            self.logger.debug(f"Adding {len(sources)} XST sources")
+            self.debug(f"Adding {len(sources)} XST sources")
         for resource in sources:
             dependents = self.context.remove_pending(resource.path)
             for dep in dependents:
@@ -102,13 +102,13 @@ class IseDispatcher(BaseDispatcher):
         # Add UCF input resources
         sources = list(self.context.filter_pending(file_type=["xilinx-ucf"]))
         if sources:
-            self.logger.debug(f"Adding {len(sources)} UCF sources")
+            self.debug(f"Adding {len(sources)} UCF sources")
         for resource in sources:
             dependents = self.context.remove_pending(resource.path)
             for dep in dependents:
                 self.net_task.dependency_add(dep)
 
-            self.logger.debug(f"Adding netlister UCF: {resource}")
+            self.debug(f"Adding netlister UCF: {resource}")
             self.net_task.inputs.append(resource)
             self.net_task.dependency_add(resource)
 

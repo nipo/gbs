@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Any
 from ..logging import get_logger, get_log_file
 from ..ui import get_global_hub
+from ..ui.reporter import UIReporter
 from .message import *
 from .task import VirtualResource, Resource, Stamp
 import asyncio
 
-class BuildContext:
+class BuildContext(UIReporter):
     """Shared build context passed to all tasks and resources
 
     Contains:
@@ -41,6 +42,15 @@ class BuildContext:
             base_output_path: Optional base path for build outputs (defaults to "gbs-build")
                              Suite builds use this to scope projects to separate directories
         """
+        # Initialize UIReporter (no parent for BuildContext - top level)
+        UIReporter.__init__(self,
+            reporter_name="BuildContext",
+            reporter_logger=get_logger("BuildContext"),
+            parent_reporter=None
+        )
+        # Keep self.logger for backward compatibility
+        self.logger = self._reporter_logger
+
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None
         self._resources: dict[Path, 'Resource'] = {}
@@ -50,7 +60,6 @@ class BuildContext:
         self.gbs_config = gbs_config
         self.steps = set()
         self.running = set()
-        self.logger = get_logger("BuildContext")
         self.__messages: list[ToolMessage] = []
 
         # Base output path (for suite scoping)
@@ -78,7 +87,7 @@ class BuildContext:
         # Progress tracking for UI
         self._total_steps = 0
         self._completed_steps = 0
-        self._progress_task_id: Optional[str] = None
+        # Note: self._reporter_progress_id from UIReporter is used instead of _progress_task_id
 
     def messages_get(
         self,
@@ -116,14 +125,11 @@ class BuildContext:
     def message_add(self, message: ToolMessage):
         """Add a message to the build context
 
-        Messages are both stored locally and emitted to the global FeedbackHub
-        for real-time display.
+        Messages are stored locally for later retrieval.
+        Note: Messages are emitted to FeedbackHub by the Task via UIReporter,
+        not here, to avoid duplication.
         """
         self.__messages.append(message)
-
-        # Emit to hub for real-time display
-        hub = get_global_hub()
-        hub.emit(message)
 
     @property
     def semaphore(self) -> asyncio.Semaphore:
@@ -348,14 +354,11 @@ class BuildContext:
         if not step._EMIT_UI_PROGRESS:
             return
 
-        if self._progress_task_id:
-            hub = get_global_hub()
-            from ..ui.messages import ProgressUpdate
-            hub.emit(ProgressUpdate(
-                task_id=self._progress_task_id,
+        if self._reporter_progress_id:
+            self.update_progress(
                 completed=self._completed_steps,
                 message=step.name
-            ))
+            )
 
     def _on_step_complete(self, step: 'BuildStep'):
         """Called by BuildStep when a step completes
@@ -369,32 +372,23 @@ class BuildContext:
 
         self._completed_steps += 1
 
-        # Update progress via FeedbackHub
-        if self._progress_task_id:
-            hub = get_global_hub()
-            from ..ui.messages import ProgressUpdate
-            hub.emit(ProgressUpdate(
-                task_id=self._progress_task_id,
-                completed=self._completed_steps
-            ))
+        # Update progress via UIReporter
+        if self._reporter_progress_id:
+            self.update_progress(completed=self._completed_steps)
 
     async def _launch(self) -> None:
-        self.logger.debug("Launch")
+        self.debug("Launch")
 
         # Initialize progress tracking - count only steps that emit UI progress (Tasks)
         self._total_steps = sum(1 for s in self.steps if s._EMIT_UI_PROGRESS)
         self._completed_steps = 0
 
-        # Start progress tracking via FeedbackHub
-        hub = get_global_hub()
-        from ..ui.messages import ProgressStart
-        import uuid
-        self._progress_task_id = uuid.uuid4().hex
-        hub.emit(ProgressStart(
-            task_id=self._progress_task_id,
+        # Start progress tracking via UIReporter
+        self.start_progress(
             description=f"Building {self._output_group.name if self._output_group else 'project'}",
-            total=self._total_steps
-        ))
+            total=self._total_steps,
+            transient=False  # BuildContext progress is not transient
+        )
 
         for s in self.steps:
             self.running.add(s.launch())
@@ -407,17 +401,11 @@ class BuildContext:
         while pending:
             done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
 
-        # Mark progress as complete
-        if self._progress_task_id:
-            hub = get_global_hub()
-            from ..ui.messages import ProgressEnd
-            hub.emit(ProgressEnd(
-                task_id=self._progress_task_id,
-                success=not self.build_failed
-            ))
+        # Mark progress as complete via UIReporter
+        self.end_progress(success=not self.build_failed)
 
     async def _cleanup(self) -> None:
-        self.logger.debug("Cleanup")
+        self.debug("Cleanup")
 
         # Collect failed steps from BuildStep futures
         # (not from running tasks, since we catch exceptions in execute())

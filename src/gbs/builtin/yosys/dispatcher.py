@@ -63,7 +63,7 @@ class YosysDispatcher(BaseDispatcher):
             else:
                 executable = "yosys"
             self._yosys_executable = expand_path(executable)
-            self.logger.debug(f"Using yosys executable: {self._yosys_executable}")
+            self.debug(f"Using yosys executable: {self._yosys_executable}")
 
         return self._yosys_executable
 

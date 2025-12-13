@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 
 from ..build.context import BuildContext
 from ..logging import get_logger
+from ..ui.reporter import UIReporter
 
 __all__ = ["Dispatcher", "BaseDispatcher", "DispatcherRegistry", "run_dispatcher_iteration"]
 
@@ -78,11 +79,13 @@ class Dispatcher(Protocol):
         ...
 
 
-class BaseDispatcher(ABC):
+class BaseDispatcher(UIReporter, ABC):
     """Base class for dispatchers
 
     Provides common functionality and enforces the Dispatcher protocol.
     Subclasses must implement process().
+
+    Inherits from UIReporter to provide logging and progress reporting.
     """
 
     def __init__(self, context: BuildContext, name: str, tool_name: str, priority: int = 500):
@@ -103,7 +106,15 @@ class BaseDispatcher(ABC):
         self.name = name
         self.tool_name = tool_name
         self.priority = priority
-        self.logger = get_logger(f"Dispatcher({name})")
+
+        # Initialize UIReporter (no parent for dispatchers - they're top-level)
+        UIReporter.__init__(self,
+            reporter_name=f"Dispatcher({name})",
+            reporter_logger=get_logger(f"Dispatcher({name})"),
+            parent_reporter=None
+        )
+        # Keep self.logger for backward compatibility
+        self.logger = self._reporter_logger
 
     def get_tool(self, name: str, required: bool = True) -> dict:
         """Get tool configuration from context

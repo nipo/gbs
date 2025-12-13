@@ -310,7 +310,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
 
         # Filter for VHPIDIRECT C files
         for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-c"])):
-            self.logger.info(f"Compiling VHPIDIRECT C source: {resource.path.name}")
+            self.info(f"Compiling VHPIDIRECT C source: {resource.path.name}")
 
             # Create output .so path (stable naming: xxx.c -> xxx.so)
             lib_path = self.context.output_path / "vhpidirect" / f"{resource.path.stem}.so"
@@ -340,7 +340,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
             vhpidirect_count += 1
 
         if vhpidirect_count:
-            self.logger.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
+            self.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
 
     def _create_elaboration_tasks(self,
         topcell: str,

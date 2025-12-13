@@ -121,7 +121,7 @@ class QuestaDispatcher(BaseDispatcher):
         self.context.add_pending(batch_script_resource)
         self.context.add_pending(simulator_resource)
 
-        self.logger.info("Created QuestaSim build tasks")
+        self.info("Created QuestaSim build tasks")
 
     async def _attach_pending_inputs(self) -> None:
         """Attach any pending HDL files to the batch script task"""
@@ -132,7 +132,7 @@ class QuestaDispatcher(BaseDispatcher):
                 if source.path in existing_paths:
                     continue
 
-                self.logger.debug(f"Attaching input: {source.path} (type={file_type})")
+                self.debug(f"Attaching input: {source.path} (type={file_type})")
 
                 resource = self.context.get_resource(source.path)
                 resource.metadata = {

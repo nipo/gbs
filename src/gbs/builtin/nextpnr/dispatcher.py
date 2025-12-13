@@ -47,7 +47,7 @@ class NextpnrDispatcher(BaseDispatcher):
             else:
                 executable = "nextpnr-ice40"
             self._nextpnr_executable = str(expand_path(executable))
-            self.logger.debug(f"Using nextpnr executable: {self._nextpnr_executable}")
+            self.debug(f"Using nextpnr executable: {self._nextpnr_executable}")
 
         return self._nextpnr_executable
 
@@ -63,7 +63,7 @@ class NextpnrDispatcher(BaseDispatcher):
                 return
 
             if len(netlist_resources) > 1:
-                self.logger.warning(f"Multiple netlists found, using first: {netlist_resources[0].path}")
+                self.warning(f"Multiple netlists found, using first: {netlist_resources[0].path}")
 
             netlist_resource = netlist_resources[0]
             topcell = self.context.get_topcell()
@@ -96,7 +96,7 @@ class NextpnrDispatcher(BaseDispatcher):
         # On every process() call, check for new PCF files
         pcf_resources = list(self.context.filter_pending(file_type=["ice40-pcf"]))
         for pcf_resource in pcf_resources:
-            self.logger.info(f"Adding PCF constraint: {pcf_resource.path.name}")
+            self.info(f"Adding PCF constraint: {pcf_resource.path.name}")
             self._pnr_task.inputs.append(pcf_resource)
 
             # Remove PCF from pending

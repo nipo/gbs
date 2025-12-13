@@ -99,6 +99,7 @@ class Session(tcl.Session):
             if msg:
                 yield msg
 
+
 class GwShCommand(tcl.CommandTask):
     """Base task class for Gowin gw_sh commands
 

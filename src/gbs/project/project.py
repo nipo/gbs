@@ -41,7 +41,9 @@ def _lazy_imports():
     )
     return load_project_model, load_repositories_from_project
 
-class Project:
+from ..ui.reporter import UIReporter
+
+class Project(UIReporter):
     """GBS Project execution context
 
     Manages a loaded project including its data model, repositories, and
@@ -64,6 +66,14 @@ class Project:
                  path: Optional[Path],
                  gbs_config: Optional[any],
                  max_parallel: Optional[int] = None):
+        # Initialize UIReporter (no parent - top level)
+        from ..logging import get_logger
+        UIReporter.__init__(self,
+            reporter_name=f"Project({model.name})" if model.name else "Project",
+            reporter_logger=get_logger(f"Project({model.name})" if model.name else "Project"),
+            parent_reporter=None
+        )
+
         self.model = model
         self.repositories = repositories
         self.path = path
@@ -257,16 +267,10 @@ class Project:
 
             yield realization
             
-    async def build(
-        self,
-        show_progress: bool = True
-    ):
+    async def build(self):
         """Build the project
 
         Executes the build for all output groups.
-
-        Args:
-            show_progress: Whether to show progress bars (default: True)
 
         Raises:
             Exception: If build fails
@@ -275,18 +279,10 @@ class Project:
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
             >>> await proj.build()
         """
-        from ..ui import get_global_hub
-
-        hub = get_global_hub()
-
         # Build each realization (output group)
         async for realization in self.realizations():
-            # Execute build tasks with progress tracking
-            async with hub.progress(f"Building {realization.plan.output_group.name}") as prog:
-                logger.info(f"  Realizing build plan {realization.plan}...")
-                await realization.execute(
-                    show_progress=(sys.stdout.isatty() and show_progress)
-                )
+            logger.info(f"  Realizing build plan {realization.plan}...")
+            await realization.execute()
 
     async def clean(
         self,
@@ -508,7 +504,7 @@ class PlanRealization:
         )
         logger.info(f"  Converged after {iterations} iteration(s)")
 
-    async def execute(self, show_progress: bool = False):
+    async def execute(self):
         # Launch all steps and await them
         if self.build_ctx.steps:
             import asyncio
@@ -516,14 +512,7 @@ class PlanRealization:
             async with self.build_ctx.build():
                 # build() calls _launch() which launches all steps
                 # Now await all running tasks
-                if show_progress:
-                    try:
-                        from ..ui.progress import run_with_progress_tasks
-                        await run_with_progress_tasks(self.build_ctx)
-                    except ImportError:
-                        await asyncio.gather(*self.build_ctx.running)
-                else:
-                    await asyncio.gather(*self.build_ctx.running)
+                await asyncio.gather(*self.build_ctx.running)
 
             # After cleanup, check if build failed and raise if needed
             if self.build_ctx.build_failed:

@@ -66,7 +66,7 @@ class Pack(Task):
         # Get input ASC
         asc_path = self.inputs[0].path
 
-        self.logger.info(f"Generating binary bitstream: {output_path.name}")
+        self.info(f"Generating binary bitstream: {output_path.name}")
 
         # Run icepack
         process = IcepackInvocation(argv=[
@@ -84,4 +84,4 @@ class Pack(Task):
             output_path.unlink(missing_ok = True)
             raise BuildError(f"icepack failed with exit code {process.returncode}")
 
-        self.logger.info("Bitstream generation complete")
+        self.info("Bitstream generation complete")

@@ -95,7 +95,7 @@ class CompressDispatcher(BaseDispatcher):
 
             task_class, extension = handler_info
 
-            self.logger.debug(
+            self.debug(
                 f"Output {dest_resource.file_type} needs transform '{transform}' "
                 f"from base type '{base_type}'"
             )
@@ -119,13 +119,13 @@ class CompressDispatcher(BaseDispatcher):
                         generated_by=None,
                     )
                     self.context.add_pending(intermediate_resource)
-                    self.logger.info(
+                    self.info(
                         f"Created intermediate goal: {base_type} at {intermediate_path}"
                     )
                 continue
 
             if len(matching) > 1:
-                self.logger.warning(
+                self.warning(
                     f"Multiple files of type '{base_type}' found, "
                     f"using first: {matching[0].path}"
                 )
@@ -134,10 +134,10 @@ class CompressDispatcher(BaseDispatcher):
 
             # Skip if already has a producer (shouldn't happen for unsatisfied, but be safe)
             if dest_resource.depends_on:
-                self.logger.debug(f"Output {dest_resource.path} already has producer, skip")
+                self.debug(f"Output {dest_resource.path} already has producer, skip")
                 continue
 
-            self.logger.info(
+            self.info(
                 f"Compressing {base_type} -> {dest_resource.file_type}: "
                 f"{source_resource.path} -> {dest_resource.path}"
             )

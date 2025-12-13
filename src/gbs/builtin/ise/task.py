@@ -72,7 +72,7 @@ class IseTask(Task):
         Returns:
             Return code from the command
         """
-        self.logger.info(f"Running: {' '.join(cmd)}")
+        self.info(f"Running: {' '.join(cmd)}")
 
         settings, = self.inputs_of_type("ise-settings-sh")
         
@@ -88,7 +88,7 @@ class IseTask(Task):
         if process.returncode != 0:
             raise RuntimeError(f"failed with return code {process.returncode}")
 
-        self.logger.info("complete")
+        self.info("complete")
 
 
 class Xst(IseTask):
@@ -159,7 +159,7 @@ class Xst(IseTask):
 
         proj_file.write_text('\n'.join(lines) + '\n')
 
-        self.logger.info(f"Generated {proj_file}")
+        self.info(f"Generated {proj_file}")
 
         log_file = output_dir / "xst_run.log"
 
@@ -197,7 +197,7 @@ class BmmGenerate(Task):
         bmm_file.parent.mkdir(parents=True, exist_ok=True)
         bmm_file.write_text("//\n")
 
-        self.logger.info(f"Generated placeholder {bmm_file}")
+        self.info(f"Generated placeholder {bmm_file}")
 
 
 class EdifConvert(IseTask):

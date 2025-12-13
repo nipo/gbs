@@ -55,14 +55,14 @@ class OutputCopyDispatcher(BaseDispatcher):
             ]
 
             if not matching:
-                self.logger.debug(
+                self.debug(
                     f"No source files of type '{file_type}' found "
                     f"for output '{dest_path}'"
                 )
                 continue
 
             if len(matching) > 1:
-                self.logger.warning(
+                self.warning(
                     f"Multiple files of type '{file_type}' found, "
                     f"using first: {matching[0].path}"
                 )
@@ -71,19 +71,19 @@ class OutputCopyDispatcher(BaseDispatcher):
 
             # Skip if source and destination are the same
             if source_resource.path.resolve() == dest_path.resolve():
-                self.logger.debug(
+                self.debug(
                     f"Source and destination are the same: {dest_path}, skip"
                 )
                 continue
 
             # Skip if already has a producer (shouldn't happen for unsatisfied)
             if dest_resource.depends_on:
-                self.logger.debug(
+                self.debug(
                     f"Destination {dest_path} already has producer, skip"
                 )
                 continue
 
-            self.logger.info(
+            self.info(
                 f"Copying {file_type}: {source_resource.path} -> {dest_path}"
             )
 

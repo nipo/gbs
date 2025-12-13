@@ -56,7 +56,7 @@ class CopyTask(Task):
         """Execute the copy operation"""
         source, = self.inputs
         destination, = self.outputs
-        self.logger.info(f"Copying {source.path} -> {destination.path}")
+        self.info(f"Copying {source.path} -> {destination.path}")
 
         # Run copy in thread pool to avoid blocking event loop
         async with self.dispatcher.context.semaphore:
@@ -66,4 +66,4 @@ class CopyTask(Task):
                 destination.path
             )
 
-        self.logger.info(f"Copied to {destination.path}")
+        self.info(f"Copied to {destination.path}")

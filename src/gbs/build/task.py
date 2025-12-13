@@ -27,6 +27,7 @@ import time
 from .message import *
 
 from ..logging import get_logger
+from ..ui.reporter import UIReporter
 
 __all__ = ["BuildError", "MissingToolError", "PrerequisiteFailed", "BuildStep",
            "VirtualResource", "Resource", "Task", "ExecutorTask", "ResourceTypology"]
@@ -60,10 +61,12 @@ class PrerequisiteFailed(Exception):
     """Prerequisite failed while we were waiting on it"""
     pass
 
-class BuildStep(asyncio.Future):
+class BuildStep(UIReporter, asyncio.Future):
     """
     A step in a build, either a task, an artifact, a dependency, etc.
     It is a node in the build graph.
+
+    Inherits from UIReporter to provide logging and progress reporting.
     """
 
     # Whether this type of BuildStep should emit UI progress bars
@@ -76,23 +79,31 @@ class BuildStep(asyncio.Future):
             context: Build context
             log_name: Name for logger
         """
-        super().__init__()
         self.context = context
         self.depends_on = set()
         self.expected_by = set()
         self.name = name
         self._log_name = f"{self.__class__.__name__}({name})"
-        self.logger = get_logger(self._log_name)
+
+        # Initialize both parent classes
+        # UIReporter first (sets up reporter attributes)
+        UIReporter.__init__(self, reporter_name=self._log_name, reporter_logger=get_logger(self._log_name), parent_reporter=None)
+        # Then asyncio.Future
+        asyncio.Future.__init__(self)
+
+        # Keep self.logger for backward compatibility
+        self.logger = self._reporter_logger
+
         self.task = None
 
-        # Progress tracking
+        # Progress tracking (BuildStep-specific, used for dependency tracking)
         self.progress: float = 0.0  # 0.0 to 1.0
         self.progress_message: Optional[str] = None
         self.progress_started: Optional[float] = None
         self.progress_updated: Optional[float] = None
         self.completed: bool = False
 
-        # UI progress tracking
+        # UI progress tracking (for BuildStep.update_progress method)
         self._ui_progress_task_id: Optional[str] = None
         self._ui_progress_failed: bool = False
 
@@ -143,7 +154,7 @@ class BuildStep(asyncio.Future):
         if progress >= 1.0:
             self.completed = True
 
-        self.logger.info(f"{self.name} progress: {progress * 100}%: {message or ''}")
+        self.info(f"{self.name} progress: {progress * 100}%: {message or ''}")
 
         # Notify watchers
         await self.context.notify_progress_update()
@@ -183,105 +194,8 @@ class BuildStep(asyncio.Future):
                 message=message if self._ui_progress_failed else None
             ))
 
-    # Convenience methods for message emission
-    # These automatically include context (BuildStep name) and use the global hub
-
-    def _emit_log(self, level: 'LogLevel', message: str):
-        """Internal method to emit a log message with automatic context
-
-        Args:
-            level: Log level enum value
-            message: Log message
-        """
-        from ..ui.hub import get_global_hub
-        from ..ui.messages import LogMessage
-
-        hub = get_global_hub()
-        hub.emit(LogMessage(
-            level=level,
-            message=message,
-            source=self._log_name
-        ))
-
-    def debug(self, message: str):
-        """Emit a DEBUG log message
-
-        Args:
-            message: Log message
-        """
-        from ..ui.messages import LogLevel
-        self._emit_log(LogLevel.DEBUG, message)
-
-    def info(self, message: str):
-        """Emit an INFO log message
-
-        Args:
-            message: Log message
-        """
-        from ..ui.messages import LogLevel
-        self._emit_log(LogLevel.INFO, message)
-
-    def warning(self, message: str):
-        """Emit a WARNING log message
-
-        Args:
-            message: Log message
-        """
-        from ..ui.messages import LogLevel
-        self._emit_log(LogLevel.WARNING, message)
-
-    def error(self, message: str):
-        """Emit an ERROR log message
-
-        Args:
-            message: Log message
-        """
-        from ..ui.messages import LogLevel
-        self._emit_log(LogLevel.ERROR, message)
-
-    def critical(self, message: str):
-        """Emit a CRITICAL log message
-
-        Args:
-            message: Log message
-        """
-        from ..ui.messages import LogLevel
-        self._emit_log(LogLevel.CRITICAL, message)
-
-    def emit_tool_message(
-        self,
-        severity: 'MessageSeverity',
-        message: str,
-        file_path: Optional['Path'] = None,
-        line: Optional[int] = None,
-        column: Optional[int] = None,
-        identifier: Optional[str] = None,
-        extended_message: Optional[str] = None
-    ):
-        """Emit a tool message (compiler-style diagnostic)
-
-        Args:
-            severity: Message severity
-            message: Main message text
-            file_path: Source file path
-            line: Line number
-            column: Column number
-            identifier: Error/warning identifier code
-            extended_message: Extended diagnostic information
-        """
-        from ..ui.hub import get_global_hub
-        from ..ui.messages import ToolMessage
-
-        hub = get_global_hub()
-        hub.emit(ToolMessage(
-            severity=severity,
-            message=message,
-            file_path=file_path,
-            line=line,
-            column=column,
-            identifier=identifier,
-            extended_message=extended_message
-        ))
+    # Note: Logging convenience methods (debug, info, warning, error, critical, emit_tool_message)
+    # are now inherited from UIReporter mixin
 
     async def add_message(
         self,
@@ -348,36 +262,29 @@ class BuildStep(asyncio.Future):
                     new_severity = MessageSeverity[new_severity_str]
                     old_severity = msg.severity
                     msg.severity = new_severity
-                    self.logger.debug(
+                    self.debug(
                         f"Message {msg.identifier}: severity {old_severity.value} → {new_severity.value}"
                     )
                 except KeyError:
-                    self.logger.warning(
+                    self.warning(
                         f"Invalid severity level '{new_severity_str}' for message {msg.identifier}, "
                         f"using original severity {msg.severity.value}"
                     )
 
         msg.origin = self
         self.context.message_add(msg)
-        self._log_message(msg)
 
-    def _log_message(self, msg: ToolMessage) -> None:
-        """Log a ToolMessage using the step's logger
+        # Emit via UIReporter (only to hub, no double logging)
+        self.emit_tool_message(
+            severity=msg.severity,
+            message=msg.message,
+            file_path=msg.file_path,
+            line=msg.line,
+            column=msg.column,
+            identifier=msg.identifier,
+            extended_message=msg.extended_message
+        )
 
-        Args:
-            msg: The message to log
-        """
-        # Map severity to logger method
-        log_method = {
-            MessageSeverity.DEBUG: self.logger.debug,
-            MessageSeverity.NOTICE: self.logger.info,
-            MessageSeverity.INFO: self.logger.info,
-            MessageSeverity.WARNING: self.logger.warning,
-            MessageSeverity.ERROR: self.logger.error,
-            MessageSeverity.FATAL: self.logger.critical,
-        }.get(msg.severity, self.logger.info)
-
-        log_method(str(msg))
 
     def launch(self) -> asyncio.Task:
         if self.task:
@@ -394,7 +301,7 @@ class BuildStep(asyncio.Future):
         pending = self.depends_on
         failing = []
         while pending:
-            self.logger.debug("%s Blocked by %s", self.name, pending)
+            self.debug(f"{self.name} Blocked by {pending}")
             done, pending = await asyncio.wait(pending, return_when = asyncio.FIRST_COMPLETED)
             for fut in done:
                 try:
@@ -404,7 +311,7 @@ class BuildStep(asyncio.Future):
                     failing.append(fut)
 
         if deps_failed is not None:
-            self.logger.debug("%s deps failed: %s", self.name, deps_failed)
+            self.debug(f"{self.name} deps failed: {deps_failed}")
             await self.update_progress(.001, f"Prereq failed: {failing}", failed=True)
             self.__mark_done(deps_failed)
             return
@@ -416,6 +323,8 @@ class BuildStep(asyncio.Future):
         try:
             await self._work()
         except Exception as e:
+            self.error(f"{self.name} excepted: {e}")
+            # Keep original logger.exception for full traceback in file logs
             self.logger.exception("%s excepted", self.name)
             await self.update_progress(1.0, f"{self.pretty_name} failed", failed=True)
             self.__mark_done(e)
@@ -610,11 +519,22 @@ class Task(BuildStep):
             outputs: Output resources (files or virtual)
             description: Human-readable description
         """
+        # Store dispatcher first (needed for parent_reporter setup)
+        self.dispatcher = dispatcher
+
+        # Initialize BuildStep with dispatcher as parent for progress nesting
         super().__init__(dispatcher.context, name)
+
+        # Re-initialize UIReporter with dispatcher as parent
+        UIReporter.__init__(self,
+            reporter_name=self._log_name,
+            reporter_logger=get_logger(self._log_name),
+            parent_reporter=dispatcher  # Dispatcher is the parent for tasks
+        )
+
         self.description = description or name
         self.inputs = inputs
         self.outputs = outputs
-        self.dispatcher = dispatcher
 
         for o in outputs:
             o.dependency_add(self)
@@ -634,12 +554,12 @@ class Task(BuildStep):
         # If any input is virtual, always rebuild
         # (Virtual resources have no timestamp)
         if any(isinstance(inp, VirtualResource) for inp in self.depends_on):
-            self.logger.debug("Rebuild needed: has virtual inputs")
+            self.debug("Rebuild needed: has virtual inputs")
             return True
 
         # If any output is virtual, always rebuild
         if any(isinstance(out, VirtualResource) for out in self.expected_by):
-            self.logger.debug("Rebuild needed: has virtual outputs")
+            self.debug("Rebuild needed: has virtual outputs")
             return True
 
         # Get file inputs and outputs
@@ -648,18 +568,18 @@ class Task(BuildStep):
 
         # If no file outputs, always rebuild (shouldn't happen)
         if not file_outputs:
-            self.logger.debug("Rebuild needed: no file outputs")
+            self.debug("Rebuild needed: no file outputs")
             return True
 
         # Check if any output doesn't exist
         for output in file_outputs:
             if not output.exists():
-                self.logger.debug(f"Rebuild needed: output {output.path} doesn't exist")
+                self.debug(f"Rebuild needed: output {output.path} doesn't exist")
                 return True
 
         # If no inputs, outputs exist, so we're up-to-date
         if not file_inputs:
-            self.logger.debug("Up-to-date: no inputs, outputs exist")
+            self.debug("Up-to-date: no inputs, outputs exist")
             return False
 
         # Get oldest output timestamp
@@ -667,16 +587,16 @@ class Task(BuildStep):
         newest_input = max(i.mtime_get() for i in file_inputs if i.exists())
 
         if newest_input > oldest_output:
-            self.logger.debug(f"Rebuild needed, some input is newer than outputs")
+            self.debug(f"Rebuild needed, some input is newer than outputs")
             return True
 
         # All outputs exist and are newer than all inputs
-        self.logger.debug("Up-to-date: all outputs newer than all inputs")
+        self.debug("Up-to-date: all outputs newer than all inputs")
         return False
 
     async def _work(self) -> None:
         if not self.is_rebuild_needed():
-            self.logger.info(f"Task {self.name}: up-to-date, skipping")
+            self.info(f"Task {self.name}: up-to-date, skipping")
             return
         else:
             ret = await self.work()
@@ -728,7 +648,7 @@ class ExecutorTask(Task):
         self.executor = executor
 
     async def work(self) -> None:
-        self.logger.info(f"Task {self.name}: {self.description} - executing")
+        self.info(f"Task {self.name}: {self.description} - executing")
 
         # Run executor with semaphore
         async with self.context.semaphore:

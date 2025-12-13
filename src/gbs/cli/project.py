@@ -54,21 +54,15 @@ async def _project_load(project_file, gbs_config):
     
 @project.command()
 @click.option(
-    "--no-progress", '-P',
-    is_flag=True,
-    help="Force progress bar off"
-)
-@click.option(
     "-j", "--jobs",
     type=int,
     metavar="N",
     help="Maximum number of parallel tasks (overrides config files)"
 )
 @click.pass_context
-async def build(ctx, no_progress, jobs):
+async def build(ctx, jobs):
     """Build a project"""
     logger = get_logger()
-    show_pb = ctx.obj["allow_progress_bars"] and not no_progress
     project_file = get_project_file(ctx)
     gbs_config = ctx.obj.get("gbs_config")
 
@@ -84,7 +78,7 @@ async def build(ctx, no_progress, jobs):
         proj.set_max_parallel(jobs)
 
     try:
-        await proj.build(show_progress=show_pb)
+        await proj.build()
     except Exception as e:
         from ..build.task import BuildError
         if isinstance(e, BuildError):

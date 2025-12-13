@@ -143,7 +143,9 @@ class Session(ABC, Generic[CommandT]):
                     line, buffer = buffer.split("\n", 1)
                 except ValueError:
                     break
-                yield line
+                # Strip trailing \r (carriage return) from PTY output
+                # PTYs often use \r\n line endings
+                yield line.rstrip('\r')
 
             if buffer == self.prompt:
                 # Marker to say command is over

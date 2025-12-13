@@ -8,10 +8,11 @@ import asyncio
 import os
 from .message import *
 from .. import logging
+from ..ui.reporter import UIReporter
 
 __all__ = ["MessageSubprocess"]
 
-class MessageSubprocess:
+class MessageSubprocess(UIReporter):
     """
     A subprocess that generates a stream of ToolMessage objects.
 
@@ -29,20 +30,30 @@ class MessageSubprocess:
     def __init__(self,
                  argv: list[str],
                  cwd: Path = Path("."),
-                 env: dict[str, str] | None = None):
+                 env: dict[str, str] | None = None,
+                 parent_reporter: 'UIReporter' | None = None):
         """Initialize MessageSubprocess
 
         Args:
             argv: Command and arguments to execute
             cwd: Working directory for the subprocess
             env: Additional environment variables to inject (merged with current environment)
+            parent_reporter: Optional parent UIReporter (typically the Task creating this subprocess)
         """
+        # Initialize UIReporter with parent for progress nesting
+        UIReporter.__init__(self,
+            reporter_name=f"MessageSubprocess({argv[0] if argv else 'unknown'})",
+            reporter_logger=logging.get_logger(self.__class__.__name__),
+            parent_reporter=parent_reporter
+        )
+        # Keep self.logger for backward compatibility
+        self.logger = self._reporter_logger
+
         self.argv = argv
         self.cwd = cwd
         self.env = env
         self.process = None
         self.__queue = asyncio.Queue()
-        self.logger = logging.get_logger(self.__class__.__name__)
 
     async def __aiter__(self) -> AsyncIterator[ToolMessage]:
         """Asynchronous iterator of messages. Messages from stdout and

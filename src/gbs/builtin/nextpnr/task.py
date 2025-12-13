@@ -96,4 +96,4 @@ class PlaceAndRoute(Task):
         if process.returncode != 0:
             raise BuildError(f"nextpnr failed with exit code {process.returncode}")
 
-        self.logger.info("Place-and-route complete")
+        self.info("Place-and-route complete")
