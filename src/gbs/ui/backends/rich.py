@@ -228,7 +228,7 @@ class RichBackend(FeedbackBackend):
             self.console.print(str(msg))
 
     async def _render_tool_message(self, msg: ToolMessage):
-        """Render a tool message with colors"""
+        """Render a tool message with colors and OSC 8 hyperlinks"""
         # Filter based on minimum severity
         if msg.severity < self.min_severity:
             return
@@ -242,14 +242,19 @@ class RichBackend(FeedbackBackend):
             MessageSeverity.ERROR: "red",
             MessageSeverity.FATAL: "bold red",
         }
-        style = severity_styles.get(msg.severity, "")
+        base_style = severity_styles.get(msg.severity, "")
 
         # Escape user content to prevent Rich markup interpretation
         from rich.markup import escape
+        from rich.text import Text
+        from rich.style import Style
+
         escaped_message = escape(msg.message)
         escaped_identifier = escape(msg.identifier) if msg.identifier else None
 
-        # Format location
+        # Build message using Text API for OSC 8 hyperlink support
+        result = Text()
+
         if msg.file_path:
             # Compiler-style format: file:line:level: message
             # Use full word for emacs compilation-mode compatibility
@@ -258,20 +263,34 @@ class RichBackend(FeedbackBackend):
                 location += f":{msg.line}"
                 if msg.column is not None:
                     location += f":{msg.column}"
-            location_text = f"[bold]{location}[/bold]:{msg.severity.value}:"
+
+            # Create file:// URL for OSC 8 hyperlink
+            # VS Code expects: file:///absolute/path#LN
+            from pathlib import Path
+            abs_path = Path(msg.file_path).resolve()
+            file_url = f"file://{abs_path}"
+            if msg.line is not None:
+                file_url += f"#L{msg.line}"
+                if msg.column is not None:
+                    file_url += f":{msg.column}"
+
+            # Add clickable location with hyperlink
+            result.append(location, style=Style(color="white", bold=True, link=file_url))
+            result.append(f":{msg.severity.value}: ", style=base_style)
         else:
             # Short bracketed form for non-file messages
             severity_code = msg.severity.short_code()
-            location_text = f"[{severity_code}]"
+            result.append(f"[{severity_code}] ", style=base_style)
 
-        # Format message with escaped content
+        # Add identifier if present
         if escaped_identifier:
-            text = f"{location_text} [dim]({escaped_identifier})[/dim] {escaped_message}"
-        else:
-            text = f"{location_text} {escaped_message}"
+            result.append(f"({escaped_identifier}) ", style=Style(color="bright_black"))
 
-        # Print with style (markup is now safe because we escaped user content)
-        self.console.print(text, style=style)
+        # Add message
+        result.append(escaped_message, style=base_style)
+
+        # Print the assembled text
+        self.console.print(result)
 
         # Print extended message if present
         if msg.extended_message:
