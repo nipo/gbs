@@ -108,6 +108,10 @@ class BuildStep(asyncio.Future):
     def __repr__(self) -> str:
         return self._log_name
 
+    @property
+    def pretty_name(self) -> str:
+        return self.name
+    
     def get_percentage(self) -> int:
         """Get progress as percentage (0-100)"""
         return int(self.progress * 100)
@@ -283,7 +287,7 @@ class BuildStep(asyncio.Future):
 
     async def __worker(self):
         # Initialize progress
-        await self.update_progress(0.0, "Waiting")
+        await self.update_progress(0.0, f"{self.pretty_name} waiting")
 
         # Wait for all dependencies if any
         deps_failed = None
@@ -308,18 +312,18 @@ class BuildStep(asyncio.Future):
         # Notify context that this step is starting
         self.context._on_step_start(self)
 
-        await self.update_progress(0.001, "Starting")
+        await self.update_progress(0.001, f"{self.pretty_name} starting")
         try:
             await self._work()
         except Exception as e:
             self.logger.exception("%s excepted", self.name)
-            await self.update_progress(1.0, "Failed", failed=True)
+            await self.update_progress(1.0, f"{self.pretty_name} failed", failed=True)
             self.__mark_done(e)
             return
 
         # Auto-complete if not already at 100%
         if self.progress < 1.0:
-            await self.update_progress(1.0, "Complete")
+            await self.update_progress(1.0, f"{self.pretty_name} complete")
         self.__mark_done()
 
     async def _work(self):
@@ -516,6 +520,10 @@ class Task(BuildStep):
             o.dependency_add(self)
         for i in inputs:
             self.dependency_add(i)
+
+    @property
+    def pretty_name(self) -> str:
+        return self.description or self.name
 
     def is_rebuild_needed(self) -> bool:
         """Check if rebuild is needed based on timestamps
