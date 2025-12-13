@@ -53,7 +53,6 @@ class SuiteExecutor(UIReporter):
         # Initialize UIReporter (no parent - top level)
         UIReporter.__init__(self,
             reporter_name=f"SuiteExecutor({suite.name})",
-            reporter_logger=get_logger(f"SuiteExecutor({suite.name})"),
             parent_reporter=None
         )
 
@@ -202,8 +201,8 @@ class SuiteExecutor(UIReporter):
             # Find project file
             project_path = self._find_project_file(proj_ref.path)
 
-            # Load project
-            project = Project.load_from_file(project_path, gbs_config=self.gbs_config)
+            # Load project with self as parent reporter
+            project = Project.load_from_file(project_path, gbs_config=self.gbs_config, parent_reporter=self)
 
             # Set suite-scoped output directory to prevent cross-contamination
             # Format: gbs-build/suite/<project_name>/
@@ -411,7 +410,7 @@ class SuiteExecutor(UIReporter):
             try:
                 # Load project to check source files
                 project_path = self._find_project_file(proj_ref.path)
-                project = Project.load_from_file(project_path, gbs_config=self.gbs_config)
+                project = Project.load_from_file(project_path, gbs_config=self.gbs_config, parent_reporter=self)
 
                 # Check if project needs rebuild
                 always_rebuild = ["**/*.gbs.yaml", "**/project.gbs.yaml"]
@@ -478,8 +477,8 @@ class SuiteExecutor(UIReporter):
                 # Find project file
                 project_path = self._find_project_file(proj_ref.path)
 
-                # Load project
-                project = Project.load_from_file(project_path, gbs_config=self.gbs_config)
+                # Load project with self as parent reporter
+                project = Project.load_from_file(project_path, gbs_config=self.gbs_config, parent_reporter=self)
 
                 # Set the SAME suite-scoped output directory as build_suite()
                 # Format: gbs-build/suite/<project_name>/

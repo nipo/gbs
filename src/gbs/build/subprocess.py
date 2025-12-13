@@ -7,7 +7,6 @@ from pathlib import Path
 import asyncio
 import os
 from .message import *
-from .. import logging
 from ..ui.reporter import UIReporter
 
 __all__ = ["MessageSubprocess"]
@@ -43,11 +42,8 @@ class MessageSubprocess(UIReporter):
         # Initialize UIReporter with parent for progress nesting
         UIReporter.__init__(self,
             reporter_name=f"MessageSubprocess({argv[0] if argv else 'unknown'})",
-            reporter_logger=logging.get_logger(self.__class__.__name__),
             parent_reporter=parent_reporter
         )
-        # Keep self.logger for backward compatibility
-        self.logger = self._reporter_logger
 
         self.argv = argv
         self.cwd = cwd
@@ -130,14 +126,14 @@ class MessageSubprocess(UIReporter):
         if self.process:
             return
 
-        self.logger.debug(f"Launching process with argv={self.argv}")
+        self.debug(f"Launching process with argv={self.argv}")
 
         # Merge additional environment variables with current environment
         process_env = None
         if self.env:
             process_env = os.environ.copy()
             process_env.update(self.env)
-            self.logger.debug(f"Injecting environment variables: {list(self.env.keys())}")
+            self.debug(f"Injecting environment variables: {list(self.env.keys())}")
 
         self.process = await asyncio.create_subprocess_exec(
             *self.argv,

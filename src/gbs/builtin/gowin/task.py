@@ -169,8 +169,7 @@ class ProjectInit(GwShCommand):
             self.info(f"Project initialization complete")
 
         except Exception as e:
-            self.error(f"Project init failed with exception: {e}")
-            self.logger.error(f"Project init failed with exception: {e}", exc_info=True)
+            self.error(f"Project init failed with exception: {e}", exc_info=True)
             raise
 
 

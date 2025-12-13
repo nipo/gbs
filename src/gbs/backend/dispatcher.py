@@ -16,7 +16,7 @@ from typing import Protocol, Any, runtime_checkable
 from abc import ABC, abstractmethod
 
 from ..build.context import BuildContext
-from ..logging import get_logger
+from ..logging import get_logger  # Still used by DispatcherRegistry and run_dispatcher_iteration
 from ..ui.reporter import UIReporter
 
 __all__ = ["Dispatcher", "BaseDispatcher", "DispatcherRegistry", "run_dispatcher_iteration"]
@@ -107,14 +107,11 @@ class BaseDispatcher(UIReporter, ABC):
         self.tool_name = tool_name
         self.priority = priority
 
-        # Initialize UIReporter (no parent for dispatchers - they're top-level)
+        # Initialize UIReporter with BuildContext as parent
         UIReporter.__init__(self,
             reporter_name=f"Dispatcher({name})",
-            reporter_logger=get_logger(f"Dispatcher({name})"),
-            parent_reporter=None
+            parent_reporter=context
         )
-        # Keep self.logger for backward compatibility
-        self.logger = self._reporter_logger
 
     def get_tool(self, name: str, required: bool = True) -> dict:
         """Get tool configuration from context

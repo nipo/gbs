@@ -65,13 +65,12 @@ class Project(UIReporter):
                  repositories: list,
                  path: Optional[Path],
                  gbs_config: Optional[any],
-                 max_parallel: Optional[int] = None):
-        # Initialize UIReporter (no parent - top level)
-        from ..logging import get_logger
+                 max_parallel: Optional[int] = None,
+                 parent_reporter: Optional[UIReporter] = None):
+        # Initialize UIReporter (parent is Suite if building within a suite)
         UIReporter.__init__(self,
             reporter_name=f"Project({model.name})" if model.name else "Project",
-            reporter_logger=get_logger(f"Project({model.name})" if model.name else "Project"),
-            parent_reporter=None
+            parent_reporter=parent_reporter
         )
 
         self.model = model
@@ -129,7 +128,7 @@ class Project(UIReporter):
         self.base_output_path = base_output_path
 
     @classmethod
-    def load_from_file(cls, path: Path, gbs_config=None) -> 'Project':
+    def load_from_file(cls, path: Path, gbs_config=None, parent_reporter: Optional[UIReporter] = None) -> 'Project':
         """Load a project from a YAML file
 
         This is the primary factory method for creating Project instances.
@@ -138,6 +137,7 @@ class Project(UIReporter):
         Args:
             path: Path to project.gbs.yaml file
             gbs_config: Optional GBSConfig for repository merging
+            parent_reporter: Optional parent UIReporter (e.g., SuiteExecutor)
 
         Returns:
             Project instance
@@ -175,7 +175,8 @@ class Project(UIReporter):
             model=project_model,
             repositories=repositories,
             path=path,
-            gbs_config=gbs_config
+            gbs_config=gbs_config,
+            parent_reporter=parent_reporter
         )
 
     @classmethod
@@ -237,7 +238,8 @@ class Project(UIReporter):
             backends,
             self.model.raw_config,
             self.gbs_config,
-            root_partition_template=self.model.root_partition_template
+            root_partition_template=self.model.root_partition_template,
+            parent_reporter=self
         )
         self.__realizations = []
 
@@ -435,7 +437,8 @@ class PlanRealization:
             project = self.project.model,
             gbs_config = self.project.gbs_config,
             semaphore = self.project.semaphore,
-            base_output_path = self.project.base_output_path)
+            base_output_path = self.project.base_output_path,
+            parent_reporter = self.plan)
 
         num_files = len(self.source_fileset.get_all_files())
         # Extract unique library names from partition names (library.partition format)

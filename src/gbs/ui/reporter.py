@@ -23,16 +23,10 @@ class UIReporter:
     - Progress tracking (start_progress, update_progress, end_progress)
     - Build status reporting
 
-    Classes that inherit this mixin should set:
-    - self._reporter_name: Name/identifier for this reporter (used as log source)
-    - self._reporter_logger: Optional Python logger instance (for backward compatibility)
-
     Example:
         class MyTask(UIReporter):
             def __init__(self, name: str):
-                self._reporter_name = f"MyTask({name})"
-                self._reporter_logger = get_logger(self._reporter_name)
-                self._reporter_progress_id = None  # For progress tracking
+                UIReporter.__init__(self, reporter_name=f"MyTask({name})")
 
             async def work(self):
                 self.start_progress("Building project", total=100)
@@ -42,22 +36,19 @@ class UIReporter:
                 self.end_progress(success=True)
     """
 
-    # Subclasses should set these attributes
+    # Internal attributes
     _reporter_name: str = "unknown"
-    _reporter_logger: Optional[object] = None  # Optional Python logger for backward compat
     _reporter_progress_id: Optional[str] = None  # Progress task ID (set by start_progress)
     _reporter_parent: Optional['UIReporter'] = None  # Parent reporter for nested progress
 
-    def __init__(self, reporter_name: str, reporter_logger: Optional[object] = None, parent_reporter: Optional['UIReporter'] = None):
+    def __init__(self, reporter_name: str, parent_reporter: Optional['UIReporter'] = None):
         """Initialize UIReporter
 
         Args:
             reporter_name: Name/identifier for this reporter (used as log source)
-            reporter_logger: Optional Python logger instance (for backward compatibility)
             parent_reporter: Optional parent UIReporter for automatic progress nesting
         """
         self._reporter_name = reporter_name
-        self._reporter_logger = reporter_logger
         self._reporter_progress_id = None
         self._reporter_parent = parent_reporter
 
@@ -105,13 +96,21 @@ class UIReporter:
         from .messages import LogLevel
         self._emit_log(LogLevel.WARNING, message)
 
-    def error(self, message: str):
+    def error(self, message: str, exc_info: bool = False):
         """Emit an ERROR log message
 
         Args:
             message: Log message
+            exc_info: If True, append exception traceback to message
         """
         from .messages import LogLevel
+
+        # If exc_info is True, append traceback to message
+        if exc_info:
+            import traceback
+            tb = traceback.format_exc()
+            message = f"{message}\n{tb}"
+
         self._emit_log(LogLevel.ERROR, message)
 
     def critical(self, message: str):

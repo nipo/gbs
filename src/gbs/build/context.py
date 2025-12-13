@@ -3,7 +3,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Any
-from ..logging import get_logger, get_log_file
+from ..logging import get_log_file
 from ..ui import get_global_hub
 from ..ui.reporter import UIReporter
 from .message import *
@@ -28,7 +28,8 @@ class BuildContext(UIReporter):
         project: Optional[Any] = None,
         gbs_config: Optional[Any] = None,
         semaphore: Optional[asyncio.Semaphore] = None,
-        base_output_path: Optional[Path] = None
+        base_output_path: Optional[Path] = None,
+        parent_reporter: Optional['UIReporter'] = None
     ):
         """Initialize build context
 
@@ -41,15 +42,13 @@ class BuildContext(UIReporter):
                       (if provided, max_parallel is ignored)
             base_output_path: Optional base path for build outputs (defaults to "gbs-build")
                              Suite builds use this to scope projects to separate directories
+            parent_reporter: Optional parent UIReporter (typically a BuildPlan)
         """
-        # Initialize UIReporter (no parent for BuildContext - top level)
+        # Initialize UIReporter with parent (typically BuildPlan)
         UIReporter.__init__(self,
             reporter_name="BuildContext",
-            reporter_logger=get_logger("BuildContext"),
-            parent_reporter=None
+            parent_reporter=parent_reporter
         )
-        # Keep self.logger for backward compatibility
-        self.logger = self._reporter_logger
 
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None

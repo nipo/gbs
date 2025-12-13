@@ -21,10 +21,7 @@ from .passes import Pass, PassMetadata
 from ..backend.protocol import Backend
 from ..repository.model import Repository, SourceFileSet
 from ..project.model import OutputGroup, OutputFile
-from ..logging import get_logger
-
-
-logger = get_logger(__name__)
+from ..ui.reporter import UIReporter
 
 
 def strip_type_suffixes(type_str: str) -> str:
@@ -56,7 +53,7 @@ class PlanningError(Exception):
     """Raised when build planning fails"""
     pass
 
-class BuildPlan:
+class BuildPlan(UIReporter):
     """Result of build planning for one OutputGroup
 
     Contains the selected transformation chain (passes) and metadata
@@ -80,13 +77,21 @@ class BuildPlan:
                  passes: list[PassMetadata],
                  filter_vars: dict[str, Any],
                  repositories: list[Repository],
-                 types_with_library: set[str]):
+                 types_with_library: set[str],
+                 parent_reporter: Optional['UIReporter'] = None):
+        # Initialize UIReporter
+        UIReporter.__init__(
+            self,
+            reporter_name=f"Plan({output_group.name})",
+            parent_reporter=parent_reporter
+        )
+
         self.output_group = output_group
         self.passes = passes
         self.filter_vars = filter_vars
         self.repositories = repositories
         self.types_with_library = types_with_library
-    
+
     def __str__(self) -> str:
         return (
             f"BuildPlan("
@@ -107,7 +112,7 @@ class PartialPlan:
             tuple(sorted(p.name for p in self.passes)),
         ))
 
-class BuildPlanner:
+class BuildPlanner(UIReporter):
     """Type-based iterative build planner
 
     Finds transformation paths from available source file types to
@@ -127,7 +132,8 @@ class BuildPlanner:
         backends: list[Backend],
         project_config: dict[str, Any] | None = None,
         gbs_config: 'GBSConfig | None' = None,
-        root_partition_template: Any = None
+        root_partition_template: Any = None,
+        parent_reporter: Optional['UIReporter'] = None
     ):
         """Initialize planner
 
@@ -137,12 +143,19 @@ class BuildPlanner:
             project_config: Project-level configuration (raw_config)
             gbs_config: GBS configuration (tools, etc.)
             root_partition_template: Optional root partition template to include file types from
+            parent_reporter: Optional parent UIReporter (typically a Project)
         """
+        # Initialize UIReporter
+        UIReporter.__init__(
+            self,
+            reporter_name="BuildPlanner",
+            parent_reporter=parent_reporter
+        )
+
         self.repositories = repositories
         self.backends = backends
         self.project_config = project_config or {}
         self.gbs_config = gbs_config
-        self.logger = get_logger(f"{__name__}.BuildPlanner")
 
         # Compute available source file types
         self.available_source_types = set()
@@ -153,13 +166,13 @@ class BuildPlanner:
         if root_partition_template is not None:
             root_file_types = root_partition_template.get_all_file_types()
             self.available_source_types.update(root_file_types)
-            self.logger.debug(f"Added {len(root_file_types)} file types from root partition template")
+            self.debug(f"Added {len(root_file_types)} file types from root partition template")
 
-        self.logger.debug(
+        self.debug(
             f"Initialized planner with {len(repositories)} repositories, "
             f"{len(backends)} backends"
         )
-        self.logger.debug(
+        self.debug(
             f"Available source types: {sorted(self.available_source_types)}"
         )
 
@@ -187,7 +200,7 @@ class BuildPlanner:
             ... )
             >>> plan = planner.plan(og)
         """
-        self.logger.info(f"Planning build for output group: {output_group.name}")
+        self.info(f"Planning build for output group: {output_group.name}")
 
         # Extract desired output types, stripping transform suffixes
         # (e.g., "ise-bitstream+gzip" -> "ise-bitstream")
@@ -196,22 +209,22 @@ class BuildPlanner:
         output_types = {strip_type_suffixes(t) for t in raw_output_types}
 
         if output_types != raw_output_types:
-            self.logger.debug(
+            self.debug(
                 f"Stripped transform suffixes: {sorted(raw_output_types)} -> {sorted(output_types)}"
             )
 
         # Get source types
         source_types = set(self.available_source_types)
 
-        self.logger.debug(f"Planning path {sorted(source_types)} -> {sorted(output_types)}")
+        self.debug(f"Planning path {sorted(source_types)} -> {sorted(output_types)}")
 
         initial_plan = PartialPlan(required = output_types,
                                    acceptable = output_types,
                                    passes = [])
-        
+
         possibilities = self._progress_to_sources(output_group, source_types, initial_plan)
 
-        self.logger.debug(f"-> {possibilities}")
+        self.debug(f"-> {possibilities}")
 
         selected = []
         for pp in possibilities:
@@ -239,7 +252,8 @@ class BuildPlanner:
             passes = selected[0].passes,
             filter_vars = self._combine_filter_vars(output_group, selected[0].passes),
             repositories = self.repositories,
-            types_with_library = types_with_library)
+            types_with_library = types_with_library,
+            parent_reporter = self)
         
     def _progress_to_sources(self,
                              output_group: OutputGroup,
@@ -248,27 +262,27 @@ class BuildPlanner:
         if not (source_types - partial_plan.acceptable):
             return [partial_plan]
 
-        self.logger.debug(
+        self.debug(
             f"{' '*len(partial_plan.passes)} to go: {partial_plan.required}/{partial_plan.acceptable} with {partial_plan.passes}"
         )
 
         candidates = self._query_backends(output_group, partial_plan.acceptable)
 
         if not candidates:
-            self.logger.debug(f"No pass wanted to generate {partial_plan.acceptable}")
+            self.debug(f"No pass wanted to generate {partial_plan.acceptable}")
             return []
-        
-        self.logger.debug(f"{' '*len(partial_plan.passes)} candidates: {candidates}")
+
+        self.debug(f"{' '*len(partial_plan.passes)} candidates: {candidates}")
 
         ret = []
         for p in candidates:
             if p in partial_plan.passes:
-                self.logger.debug(f"{' '*len(partial_plan.passes)} avoiding loop with {p}")
+                self.debug(f"{' '*len(partial_plan.passes)} avoiding loop with {p}")
                 continue
 
             # Check if this pass produces any of the types we can convert
             if not (p.output_types & partial_plan.acceptable):
-                self.logger.debug(f"{' '*len(partial_plan.passes)} does not fit {p}")
+                self.debug(f"{' '*len(partial_plan.passes)} does not fit {p}")
                 continue
 
             # Calculate the new set of types we can accept
@@ -277,7 +291,7 @@ class BuildPlanner:
             required = partial_plan.required - p.output_types
             acceptable = partial_plan.acceptable | p.input_types
 
-            self.logger.debug(f"{' '*len(partial_plan.passes)} with {p}, acceptable: {acceptable}, required: {required}")
+            self.debug(f"{' '*len(partial_plan.passes)} with {p}, acceptable: {acceptable}, required: {required}")
 
             n = PartialPlan(acceptable = acceptable,
                             required = required,
@@ -315,7 +329,7 @@ class BuildPlanner:
             # Ask backend for passes it can contribute
             passes = backend.contribute_passes(backend_config, desired_outputs, self.project_config, self.gbs_config)
 
-            self.logger.debug(
+            self.debug(
                 f"Backend {backend.name} contributed passes: {passes}"
             )
 
@@ -354,7 +368,7 @@ class BuildPlanner:
             combined.update(pass_meta.filter_vars)
 
             if pass_meta.filter_vars:
-                self.logger.debug(
+                self.debug(
                     f"Pass {pass_meta.name} contributed filter_vars: "
                     f"{pass_meta.filter_vars}"
                 )

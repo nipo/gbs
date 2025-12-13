@@ -26,7 +26,6 @@ from enum import Enum
 import time
 from .message import *
 
-from ..logging import get_logger
 from ..ui.reporter import UIReporter
 
 __all__ = ["BuildError", "MissingToolError", "PrerequisiteFailed", "BuildStep",
@@ -87,12 +86,9 @@ class BuildStep(UIReporter, asyncio.Future):
 
         # Initialize both parent classes
         # UIReporter first (sets up reporter attributes)
-        UIReporter.__init__(self, reporter_name=self._log_name, reporter_logger=get_logger(self._log_name), parent_reporter=None)
+        UIReporter.__init__(self, reporter_name=self._log_name, parent_reporter=None)
         # Then asyncio.Future
         asyncio.Future.__init__(self)
-
-        # Keep self.logger for backward compatibility
-        self.logger = self._reporter_logger
 
         self.task = None
 
@@ -323,9 +319,7 @@ class BuildStep(UIReporter, asyncio.Future):
         try:
             await self._work()
         except Exception as e:
-            self.error(f"{self.name} excepted: {e}")
-            # Keep original logger.exception for full traceback in file logs
-            self.logger.exception("%s excepted", self.name)
+            self.error(f"{self.name} excepted: {e}", exc_info=True)
             await self.update_progress(1.0, f"{self.pretty_name} failed", failed=True)
             self.__mark_done(e)
             return
@@ -528,7 +522,6 @@ class Task(BuildStep):
         # Re-initialize UIReporter with dispatcher as parent
         UIReporter.__init__(self,
             reporter_name=self._log_name,
-            reporter_logger=get_logger(self._log_name),
             parent_reporter=dispatcher  # Dispatcher is the parent for tasks
         )
 

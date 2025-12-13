@@ -89,48 +89,45 @@ class PluginRegistry:
         plugin_type = "built-in" if is_builtin else "external"
         logger.debug(f"Loading {plugin_type} plugin: {module_name}")
 
+        # Import the module
+        # NOTE: We allow ImportError to propagate for built-in plugins since they should always work
+        # External plugins may genuinely be missing, so we handle that separately
         try:
-            # Import the module
             module = importlib.import_module(module_name)
+        except ImportError:
+            if is_builtin:
+                # Built-in plugins should always import - this is a real error
+                raise
+            else:
+                # External plugin not installed - this is OK
+                logger.debug(f"External plugin {module_name} not available (not installed)")
+                return
 
-            # Look for gbs_register function
-            if not hasattr(module, 'gbs_register'):
+        # Look for gbs_register function
+        if not hasattr(module, 'gbs_register'):
+            logger.warning(
+                f"Plugin module {module_name} does not define gbs_register() function"
+            )
+            return
+
+        register_func = getattr(module, 'gbs_register')
+
+        # Call gbs_register() - let exceptions propagate
+        # Plugin initialization errors must be visible, not silently suppressed
+        result = register_func()
+
+        # Handle single plugin or list of plugins
+        plugins = result if isinstance(result, list) else [result]
+
+        # Register each plugin
+        for plugin in plugins:
+            if not isinstance(plugin, Plugin):
                 logger.warning(
-                    f"Plugin module {module_name} does not define gbs_register() function"
+                    f"gbs_register() in {module_name} returned non-Plugin instance: {type(plugin)}"
                 )
-                return
+                continue
 
-            register_func = getattr(module, 'gbs_register')
-
-            # Call gbs_register() with no arguments
-            try:
-                result = register_func()
-            except Exception as e:
-                logger.error(
-                    f"Error calling gbs_register() in {module_name}: {e}"
-                )
-                logger.debug(traceback.format_exc())
-                return
-
-            # Handle single plugin or list of plugins
-            plugins = result if isinstance(result, list) else [result]
-
-            # Register each plugin
-            for plugin in plugins:
-                if not isinstance(plugin, Plugin):
-                    logger.warning(
-                        f"gbs_register() in {module_name} returned non-Plugin instance: {type(plugin)}"
-                    )
-                    continue
-
-                self._register_plugin(plugin)
-
-        except ImportError as e:
-            logger.warning(f"Failed to import plugin module {module_name}: {e}")
-            logger.debug(traceback.format_exc())
-        except Exception as e:
-            logger.error(f"Unexpected error loading plugin {module_name}: {e}")
-            logger.debug(traceback.format_exc())
+            self._register_plugin(plugin)
 
     def _register_plugin(self, plugin: Plugin):
         """Register a plugin instance
