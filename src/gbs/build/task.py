@@ -186,30 +186,67 @@ class BuildStep(asyncio.Future):
     # Convenience methods for message emission
     # These automatically include context (BuildStep name) and use the global hub
 
-    def emit_log(self, level: str, message: str):
-        """Emit a log message with automatic context
+    def _emit_log(self, level: 'LogLevel', message: str):
+        """Internal method to emit a log message with automatic context
 
         Args:
-            level: Log level (debug, info, warning, error, critical)
+            level: Log level enum value
             message: Log message
         """
         from ..ui.hub import get_global_hub
-        from ..ui.messages import LogMessage, LogLevel
-
-        level_map = {
-            'debug': LogLevel.DEBUG,
-            'info': LogLevel.INFO,
-            'warning': LogLevel.WARNING,
-            'error': LogLevel.ERROR,
-            'critical': LogLevel.CRITICAL,
-        }
+        from ..ui.messages import LogMessage
 
         hub = get_global_hub()
         hub.emit(LogMessage(
-            level=level_map.get(level, LogLevel.INFO),
+            level=level,
             message=message,
             source=self._log_name
         ))
+
+    def debug(self, message: str):
+        """Emit a DEBUG log message
+
+        Args:
+            message: Log message
+        """
+        from ..ui.messages import LogLevel
+        self._emit_log(LogLevel.DEBUG, message)
+
+    def info(self, message: str):
+        """Emit an INFO log message
+
+        Args:
+            message: Log message
+        """
+        from ..ui.messages import LogLevel
+        self._emit_log(LogLevel.INFO, message)
+
+    def warning(self, message: str):
+        """Emit a WARNING log message
+
+        Args:
+            message: Log message
+        """
+        from ..ui.messages import LogLevel
+        self._emit_log(LogLevel.WARNING, message)
+
+    def error(self, message: str):
+        """Emit an ERROR log message
+
+        Args:
+            message: Log message
+        """
+        from ..ui.messages import LogLevel
+        self._emit_log(LogLevel.ERROR, message)
+
+    def critical(self, message: str):
+        """Emit a CRITICAL log message
+
+        Args:
+            message: Log message
+        """
+        from ..ui.messages import LogLevel
+        self._emit_log(LogLevel.CRITICAL, message)
 
     def emit_tool_message(
         self,
