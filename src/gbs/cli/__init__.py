@@ -76,6 +76,11 @@ DEFAULT_MAX_LOG_COUNT = 10
 @click.group(cls = ReMatchGroup)
 @click.version_option()
 @click.option(
+    "-C", "--directory",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    help="Change to directory before executing command"
+)
+@click.option(
     "-v", "--verbose",
     is_flag=True,
     help="Enable verbose output (INFO level)"
@@ -96,14 +101,24 @@ DEFAULT_MAX_LOG_COUNT = 10
     help="Custom directory for log files (default: .gbs/logs)"
 )
 @click.pass_context
-async def cli(ctx, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):
+async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):
     """GBS: Gateware Build System
 
     A build system for FPGA and ASIC gateware projects.
     """
-    # Set up logging
+    # Change directory if -C specified
+    import os
+    original_cwd = None
+    if directory is not None:
+        original_cwd = Path.cwd()
+        os.chdir(directory)
+
+    # Set up logging (after changing directory so logs go to correct location)
     gbs_logger = setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
     logger = get_logger()
+
+    if original_cwd is not None:
+        logger.debug(f"Changed directory from {original_cwd} to {directory}")
 
     # Load GBS configuration
     logger.debug("Loading GBS configuration...")
