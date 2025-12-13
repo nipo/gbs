@@ -7,6 +7,8 @@ is not available.
 
 from __future__ import annotations
 import sys
+import time
+import math
 from typing import TextIO, Optional, Dict
 from pathlib import Path
 
@@ -26,6 +28,79 @@ def is_rich_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+class AptStyleProgressColumn:
+    """Apt-style progress column - full width with inverted colors and gradient animation"""
+
+    def __init__(self, console_width: int = 80, color: str = "cyan", transient: bool = False):
+        """Initialize apt-style progress column
+
+        Args:
+            console_width: Width of the terminal
+            color: Base color for the progress bar
+            transient: Whether this progress bar is transient
+        """
+        from rich.progress import ProgressColumn, Task
+        from rich.text import Text
+
+        self.console_width = console_width
+        self.color = color
+        self.transient = transient
+        self.start_time = time.time()
+
+    def __call__(self, task) -> "Text":
+        """Render the progress column"""
+        from rich.text import Text
+
+        # Calculate how many characters should be inverted
+        if task.total:
+            completed_width = int((task.completed / task.total) * self.console_width)
+        else:
+            completed_width = 0
+
+        # Create the full line of text (truncate description to fit)
+        percentage = f"{int(task.percentage):>3}%" if task.total else "---"
+        max_desc_len = self.console_width - len(percentage) - 2  # -2 for spaces
+        description = task.description[:max_desc_len] if len(task.description) > max_desc_len else task.description
+        full_text = f" {percentage} {description}"
+
+        # Pad to full console width
+        full_text = full_text.ljust(self.console_width)
+
+        # For WIP animation: create a subtle gradient near the progress edge
+        # Use a sine wave based on time for smooth animation
+        elapsed = time.time() - self.start_time
+        wave_offset = int(math.sin(elapsed * 3) * 2)  # Oscillate ±2 chars
+
+        # Create the result with inverted styling
+        result = Text()
+
+        # Completed portion - inverted (color on white)
+        if completed_width > 0:
+            # Apply gradient effect near the edge (last few chars)
+            gradient_start = max(0, completed_width - 6)
+
+            # Solid completed portion
+            if gradient_start > 0:
+                result.append(full_text[:gradient_start], style=f"black on {self.color}")
+
+            # Gradient portion (slight variations in brightness)
+            for i in range(gradient_start, completed_width):
+                char_pos = i - gradient_start
+                # Create pulsing effect
+                if abs((i + wave_offset) - completed_width) < 2 and task.completed < task.total:
+                    # Near edge - use brighter variant
+                    result.append(full_text[i], style=f"black on bright_{self.color}")
+                else:
+                    result.append(full_text[i], style=f"black on {self.color}")
+
+        # Remaining portion - normal (color on black)
+        if completed_width < self.console_width:
+            remaining_text = full_text[completed_width:]
+            result.append(remaining_text, style=f"{self.color} on black")
+
+        return result
 
 
 class RichBackend(FeedbackBackend):
@@ -64,7 +139,8 @@ class RichBackend(FeedbackBackend):
             )
 
         from rich.console import Console
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+        from rich.progress import Progress
+        from rich.progress import ProgressColumn
 
         self.use_colors = use_colors
         self.show_progress = show_progress
@@ -78,19 +154,44 @@ class RichBackend(FeedbackBackend):
             color_system="auto" if use_colors else None
         )
 
-        # Create progress display
+        # Get console width for apt-style progress
+        self.console_width = self.console.width
+
+        # Create progress display with apt-style rendering
+        # We'll create a custom ProgressColumn that uses our AptStyleProgressColumn
+        class AptProgressColumnWrapper(ProgressColumn):
+            """Wrapper to use AptStyleProgressColumn in Rich Progress"""
+            def __init__(self, console_width: int, color: str = "cyan"):
+                super().__init__()
+                self.apt_renderer = None  # Will be set per task
+                self.console_width = console_width
+                self.default_color = color
+                self.task_colors = {}  # task_id -> AptStyleProgressColumn instance
+
+            def render(self, task):
+                if task.id not in self.task_colors:
+                    # Get color from task fields if available
+                    color = self.default_color
+                    if hasattr(task, "fields") and "color" in task.fields:
+                        color = task.fields["color"]
+
+                    self.task_colors[task.id] = AptStyleProgressColumn(
+                        console_width=self.console_width,
+                        color=color
+                    )
+                return self.task_colors[task.id](task)
+
         self.progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
+            AptProgressColumnWrapper(console_width=self.console_width, color="cyan"),
             console=self.console,
-            transient=False  # Don't auto-remove - we'll manage transient tasks manually
+            transient=False,  # Don't auto-remove - we'll manage transient tasks manually
+            expand=True  # Take full terminal width
         )
 
         # Track active progress tasks
         self._progress_tasks: Dict[str, int] = {}  # task_id -> rich task_id
         self._progress_transient: Dict[str, bool] = {}  # task_id -> is_transient
+        self._progress_colors: Dict[str, str] = {}  # task_id -> color
         self._progress_started = False
 
     async def start(self):
@@ -201,16 +302,20 @@ class RichBackend(FeedbackBackend):
             self.progress.start()
             self._progress_started = True
 
-        # Truncate description to 20 characters
-        description = msg.description[:20] if len(msg.description) > 20 else msg.description
+        # Choose color based on whether it's transient (task) or not (BuildContext)
+        # BuildContext: cyan, Tasks: blue
+        color = "blue" if msg.transient else "cyan"
 
-        # Add task to progress
+        # Description is not truncated - apt-style uses full terminal width
+        # Add task to progress with color field
         rich_task_id = self.progress.add_task(
-            description,
-            total=msg.total
+            msg.description,
+            total=msg.total,
+            color=color
         )
         self._progress_tasks[msg.task_id] = rich_task_id
         self._progress_transient[msg.task_id] = msg.transient
+        self._progress_colors[msg.task_id] = color
 
     async def _render_progress_update(self, msg: ProgressUpdate):
         """Update progress task"""
@@ -224,9 +329,8 @@ class RichBackend(FeedbackBackend):
             self.progress.update(rich_task_id, completed=msg.completed)
 
         if msg.message:
-            # Truncate message to 20 characters
-            truncated_msg = msg.message[:20] if len(msg.message) > 20 else msg.message
-            self.progress.update(rich_task_id, description=truncated_msg)
+            # No truncation - apt-style uses full terminal width
+            self.progress.update(rich_task_id, description=msg.message)
 
     async def _render_progress_end(self, msg: ProgressEnd):
         """Complete progress task"""
@@ -265,21 +369,15 @@ class RichBackend(FeedbackBackend):
 
             # Print completion message to console (only for failures or if message provided)
             if not msg.success and msg.message:
-                # Truncate message
-                truncated_msg = msg.message[:20] if len(msg.message) > 20 else msg.message
-                self.console.print(f"[red]✗ {task_description}: {truncated_msg}[/red]")
+                # No truncation needed - apt-style uses full width
+                self.console.print(f"[red]✗ {task_description}: {msg.message}[/red]")
             elif not msg.success:
                 self.console.print(f"[red]✗ {task_description}[/red]")
             # Don't print success message for transient tasks - they just disappear
         else:
-            # For non-transient tasks, keep the bar visible and update description
-            try:
-                if not msg.success:
-                    self.progress.update(rich_task_id, description=f"[red]✗ {task_description}[/red]")
-                else:
-                    self.progress.update(rich_task_id, description=f"[green]✓ {task_description}[/green]")
-            except (IndexError, KeyError):
-                pass  # Task removed during update
+            # For non-transient tasks, keep the bar visible
+            # (task already updates description with "complete" or "failed" status)
+            pass
 
         # Remove from tracking
         del self._progress_tasks[msg.task_id]
