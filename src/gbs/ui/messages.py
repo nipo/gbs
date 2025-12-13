@@ -35,6 +35,10 @@ class MessageSeverity(Enum):
     def __str__(self) -> str:
         return self.value
 
+    def short_code(self) -> str:
+        """Return single-letter severity code for compact display"""
+        return self.name[0]
+
     def __lt__(self, other):
         """Allow severity comparison"""
         if not isinstance(other, MessageSeverity):
@@ -78,6 +82,10 @@ class LogLevel(Enum):
 
     def __str__(self) -> str:
         return self.value
+
+    def short_code(self) -> str:
+        """Return single-letter log level code for compact display"""
+        return self.name[0]
 
     def __lt__(self, other):
         """Allow log level comparison"""
@@ -133,14 +141,18 @@ class ToolMessage:
     def __str__(self) -> str:
         """Format message for display"""
         if self.file_path:
+            # Compiler-style format: file:line:level: message
+            # Use full word for emacs compilation-mode compatibility
             location = str(self.file_path)
             if self.line is not None:
                 location += f":{self.line}"
                 if self.column is not None:
                     location += f":{self.column}"
-            parts = [f"{location}:{self.severity.value.upper()}:"]
+            parts = [f"{location}:{self.severity.value}:"]
         else:
-            parts = [f"[{self.severity.value.upper()}]"]
+            # Short bracketed form for non-file messages
+            severity_code = self.severity.short_code()
+            parts = [f"[{severity_code}]"]
 
         if self.identifier:
             parts.append(f"({self.identifier})")
@@ -171,9 +183,10 @@ class LogMessage:
     timestamp: datetime = field(default_factory=datetime.now)
 
     def __str__(self) -> str:
+        level_code = self.level.short_code()
         if self.source:
-            return f"[{self.level.upper()}] {self.source}: {self.message}"
-        return f"[{self.level.upper()}] {self.message}"
+            return f"[{level_code}] {self.source}: {self.message}"
+        return f"[{level_code}] {self.message}"
 
 
 @dataclass

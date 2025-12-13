@@ -244,29 +244,39 @@ class RichBackend(FeedbackBackend):
         }
         style = severity_styles.get(msg.severity, "")
 
+        # Escape user content to prevent Rich markup interpretation
+        from rich.markup import escape
+        escaped_message = escape(msg.message)
+        escaped_identifier = escape(msg.identifier) if msg.identifier else None
+
         # Format location
         if msg.file_path:
+            # Compiler-style format: file:line:level: message
+            # Use full word for emacs compilation-mode compatibility
             location = str(msg.file_path)
             if msg.line is not None:
                 location += f":{msg.line}"
                 if msg.column is not None:
                     location += f":{msg.column}"
-            location_text = f"[bold]{location}[/bold]:{msg.severity.value.upper()}:"
+            location_text = f"[bold]{location}[/bold]:{msg.severity.value}:"
         else:
-            location_text = f"[{msg.severity.value.upper()}]"
+            # Short bracketed form for non-file messages
+            severity_code = msg.severity.short_code()
+            location_text = f"[{severity_code}]"
 
-        # Format message
-        if msg.identifier:
-            text = f"{location_text} [dim]({msg.identifier})[/dim] {msg.message}"
+        # Format message with escaped content
+        if escaped_identifier:
+            text = f"{location_text} [dim]({escaped_identifier})[/dim] {escaped_message}"
         else:
-            text = f"{location_text} {msg.message}"
+            text = f"{location_text} {escaped_message}"
 
-        # Print with style
+        # Print with style (markup is now safe because we escaped user content)
         self.console.print(text, style=style)
 
         # Print extended message if present
         if msg.extended_message:
-            self.console.print(f"  {msg.extended_message}", style="dim")
+            escaped_extended = escape(msg.extended_message)
+            self.console.print(f"  {escaped_extended}", style="dim")
 
     async def _render_log_message(self, msg: LogMessage):
         """Render a log message with colors"""
@@ -284,11 +294,17 @@ class RichBackend(FeedbackBackend):
         }
         style = level_styles.get(msg.level, "")
 
-        # Format message
-        if msg.source:
-            text = f"[{msg.level.upper()}] {msg.source}: {msg.message}"
+        # Escape user content to prevent Rich markup interpretation
+        from rich.markup import escape
+        escaped_message = escape(msg.message)
+        escaped_source = escape(msg.source) if msg.source else None
+
+        # Format message with escaped content and short level code
+        level_code = msg.level.short_code()
+        if escaped_source:
+            text = f"[{level_code}] {escaped_source}: {escaped_message}"
         else:
-            text = f"[{msg.level.upper()}] {msg.message}"
+            text = f"[{level_code}] {escaped_message}"
 
         self.console.print(text, style=style)
 
@@ -402,9 +418,9 @@ class RichBackend(FeedbackBackend):
             # Print completion message to console (only for failures or if message provided)
             if not msg.success and msg.message:
                 # No truncation needed - apt-style uses full width
-                self.console.print(f"[red]✗ {task_description}: {msg.message}[/red]")
+                self.console.print(f"[red][FAILED] {task_description}: {msg.message}[/red]")
             elif not msg.success:
-                self.console.print(f"[red]✗ {task_description}[/red]")
+                self.console.print(f"[red][FAILED] {task_description}[/red]")
             # Don't print success message for transient tasks - they just disappear
         else:
             # For non-transient tasks, keep the bar visible

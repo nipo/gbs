@@ -169,20 +169,24 @@ class FileBackend(FeedbackBackend):
                 obj['extended_message'] = msg.extended_message
             self._write_json(obj)
         else:
-            # Text format: similar to compiler output
-            location = ""
+            # Text format: compiler-style output
             if msg.file_path:
+                # Compiler-style format: file:line:level: message
+                # Use full word for emacs compilation-mode compatibility
                 location = str(msg.file_path)
                 if msg.line is not None:
                     location += f":{msg.line}"
                     if msg.column is not None:
                         location += f":{msg.column}"
-                location += ": "
+                location_prefix = f"{location}:{msg.severity.value}: "
+            else:
+                # Short bracketed form for non-file messages
+                severity_code = msg.severity.short_code()
+                location_prefix = f"[{severity_code}]: "
 
-            severity_str = msg.severity.value.upper()
             identifier_str = f"({msg.identifier}) " if msg.identifier else ""
 
-            self._write_line(f"{location}{severity_str}: {identifier_str}{msg.message}")
+            self._write_line(f"{location_prefix}{identifier_str}{msg.message}")
             if msg.extended_message:
                 # Indent extended message
                 for line in msg.extended_message.split('\n'):
@@ -206,8 +210,8 @@ class FileBackend(FeedbackBackend):
             self._write_json(obj)
         else:
             source_str = f"{msg.source}: " if msg.source else ""
-            level_str = msg.level.value.upper()
-            self._write_line(f"[{level_str}] {source_str}{msg.message}")
+            level_code = msg.level.short_code()
+            self._write_line(f"[{level_code}] {source_str}{msg.message}")
 
     async def _render_progress_start(self, msg: ProgressStart):
         """Render progress start"""
@@ -234,7 +238,7 @@ class FileBackend(FeedbackBackend):
         else:
             total_str = f"/{msg.total}" if msg.total else ""
             transient_str = " (transient)" if msg.transient else ""
-            self._write_line(f"▸ {msg.description}{total_str}{transient_str}")
+            self._write_line(f"> {msg.description}{total_str}{transient_str}")
 
     async def _render_progress_update(self, msg: ProgressUpdate):
         """Render progress update"""
@@ -292,7 +296,7 @@ class FileBackend(FeedbackBackend):
                 obj['duration_seconds'] = duration
             self._write_json(obj)
         else:
-            status = "✓" if msg.success else "✗"
+            status = "[OK]" if msg.success else "[FAILED]"
             message_str = f": {msg.message}" if msg.message else ""
             duration_str = ""
 

@@ -131,7 +131,7 @@ class SimpleBackend(FeedbackBackend):
         # Render with indentation
         indent = "  " * indent_level
         total_str = f"/{msg.total}" if msg.total is not None else ""
-        self.output.write(f"{indent}▸ {msg.description}{total_str}\n")
+        self.output.write(f"{indent}> {msg.description}{total_str}\n")
         self.output.flush()
 
     async def _render_progress_update(self, msg: ProgressUpdate):
@@ -162,9 +162,9 @@ class SimpleBackend(FeedbackBackend):
 
         # Show completion status
         if msg.success:
-            status = "✓"
+            status = "[OK]"
         else:
-            status = "✗"
+            status = "[FAILED]"
 
         message_str = f": {msg.message}" if msg.message else ""
         self.output.write(f"{indent}{status} Done{message_str}\n")
