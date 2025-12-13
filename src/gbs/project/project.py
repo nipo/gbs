@@ -516,19 +516,14 @@ class PlanRealization:
             async with self.build_ctx.build():
                 # build() calls _launch() which launches all steps
                 # Now await all running tasks
-                # Suppress exceptions - _cleanup() will handle error reporting
-                try:
-                    if show_progress:
-                        try:
-                            from ..ui.progress import run_with_progress_tasks
-                            await run_with_progress_tasks(self.build_ctx)
-                        except ImportError:
-                            await asyncio.gather(*self.build_ctx.running)
-                    else:
+                if show_progress:
+                    try:
+                        from ..ui.progress import run_with_progress_tasks
+                        await run_with_progress_tasks(self.build_ctx)
+                    except ImportError:
                         await asyncio.gather(*self.build_ctx.running)
-                except Exception:
-                    # Suppress exception - _cleanup() will handle error reporting
-                    pass
+                else:
+                    await asyncio.gather(*self.build_ctx.running)
 
             # After cleanup, check if build failed and raise if needed
             if self.build_ctx.build_failed:

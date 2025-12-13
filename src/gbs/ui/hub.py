@@ -128,12 +128,7 @@ class FeedbackHub:
                 self._active_tasks.pop(msg.task_id, None)
 
             # Render message via backend
-            try:
-                await self._backend.render(msg)
-            except Exception as e:
-                # Don't let rendering errors crash the hub
-                import sys
-                print(f"Error rendering message: {e}", file=sys.stderr)
+            await self._backend.render(msg)
 
     def emit(self, msg):
         """Emit a message to be rendered
