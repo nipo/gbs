@@ -317,6 +317,34 @@ class RichBackend(FeedbackBackend):
         self._progress_transient[msg.task_id] = msg.transient
         self._progress_colors[msg.task_id] = color
 
+    def _sort_progress_tasks(self):
+        """Sort progress tasks by completion percentage (most advanced on top)"""
+        try:
+            # Build reverse lookup: rich_task_id -> our task_id
+            rich_to_task = {v: k for k, v in self._progress_tasks.items()}
+
+            # Get sorted task IDs
+            sorted_ids = sorted(
+                self.progress._tasks.keys(),
+                key=lambda tid: (
+                    # Non-transient tasks first (BuildContext) - False < True
+                    self._progress_transient.get(rich_to_task.get(tid, ""), True),
+                    # Then by completion percentage (descending) - negate for descending
+                    -(self.progress._tasks[tid].completed / self.progress._tasks[tid].total * 100
+                      if self.progress._tasks[tid].total else 0)
+                )
+            )
+
+            # Rebuild _tasks dict in sorted order
+            # Python 3.7+ dicts maintain insertion order
+            with self.progress._lock:
+                sorted_tasks = {tid: self.progress._tasks[tid] for tid in sorted_ids}
+                self.progress._tasks.clear()
+                self.progress._tasks.update(sorted_tasks)
+        except (AttributeError, IndexError, KeyError, TypeError, RuntimeError):
+            # If Rich's internals change or tasks don't exist, just skip sorting
+            pass
+
     async def _render_progress_update(self, msg: ProgressUpdate):
         """Update progress task"""
         if not self.show_progress or msg.task_id not in self._progress_tasks:
@@ -332,6 +360,9 @@ class RichBackend(FeedbackBackend):
             # No truncation - apt-style uses full terminal width
             self.progress.update(rich_task_id, description=msg.message)
 
+        # Sort tasks so most advanced ones are on top
+        self._sort_progress_tasks()
+
     async def _render_progress_end(self, msg: ProgressEnd):
         """Complete progress task"""
         if not self.show_progress or msg.task_id not in self._progress_tasks:
@@ -346,7 +377,8 @@ class RichBackend(FeedbackBackend):
             task_description = task.description
         except (IndexError, KeyError):
             # Task may have been removed already, clean up tracking and return
-            del self._progress_tasks[msg.task_id]
+            if msg.task_id in self._progress_tasks:
+                del self._progress_tasks[msg.task_id]
             if msg.task_id in self._progress_transient:
                 del self._progress_transient[msg.task_id]
             return
@@ -380,7 +412,8 @@ class RichBackend(FeedbackBackend):
             pass
 
         # Remove from tracking
-        del self._progress_tasks[msg.task_id]
+        if msg.task_id in self._progress_tasks:
+            del self._progress_tasks[msg.task_id]
         if msg.task_id in self._progress_transient:
             del self._progress_transient[msg.task_id]
 
