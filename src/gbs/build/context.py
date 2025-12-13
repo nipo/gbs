@@ -424,16 +424,10 @@ class BuildContext(UIReporter):
             if not p.done():
                 p.cancel()
 
-        # If build failed, print structured error summary
         if failed_steps:
             self._print_failure_summary(failed_steps)
-            # Set a flag so execute() knows the build failed
-            self.build_failed = True
-        else:
-            # Success - just print warnings as before
-            for m in self.messages_get(min_severity = MessageSeverity.WARNING):
-                m.pprint()
-            self.build_failed = False
+
+        self.build_failed = bool(failed_steps)
 
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
