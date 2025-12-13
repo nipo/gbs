@@ -74,5 +74,5 @@ tools:
 # This NSL library repository is used by all example projects
 # NOTE: Adjust this path to match your local NSL installation
 repositories:
-  - path: ~/projects/nsl
+  - path: ~/projects/nsl/lib
     loader: nsl-tree
