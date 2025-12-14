@@ -309,19 +309,26 @@ class Project(UIReporter):
             cleaned_paths = realization.clean(dry_run)
             all_cleaned_paths |= cleaned_paths
             
-    async def show_graph(self):
+    async def show_graph(self, diagram_path: Optional[Path] = None):
         """Show build dependency graph
 
         Displays detailed information about the build plan including source files,
         passes, outputs, library dependencies, and build task graph.
 
+        Args:
+            diagram_path: Optional path to save graphviz diagram (SVG format)
+
         Example:
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
             >>> await proj.show_graph()
+            >>> await proj.show_graph(diagram_path=Path("build_graph.svg"))
         """
         async for realization in self.realizations():
             # Execute build tasks
-            realization.task_graph_show()
+            if diagram_path:
+                realization.task_graph_diagram(diagram_path)
+            else:
+                realization.task_graph_show()
 
     async def get_source_files(
         self,
@@ -573,6 +580,246 @@ class PlanRealization:
             print_func(f"    Virtual resources ({len(virtual_resources)}):")
             for vr in sorted(virtual_resources, key=lambda r: r.name):
                 print_func(f"      {vr.name}")
+
+    def task_graph_diagram(self, output_path: Path):
+        """Generate a graphviz diagram of the build graph
+
+        Args:
+            output_path: Path to save the SVG diagram
+        """
+        from ..build.task import Resource, VirtualResource, Task, ResourceTypology
+        import hashlib
+        from collections import defaultdict
+
+        try:
+            from graphviz import Digraph
+        except ImportError:
+            raise ImportError("graphviz package required for diagram generation. Install with: pip install graphviz")
+
+        # Get file URL template from config (same as used for OSC-8 links)
+        file_url_template = self.build_ctx.gbs_config.file_url_template
+
+        # Organize steps by type
+        resources = []
+        virtual_resources = []
+        tasks = []
+
+        for step in self.build_ctx.steps:
+            if isinstance(step, VirtualResource):
+                virtual_resources.append(step)
+            elif isinstance(step, Resource):
+                resources.append(step)
+            elif isinstance(step, Task):
+                tasks.append(step)
+
+        # Create digraph
+        dot = Digraph(comment='Build Graph')
+        dot.attr(rankdir='TB')  # Top to bottom layout
+
+        # Helper function to get stable hue from task name
+        def get_task_hue(name: str) -> str:
+            """Get a stable hue (0-360) from task name hash"""
+            hash_val = int(hashlib.md5(name.encode()).hexdigest(), 16)
+            hue = hash_val % 360
+            return f"{hue / 360.0} 0.3 0.95"  # HSV: hue, 30% saturation, 95% value
+
+        # Helper function to create file URL from path
+        def get_file_url(file_path: Path) -> str:
+            """Create file URL using template"""
+            abs_path = file_path.resolve()
+            return file_url_template.format(
+                path=abs_path,
+                line=1,
+                column=0
+            )
+
+        # Helper function to group source resources by file type
+        def group_sources_by_task(task: Task) -> dict:
+            """Group source resources that are inputs to a task by file_type"""
+            grouped = defaultdict(list)
+            for dep in task.depends_on:
+                if isinstance(dep, Resource) and dep.typology == ResourceTypology.SOURCE:
+                    file_type = dep.file_type or "unknown"
+                    grouped[file_type].append(dep)
+            return grouped
+
+        # Track which resources are used (to avoid creating nodes for unused ones)
+        used_resources = set()
+        for task in tasks:
+            for dep in task.depends_on:
+                if isinstance(dep, Resource):
+                    used_resources.add(dep)
+            for exp in task.expected_by:
+                if isinstance(exp, Resource):
+                    used_resources.add(exp)
+
+        # Add task nodes
+        for task in tasks:
+            hue = get_task_hue(task.name)
+            dot.node(
+                f"task_{id(task)}",
+                label=task.description or task.name,
+                shape="cds",
+                style="filled",
+                fillcolor=hue
+            )
+
+        # Process resources and create grouped/individual nodes
+        resource_to_node = {}  # Map resource to its node ID
+
+        for task in tasks:
+            # Group source inputs if more than 5 of same type
+            grouped_sources = group_sources_by_task(task)
+
+            for file_type, source_list in grouped_sources.items():
+                if len(source_list) > 5:
+                    # Create a grouped node
+                    group_id = f"group_{id(task)}_{file_type}"
+                    label = f"{len(source_list)} {file_type} files"
+                    # Create tooltip with list of basenames
+                    tooltip = "\\n".join(sorted([res.path.name for res in source_list]))
+                    dot.node(
+                        group_id,
+                        label=label,
+                        shape="folder",
+                        style="filled",
+                        fillcolor="0.6 0.5 1.0",  # Blue with 50% saturation
+                        tooltip=tooltip
+                    )
+                    # Map all these resources to the group node
+                    for res in source_list:
+                        resource_to_node[res] = group_id
+                else:
+                    # Create individual nodes
+                    for res in source_list:
+                        if res not in resource_to_node:
+                            node_id = f"res_{id(res)}"
+                            label = res.path.name
+                            file_url = get_file_url(res.path)
+                            dot.node(
+                                node_id,
+                                label=label,
+                                shape="note",
+                                style="filled",
+                                fillcolor="0.6 0.5 1.0",  # Blue
+                                URL=file_url
+                            )
+                            resource_to_node[res] = node_id
+
+        # Add nodes for non-source resources (INTERMEDIATE and OUTPUT)
+        for res in used_resources:
+            if res.typology != ResourceTypology.SOURCE and res not in resource_to_node:
+                node_id = f"res_{id(res)}"
+                label = res.path.name
+
+                # Determine color based on typology
+                if res.typology == ResourceTypology.OUTPUT:
+                    fillcolor = "0.33 0.5 1.0"  # Green with 50% saturation
+                else:  # INTERMEDIATE
+                    fillcolor = "0.16 0.5 1.0"  # Yellow with 50% saturation
+
+                file_url = get_file_url(res.path)
+                dot.node(
+                    node_id,
+                    label=label,
+                    shape="note",
+                    style="filled",
+                    fillcolor=fillcolor,
+                    URL=file_url
+                )
+                resource_to_node[res] = node_id
+
+        # Add nodes for virtual resources
+        # Virtual resources are represented as octagon shapes
+        virtual_to_node = {}
+        for vres in virtual_resources:
+            node_id = f"vres_{id(vres)}"
+            label = vres.name
+            dot.node(
+                node_id,
+                label=label,
+                shape="octagon",
+                style="filled",
+                fillcolor="0.83 0.3 0.95"  # Purple-ish with 30% saturation
+            )
+            virtual_to_node[vres] = node_id
+
+        # Add edges: resource/virtual -> task (task reads resource/virtual)
+        # Use task.inputs instead of task.depends_on to show only explicit inputs
+        # Track edges to avoid duplicates when resources are grouped
+        edges_drawn = set()
+        for task in tasks:
+            task_node = f"task_{id(task)}"
+            for inp in task.inputs:
+                if isinstance(inp, VirtualResource) and inp in virtual_to_node:
+                    edge = (virtual_to_node[inp], task_node)
+                    if edge not in edges_drawn:
+                        dot.edge(edge[0], edge[1])
+                        edges_drawn.add(edge)
+                elif isinstance(inp, Resource) and inp in resource_to_node:
+                    edge = (resource_to_node[inp], task_node)
+                    if edge not in edges_drawn:
+                        dot.edge(edge[0], edge[1])
+                        edges_drawn.add(edge)
+
+        # Add edges: task -> resource/virtual (task produces resource/virtual)
+        # Use task.outputs instead of task.expected_by to show only explicit outputs
+        for task in tasks:
+            task_node = f"task_{id(task)}"
+            for out in task.outputs:
+                if isinstance(out, VirtualResource) and out in virtual_to_node:
+                    edge = (task_node, virtual_to_node[out])
+                    if edge not in edges_drawn:
+                        dot.edge(edge[0], edge[1])
+                        edges_drawn.add(edge)
+                elif isinstance(out, Resource) and out in resource_to_node:
+                    edge = (task_node, resource_to_node[out])
+                    if edge not in edges_drawn:
+                        dot.edge(edge[0], edge[1])
+                        edges_drawn.add(edge)
+
+        # Add edges: task -> task (task dependencies)
+        # These are lighter gray to distinguish from resource dependencies
+        for task in tasks:
+            task_node = f"task_{id(task)}"
+            for dep in task.depends_on:
+                if isinstance(dep, Task):
+                    dep_task_node = f"task_{id(dep)}"
+                    edge = (dep_task_node, task_node)
+                    if edge not in edges_drawn:
+                        dot.edge(edge[0], edge[1], color="gray60")
+                        edges_drawn.add(edge)
+
+        # Add implicit dependency edges: any BuildStep -> any BuildStep (not in inputs/outputs but in depends_on)
+        # These are very light gray (30% gray) to show dependencies without cluttering
+        # Collect all explicit relationships
+        for step in self.build_ctx.steps:
+            if isinstance(step, Task):
+                step_node = f"task_{id(step)}"
+                explicit_inputs = set(step.inputs)
+                explicit_outputs = set(step.outputs)
+
+                # Find implicit dependencies (in depends_on but not in explicit inputs/outputs)
+                for dep in step.depends_on:
+                    if dep not in explicit_inputs and dep not in explicit_outputs:
+                        dep_node = None
+                        if isinstance(dep, VirtualResource) and dep in virtual_to_node:
+                            dep_node = virtual_to_node[dep]
+                        elif isinstance(dep, Resource) and dep in resource_to_node:
+                            dep_node = resource_to_node[dep]
+                        elif isinstance(dep, Task):
+                            # Task->task dependencies are already handled above
+                            continue
+
+                        if dep_node:
+                            edge = (dep_node, step_node)
+                            if edge not in edges_drawn:
+                                dot.edge(edge[0], edge[1], color="gray30", style="dashed")
+                                edges_drawn.add(edge)
+
+        # Render to SVG
+        dot.render(output_path.stem, directory=output_path.parent, format='svg', cleanup=True)
+        logger.info(f"Diagram saved to {output_path}")
 
     def clean(self, dry_run: bool = False) -> set:
         """Clean build artifacts for this realization

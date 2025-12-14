@@ -9,3 +9,4 @@ __pycache__
 _build
 _mgmt
 gbs-build
+*.svg

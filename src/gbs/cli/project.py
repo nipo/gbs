@@ -118,8 +118,13 @@ async def clean(ctx, dry_run: bool):
         sys.exit(1)
 
 @project.command()
+@click.option(
+    "--diagram",
+    type=click.Path(path_type=Path),
+    help="Generate a graphviz diagram and save to specified path (SVG format)"
+)
 @click.pass_context
-async def show(ctx):
+async def show(ctx, diagram: Path | None):
     """Show project configuration"""
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
@@ -129,7 +134,10 @@ async def show(ctx):
     proj = await _project_load(project_file, gbs_config)
 
     try:
-        await proj.show_graph()
+        if diagram:
+            await proj.show_graph(diagram_path=diagram)
+        else:
+            await proj.show_graph()
     except Exception as e:
         logger.exception("Build failed")
         click.echo(f"Build failed: {e}", err=True)
