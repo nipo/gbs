@@ -98,9 +98,9 @@ class YosysDispatcher(BaseDispatcher):
 
         if self.synthesize_stamp is None:
             self.synthesize_stamp = self.context.get_stamp("synthesize.stamp")
-            task.Synthesize(self,
-                            inputs = [self.vhdl_ingress_stamp],
-                            outputs = [self.synthesize_stamp])
+            self.synthesize = task.Synthesize(self,
+                                              inputs = [self.vhdl_ingress_stamp],
+                                              outputs = [self.synthesize_stamp])
 
         if self.write_netlist is None:
             self.write_netlist = task.WriteNetlist(self,
@@ -113,13 +113,15 @@ class YosysDispatcher(BaseDispatcher):
                 output = self.context.get_stamp(f"yosys_intermediate_{i}.stamp")
                 t = task.RawCommand(self,
                                     name = f"yosys_intermediate_{i}",
-                                    description = f"Yosys Intermediate Command #{i}",
+                                    description = f"Yosys Command '{step}'",
                                     command = step,
                                     inputs = [prev],
                                     outputs = [output])
                 self.intermediate.append(output)
                 prev = self.intermediate[-1]
-
+        self.write_netlist.inputs.append(self.intermediate[-1])
+        self.write_netlist.dependency_add(self.intermediate[-1])
+        
         # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
             if library_name is None:
