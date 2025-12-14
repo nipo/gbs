@@ -23,10 +23,11 @@ output:
     topcell: top
     filter_vars: {}
     backend_config:
-      gbs.backend.ghdl:
+      gbs.builtin.ghdl:
         vhdl_standard: "1993"
         ghdl_tool: "ghdl:system"
+        success_regex: "Terminating with error level: 0"
     outputs:
-      - type: ghdl-simulator
-        path: build/top
+      - type: simulation-log
+        path: simulation.log
 
