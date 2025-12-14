@@ -80,6 +80,7 @@ class AptStyleProgressColumn:
         if completed_width > 0:
             # Apply gradient effect near the edge (last few chars)
             gradient_start = max(0, completed_width - 6)
+            completed_width = min(completed_width, self.console_width)
 
             # Solid completed portion
             if gradient_start > 0:
