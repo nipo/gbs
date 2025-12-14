@@ -11,11 +11,21 @@ General Options
    gbs [OPTIONS] COMMAND [ARGS]...
 
    Options:
-     --version          Show version and exit
-     -v, --verbose      Enable verbose output (INFO level)
-     -d, --debug        Enable debug output (DEBUG level)
-     --log-dir PATH     Custom directory for log files (default: .gbs/logs)
-     --help             Show help and exit
+     --version                  Show version and exit
+     -C, --directory DIRECTORY  Change to directory before executing command
+     -v, --verbose              Enable verbose output (INFO level)
+     -d, --debug                Enable debug output (DEBUG level)
+     -P, --no-progress          Disable progress bars
+     --log-dir PATH             Custom directory for log files (default: .gbs/logs)
+     --help                     Show help and exit
+
+``-C, --directory DIRECTORY``
+    Change to the specified directory before executing the command. All relative
+    paths (project files, logs, etc.) will be resolved relative to this directory.
+    Logs are written to ``<directory>/.gbs/logs/``.
+
+``-P, --no-progress``
+    Disable progress bars in terminal output.
 
 Log files are written to ``.gbs/logs/`` by default. Use ``--verbose`` or
 ``--debug`` for console output; otherwise only errors are shown.
@@ -38,8 +48,9 @@ Build a project.
     Project file path. If not specified, auto-discovers ``*.gbs.yaml``
     in current directory.
 
-``-P, --no-progress``
-    Disable progress bar.
+``-j, --jobs N``
+    Maximum number of parallel tasks. Overrides ``max_parallel`` from config files.
+    Must be >= 1.
 
 **Examples:**
 
@@ -54,6 +65,12 @@ Build a project.
    # Build with debug output
    gbs -d project build
 
+   # Build with 8 parallel jobs
+   gbs project build -j 8
+
+   # Build project in another directory
+   gbs -C /path/to/project project build
+
 gbs project show
 ~~~~~~~~~~~~~~~~
 
@@ -61,7 +78,7 @@ Display project configuration and build plan.
 
 .. code-block:: bash
 
-   gbs project [-f FILE] show
+   gbs project [-f FILE] show [OPTIONS]
 
 Shows:
 
@@ -69,12 +86,40 @@ Shows:
 - Output groups with their targets
 - Build plan (selected passes)
 - Resolved file set
+- Resources (source files, intermediate files, outputs)
+- Tasks and their dependencies
 
-**Example:**
+**Options:**
+
+``--diagram PATH``
+    Generate a graphviz diagram of the build graph in SVG format.
+    The diagram shows:
+
+    - **Tasks** (cds shape): Build tasks with color based on task name hash
+    - **Resources** (note shape): Files with colors by typology:
+
+      - Blue: SOURCE files
+      - Yellow: INTERMEDIATE files
+      - Green: OUTPUT files
+
+    - **Virtual Resources** (octagon shape): In-memory build artifacts
+    - **Grouped Resources** (folder shape): Groups of >5 source files of same type
+      with tooltip showing all filenames
+    - **Solid black edges**: Explicit data flow (task inputs/outputs)
+    - **Dashed light gray edges**: Implicit dependencies
+    - **Medium gray edges**: Task-to-task dependencies
+
+    Individual resource nodes have clickable hyperlinks (using configured URL template).
+
+**Examples:**
 
 .. code-block:: bash
 
+   # Show project information
    gbs project show
+
+   # Generate build graph diagram
+   gbs project show --diagram build_graph.svg
 
    # Output:
    # Project: blink
