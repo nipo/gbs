@@ -161,15 +161,11 @@ class Project(UIReporter):
             raise LoadError(f"Failed to load project from {path}: {e}")
 
         # Load repositories specified in the project
-        try:
-            repositories = load_repositories_from_project(
-                project_model.raw_config,
-                path.parent,
-                gbs_config=gbs_config
-            )
-        except Exception as e:
-            logger.warning(f"Failed to load repositories: {e}")
-            repositories = []
+        repositories = load_repositories_from_project(
+            project_model.raw_config,
+            path.parent,
+            gbs_config=gbs_config
+        )
 
         return cls(
             model=project_model,

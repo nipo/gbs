@@ -42,7 +42,7 @@ async def _project_load(project_file, gbs_config):
     except Exception as e:
         logger.exception("Loading failed")
         click.echo(f"Loading failed: {e}", err=True)
-        sys.exit(1)
+        raise
 
     # Verify project has output groups
     if not proj.model.output_groups:
