@@ -264,8 +264,8 @@ class Project(UIReporter):
             )
 
             await realization.dispatch()
-            
-            self.__realizations.append(plan)
+
+            self.__realizations.append(realization)
 
             yield realization
             
@@ -364,8 +364,8 @@ class Project(UIReporter):
         async for realization in self.realizations():
             # Check if this output group should be included
             if output_group_names is None or realization.plan.output_group.name in output_group_names:
-                # Extract all source files from the source fileset
-                source_files = set(realization.source_fileset.get_all_files())
+                # Extract all source file paths from the source fileset
+                source_files = {sf.path for sf in realization.source_fileset.get_all_files()}
                 result[realization.plan.output_group.name] = source_files
 
         return result

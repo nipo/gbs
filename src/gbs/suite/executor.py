@@ -225,16 +225,13 @@ class SuiteExecutor(UIReporter):
                 log_file = log_dir / f"{proj_ref.name}.log"
 
             # Build project (capturing output is complex, for now just build)
-            await project.build(show_progress=False)
+            await project.build()
 
             # Get source files for filtering
+            sources_by_group = await project.get_source_files(proj_ref.output_groups)
             source_files = set()
-            try:
-                sources_by_group = await project.get_source_files(proj_ref.output_groups)
-                for files in sources_by_group.values():
-                    source_files.update(files)
-            except Exception as e:
-                self.warning(f"Failed to get source files for '{proj_ref.name}': {e}")
+            for files in sources_by_group.values():
+                source_files.update(files)
 
             duration = time.time() - start_time
 
