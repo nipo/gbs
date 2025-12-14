@@ -50,7 +50,7 @@ class IcepackDispatcher(BaseDispatcher):
         asc_resources = list(self.context.filter_pending(file_type=["ice40-asc"]))
 
         if not asc_resources:
-            self.warning("No ice40 ASC bitstream found for icepack")
+            self.debug("No ice40 ASC bitstream found for icepack")
             return
 
         if len(asc_resources) > 1:
