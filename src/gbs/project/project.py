@@ -527,7 +527,7 @@ class PlanRealization:
         if print_func is None:
             import click
             print_func = click.echo
-        
+
         # Organize steps by type
         resources = []
         virtual_resources = []

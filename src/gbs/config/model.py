@@ -16,6 +16,9 @@ from ..logging import get_logger
 
 logger = get_logger(__name__)
 
+# Default file URL template for OSC 8 hyperlinks
+DEFAULT_FILE_URL_TEMPLATE = "file://{path}#L{line}:{column}"
+
 
 @dataclass
 class ToolConfig:
@@ -60,7 +63,7 @@ class GBSConfig:
     repositories: list[dict] = field(default_factory=list)
     max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
-    file_url_template: Optional[str] = None  # Template for OSC 8 file URLs (None = use default)
+    file_url_template: str = DEFAULT_FILE_URL_TEMPLATE  # Template for OSC 8 file URLs
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name' or 'name:variant'
@@ -193,11 +196,17 @@ class GBSConfig:
                 logger.warning(f"Invalid max_log_count value in {path}, ignoring")
                 max_log_count = None
 
-        # Parse file_url_template
-        file_url_template = data.get('file_url_template')
-        if file_url_template is not None and not isinstance(file_url_template, str):
-            logger.warning(f"file_url_template must be a string in {path}, ignoring")
-            file_url_template = None
+        # Parse file_url_template (if provided, must be a string)
+        file_url_template_raw = data.get('file_url_template')
+        if file_url_template_raw is not None:
+            if not isinstance(file_url_template_raw, str):
+                logger.warning(f"file_url_template must be a string in {path}, using default")
+                file_url_template = DEFAULT_FILE_URL_TEMPLATE
+            else:
+                file_url_template = file_url_template_raw
+        else:
+            # Not specified in config, use default
+            file_url_template = DEFAULT_FILE_URL_TEMPLATE
 
         return cls(
             tools=tools,
@@ -249,8 +258,11 @@ class GBSConfig:
         # max_log_count: override wins if set, otherwise keep base
         merged_max_log_count = override.max_log_count if override.max_log_count is not None else base.max_log_count
 
-        # file_url_template: override wins if set, otherwise keep base
-        merged_file_url_template = override.file_url_template if override.file_url_template is not None else base.file_url_template
+        # file_url_template: override wins if not default, otherwise keep base
+        if override.file_url_template != DEFAULT_FILE_URL_TEMPLATE:
+            merged_file_url_template = override.file_url_template
+        else:
+            merged_file_url_template = base.file_url_template
 
         return cls(
             tools=merged_tools,

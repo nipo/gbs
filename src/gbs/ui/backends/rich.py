@@ -122,7 +122,7 @@ class RichBackend(FeedbackBackend):
         min_severity: MessageSeverity = MessageSeverity.WARNING,
         min_log_level: LogLevel = LogLevel.WARNING,
         force_terminal: Optional[bool] = None,
-        file_url_template: Optional[str] = None
+        file_url_template: str = ""
     ):
         """Initialize Rich backend
 
@@ -134,7 +134,7 @@ class RichBackend(FeedbackBackend):
             force_terminal: Override terminal detection (None = auto-detect)
             file_url_template: Template for file URLs in OSC 8 hyperlinks
                               Supports {path}, {line}, {column} placeholders
-                              Default: "file://{path}#L{line}:{column}"
+                              Should be provided by caller from GBSConfig.file_url_template
         """
         if not is_rich_available():
             raise ImportError(
@@ -150,7 +150,7 @@ class RichBackend(FeedbackBackend):
         self.show_progress = show_progress
         self.min_severity = min_severity
         self.min_log_level = min_log_level
-        self.file_url_template = file_url_template or "file://{path}#L{line}:{column}"
+        self.file_url_template = file_url_template
 
         # Create console
         self.console = Console(
