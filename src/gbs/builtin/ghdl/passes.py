@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...planner.passes import Pass
-from .dispatcher import GHDLAnalyzeDispatcher, GHDLSimulateDispatcher
+from .dispatcher import GHDLAnalyzeDispatcher, GHDLSimulateDispatcher, GHDLRunDispatcher
 from ...backend.dispatcher import Dispatcher
 
 
@@ -49,12 +49,12 @@ class GHDLAnalyzePass(Pass):
             GHDLAnalyzeDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        ghdl_tool = self.config.get("ghdl_tool", "ghdl")
+        tool_name = self.config.get("ghdl_tool", "ghdl")
 
         return [GHDLAnalyzeDispatcher(
             context=context,
             vhdl_std=vhdl_std,
-            ghdl_tool=ghdl_tool
+            tool_name=tool_name
         )]
 
 
@@ -102,10 +102,43 @@ class GHDLSimulatePass(Pass):
             GHDLSimulateDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        ghdl_tool = self.config.get("ghdl_tool", "ghdl")
+        tool_name = self.config.get("ghdl_tool", "ghdl")
 
         return [GHDLSimulateDispatcher(
             context=context,
             vhdl_std=vhdl_std,
-            ghdl_tool=ghdl_tool
+            tool_name=tool_name
         )]
+
+
+class GHDLRunPass(Pass):
+    """Pass that runs GHDL simulator to produce waveforms and simulation logs
+
+    This pass takes a ghdl-simulator executable and runs it to produce:
+    - Waveform files (VCD, GHW, or FST format)
+    - Simulation logs (stdout/stderr)
+
+    Input types: ghdl-simulator
+    Output types: waveform-vcd, waveform-ghw, waveform-fst, simulation-log
+
+    Configuration options (from backend_config):
+        - max_simulation_time: Maximum simulation time (e.g., "100 ms", "1 us")
+        - success_regex: Optional regex pattern that must appear in logs for success
+    """
+    name = "ghdl-run"
+    input_types = {"ghdl-simulator"}
+    output_types = {"waveform-vcd", "waveform-ghw", "waveform-fst", "simulation-log", "simulation-success"}
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Create GHDL run dispatcher
+
+        Args:
+            context: Build context to pass to dispatcher
+
+        Returns:
+            GHDLRunDispatcher singleton
+        """
+        tool_name = self.config.get("ghdl_tool", "ghdl")
+        return [GHDLRunDispatcher(context=context,
+                                  tool_name = tool_name,
+                                  config = self.config)]

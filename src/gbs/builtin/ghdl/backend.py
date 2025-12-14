@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ...backend.protocol import BaseBackend
 from ...planner.passes import Pass
-from .passes import GHDLAnalyzePass, GHDLSimulatePass
+from .passes import GHDLAnalyzePass, GHDLSimulatePass, GHDLRunPass
 
 class GHDLBackend(BaseBackend):
     """GHDL Backend for VHDL analysis and simulation
@@ -51,5 +51,10 @@ class GHDLBackend(BaseBackend):
         # The analysis pass will be pulled in automatically via input dependencies
         if "ghdl-simulator" in output_types or "simulator" in output_types:
             passes.append(GHDLSimulatePass(config, project_config, gbs_config))
+
+        # Contribute run pass if waveform or simulation log outputs are needed
+        waveform_types = {"waveform-vcd", "waveform-ghw", "waveform-fst"}
+        if waveform_types & output_types or "simulation-log" in output_types:
+            passes.append(GHDLRunPass(config, project_config, gbs_config))
 
         return passes

@@ -4,6 +4,7 @@ from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
 from ...build.message import MessageSeverity, ToolMessage
 import re
+import asyncio
 
 class GhdlInvocation(MessageSubprocess):
     error_line = re.compile(r'(?P<file>[^:]+):(?P<line>[0-9]+):(?P<column>[0-9]+):(?P<level>[a-z]+):(?P<message>.+)$')
@@ -308,3 +309,121 @@ exec {' '.join(run_cmd)}
 """
         out_path.write_text(script_content)
         out_path.chmod(0o755)
+
+
+class SimulatorInvocation(MessageSubprocess):
+    ghdl_assert_re = re.compile(r"^(?P<path>.*):(?P<line>[0-9]+):(?P<col>[0-9]+):@(?P<time>[0-9]+.s):\(assertion (?P<level>[^\)]+)\): (?P<msg>.*)$")
+
+    name_map = dict(FAILURE = "ERROR")
+    
+    def line_transform(self, line, default_severity):
+        m = self.ghdl_assert_re.match(line)
+        if m:
+            sev = self.name_map.get(m.group("level").upper(),
+                                    m.group("level").upper())
+            return ToolMessage(
+                severity = MessageSeverity[sev],
+                origin = "simulator",
+                message = m.group("msg"),
+                file_path = m.group("path"),
+                line = int(m.group("line")),
+                column = int(m.group("col")))
+
+        return ToolMessage(severity = default_severity,
+                           origin = "simulator",
+                           message = line)
+
+    async def stderr_transform(self, lines):
+        async for line in lines:
+            yield self.line_transform(line, MessageSeverity.ERROR)
+
+    async def stdout_transform(self, lines):
+        async for line in lines:
+            yield self.line_transform(line, MessageSeverity.INFO)
+
+class RunSimulation(Task):
+    """GHDL simulation run task that executes simulator and captures outputs"""
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list = [],
+        outputs: list = [],
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name="ghdl_run_simulation",
+            inputs=inputs,
+            outputs=outputs,
+            description="GHDL run simulation"
+        )
+
+    async def work(self) -> None:
+        """Execute GHDL simulator and capture outputs"""
+
+        simulator, = self.inputs_of_type("ghdl-simulator")
+
+        max_simulation_time = self.dispatcher.config.get("max_simulation_time")
+        success_regex = self.dispatcher.config.get("success_regex")
+        success_pattern = re.compile(success_regex) if success_regex else None
+
+        # Build command line arguments
+        argv = [str(simulator.path.resolve())]
+
+        # Add stop-time if specified
+        if max_simulation_time:
+            argv.append(f"--stop-time={max_simulation_time}")
+
+        for output in self.outputs:
+            output.path.parent.mkdir(parents=True, exist_ok=True)
+            file_type = output.metadata.get("file_type")
+
+            if file_type == "waveform-vcd":
+                argv.append(f"--vcd={output.path.resolve()}")
+            elif file_type == "waveform-ghw":
+                argv.append(f"--ghw={output.path.resolve()}")
+            elif file_type == "waveform-fst":
+                argv.append(f"--fst={output.path.resolve()}")
+            elif file_type == "simulation-log":
+                log_path = output.path
+            elif file_type == "simulation-success":
+                success_path = output.path
+
+        # Collect log output and messages in parallel
+        success_pattern_found = False
+        process_success = True
+        success_path.unlink(missing_ok = True)
+        
+        with open(log_path, "w") as log:
+            # Run simulator
+            process = SimulatorInvocation(argv=argv)
+
+            async for msg in process:
+                # Add message to task
+                await self.add_message_obj(msg)
+
+                # Collect for log file if requested
+                log.write(msg.message + "\n")
+
+                # Check for success pattern if specified
+                if success_pattern and success_pattern.search(msg.message):
+                    success_pattern_found = True
+
+            # Check return code
+            process_success = process.returncode == 0
+
+        if success_pattern:
+            if success_pattern_found:
+                self.info("Success pattern found")
+            else:
+                self.warning("Expected success pattern not found")
+                raise BuildError(f"Simulation failed")
+
+        if process_success:
+            self.info("Simulation done")
+        else:
+            self.info(f"Simulation return code {process.returncode}")
+            if not success_pattern:
+                raise BuildError(f"Simulation failed")
+
+        success_path.touch(exist_ok = True)

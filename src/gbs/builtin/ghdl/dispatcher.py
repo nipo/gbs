@@ -29,7 +29,7 @@ class GHDLBaseDispatcher(BaseDispatcher):
         context: BuildContext,
         name: str,
         vhdl_std: str = "1993",
-        ghdl_tool: str = "ghdl",
+        tool_name: str = "ghdl",
         priority: int = 500
     ):
         """Initialize GHDL base dispatcher
@@ -38,12 +38,11 @@ class GHDLBaseDispatcher(BaseDispatcher):
             context: Build context
             name: Dispatcher name
             vhdl_std: VHDL standard year (e.g., "1993", "2008")
-            ghdl_tool: Tool identifier for lookup (default: "ghdl")
+            tool_name: Tool identifier for lookup (default: "ghdl")
             priority: Dispatcher priority
         """
-        super().__init__(context, name, tool_name=ghdl_tool, priority=priority)
+        super().__init__(context, name, tool_name=tool_name, priority=priority)
         self.vhdl_std = vhdl_std
-        self.ghdl_tool = ghdl_tool
         self._ghdl_executable: str | None = None
         self._ghdl_backend_type: str | None = None
 
@@ -77,7 +76,7 @@ class GHDLBaseDispatcher(BaseDispatcher):
             Executable path
         """
         if self._ghdl_executable is None:
-            tool_config = self.context.get_tool(self.ghdl_tool, required=False)
+            tool_config = self.context.get_tool(self.tool_name, required=False)
             if tool_config:
                 ghdl_executable = tool_config.get("executable", "ghdl")
                 # Expand ~ and environment variables in executable path
@@ -181,9 +180,9 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
     def __init__(self,
         context: BuildContext,
         vhdl_std: str = "1993",
-        ghdl_tool: str = "ghdl"
+        tool_name: str = "ghdl"
     ):
-        super().__init__(context, "ghdl-analyze", vhdl_std, ghdl_tool, priority=500)
+        super().__init__(context, "ghdl-analyze", vhdl_std, tool_name, priority=500)
         self._library_build: dict[str, tuple['Resource', Task]] = {}
 
     def library_build_get(self, library: str) -> tuple['Resource', Task]:
@@ -278,9 +277,9 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
     def __init__(self,
         context: BuildContext,
         vhdl_std: str = "1993",
-        ghdl_tool: str = "ghdl"
+        tool_name: str = "ghdl"
     ):
-        super().__init__(context, "ghdl-simulate", vhdl_std, ghdl_tool, priority=500)
+        super().__init__(context, "ghdl-simulate", vhdl_std, tool_name, priority=500)
         self._linker: Task = None
 
     async def process(self) -> None:
@@ -383,3 +382,72 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         self.context.add_pending(executable_resource)
 
         return link_task
+
+
+class GHDLRunDispatcher(BaseDispatcher):
+    """GHDL run dispatcher that executes simulator to produce waveforms and logs
+
+    This dispatcher takes a ghdl-simulator executable and runs it to produce:
+    - Waveform files (VCD, GHW, or FST)
+    - Simulation logs (captured from stdout/stderr)
+
+    Priority: 900 (post-processing/execution)
+    """
+
+    def __init__(self,
+                 context: BuildContext,
+                 tool_name: str = "ghdl",
+                 config: dict = {}):
+        super().__init__(context, "ghdl-run",
+                         tool_name = tool_name,
+                         priority=900)
+        self._run_task = None
+        self.config = config
+
+    async def process(self) -> None:
+        """Create simulation run tasks from simulator executable and desired outputs"""
+
+        # Find simulator executable
+        simulator_resources = list(self.context.filter_pending(file_type=["ghdl-simulator"]))
+        if not simulator_resources:
+            self.debug("No simulator to run")
+            return
+
+        # Should only be one simulator per build
+        if len(simulator_resources) > 1:
+            self.warning("More than one simulator available, using first one")
+
+        simulator = simulator_resources[0]
+
+        # Collect all waveform and log outputs
+        if not self._run_task:
+            success_resource = self.context.get_resource(
+                self.context.output_path / "simulation_run" / "simulation.success",
+                file_type="simulation-success",
+                typology=ResourceTypology.OUTPUT,
+                generated_by=self.name,
+            )
+            self.context.add_pending(success_resource)
+
+            log_resource = self.context.get_resource(
+                self.context.output_path / "simulation_run" / "simulation.log",
+                file_type="simulation-log",
+                typology=ResourceTypology.OUTPUT,
+                generated_by=self.name,
+            )
+            self.context.add_pending(log_resource)
+
+            self._run_task = task.RunSimulation(
+                dispatcher=self,
+                inputs=[simulator],
+                outputs=[success_resource, log_resource]
+            )
+
+        if not self._run_task.outputs_of_type(["waveform-vcd", "waveform-ghw", "waveform-fst"]):
+            for waveform in list(self.context.filter_pending(file_type=["waveform-vcd", "waveform-ghw", "waveform-fst"])):
+                if waveform.depends_on:
+                    continue
+
+                self._run_task.outputs.append(waveform)
+                waveform.dependency_add(self._run_task)
+                break
