@@ -280,9 +280,6 @@ Filter based on changed files::
    # From file
    gbs suite build suite.gbs.yaml --filter changed_files.txt
 
-   # From git diff
-   gbs suite build suite.gbs.yaml --filter-git HEAD~1
-
    # Explicit files
    gbs suite build suite.gbs.yaml --filter-files src/uart.vhd src/types.vhd
 
@@ -336,8 +333,10 @@ GitHub Actions Example
 
          - name: Run Test Suite
            run: |
+             # Generate list of changed files
+             git diff --name-only origin/main > changed_files.txt
              gbs suite build suite.gbs.yaml \
-               --filter-git origin/main \
+               --filter changed_files.txt \
                --output test-results/junit.xml \
                --log-dir test-results/logs
 
@@ -356,8 +355,10 @@ GitLab CI Example
      image: python:3.11
      script:
        - pip install gbs
+       # Generate list of changed files
+       - git diff --name-only $CI_MERGE_REQUEST_DIFF_BASE_SHA > changed_files.txt
        - gbs suite build suite.gbs.yaml
-           --filter-git $CI_MERGE_REQUEST_DIFF_BASE_SHA
+           --filter changed_files.txt
            --output junit.xml
      artifacts:
        reports:

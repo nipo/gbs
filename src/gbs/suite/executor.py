@@ -41,7 +41,9 @@ class SuiteExecutor(UIReporter):
         self,
         suite: Suite,
         gbs_config: Optional[any] = None,
-        changed_files: Optional[set[Path]] = None
+        changed_files: Optional[set[Path]] = None,
+        tags: Optional[list[str]] = None,
+        exclude_tags: Optional[list[str]] = None
     ):
         """Initialize suite executor
 
@@ -49,6 +51,8 @@ class SuiteExecutor(UIReporter):
             suite: Suite definition
             gbs_config: Optional GBSConfig for project loading
             changed_files: Optional set of changed files for filtering
+            tags: Only build projects with these tags
+            exclude_tags: Exclude projects with these tags
         """
         # Initialize UIReporter (no parent - top level)
         UIReporter.__init__(self,
@@ -59,6 +63,8 @@ class SuiteExecutor(UIReporter):
         self.suite = suite
         self.gbs_config = gbs_config
         self.changed_files = changed_files or set()
+        self.tags = tags or []
+        self.exclude_tags = exclude_tags or []
 
     async def build_suite(self) -> SuiteResult:
         """Build all projects in the suite
@@ -72,6 +78,10 @@ class SuiteExecutor(UIReporter):
         start_time = time.time()
         project_results = []
 
+        # Apply tag filtering to suite projects
+        if self.tags or self.exclude_tags:
+            self._apply_tag_filter()
+
         # Determine build order based on dependencies
         build_order = self._topological_sort()
 
@@ -83,43 +93,76 @@ class SuiteExecutor(UIReporter):
             projects_to_build = await self._filter_projects(build_order)
             self.info(f"File-based filtering: {len(projects_to_build)}/{len(build_order)} projects need rebuild")
 
+        # Start progress reporting
+        total_projects = len(projects_to_build)
+        self.start_progress(
+            description=f"Building suite '{self.suite.name}'",
+            total=total_projects
+        )
+
         # Build projects in dependency order with parallelism
         semaphore = asyncio.Semaphore(self.suite.settings.max_parallel_projects)
 
         # Group projects by dependency level for parallel execution
         dependency_levels = self._get_dependency_levels(projects_to_build)
 
+        completed_count = 0
         for level_projects in dependency_levels:
             # Build all projects at this level in parallel
-            tasks = [
-                self._build_project_with_semaphore(proj_ref, semaphore)
+            # Map task to project reference for result lookup
+            pending_tasks = {
+                asyncio.create_task(self._build_project_with_semaphore(proj_ref, semaphore)): proj_ref
                 for proj_ref in level_projects
-            ]
+            }
 
-            level_results = await asyncio.gather(*tasks, return_exceptions=True)
+            failing = False
 
-            # Process results
-            for proj_ref, result in zip(level_projects, level_results):
-                if isinstance(result, Exception):
-                    # Build failed with exception
-                    project_results.append(ProjectResult(
-                        project=proj_ref,
-                        status=ProjectStatus.ERROR,
-                        duration=0.0,
-                        error_message=str(result)
-                    ))
+            # Wait for tasks to complete one by one for incremental progress updates
+            while pending_tasks:
+                done, pending_set = await asyncio.wait(
+                    pending_tasks.keys(),
+                    return_when=asyncio.FIRST_COMPLETED
+                )
 
-                    if self.suite.settings.stop_on_failure:
-                        self.error(f"Stopping suite execution after error in '{proj_ref.name}'")
-                        break
-                else:
-                    project_results.append(result)
+                # Process completed tasks
+                for task in done:
+                    proj_ref = pending_tasks.pop(task)
+                    completed_count += 1
 
-                    if result.status == ProjectStatus.FAILURE and self.suite.settings.stop_on_failure:
-                        self.error(f"Stopping suite execution after failure in '{proj_ref.name}'")
-                        break
+                    try:
+                        result = await task  # Get result (may raise exception)
+                        project_results.append(result)
 
-            # Check if we should stop
+                        if result.status == ProjectStatus.FAILURE and self.suite.settings.stop_on_failure:
+                            self.error(f"Stopping suite execution after failure in '{proj_ref.name}'")
+                            # Cancel remaining tasks
+                            for remaining_task in pending_tasks.keys():
+                                remaining_task.cancel()
+
+                    except Exception as e:
+                        # Build failed with exception
+                        project_results.append(ProjectResult(
+                            project=proj_ref,
+                            status=ProjectStatus.ERROR,
+                            duration=0.0,
+                            error_message=str(e)
+                        ))
+
+                        failing = True
+
+                        if self.suite.settings.stop_on_failure:
+                            self.error(f"Stopping suite execution after error in '{proj_ref.name}'")
+                            # Cancel remaining tasks
+                            for remaining_task in pending_tasks.keys():
+                                remaining_task.cancel()
+
+                    # Update progress with status indicator
+                    self.update_progress(
+                        completed=completed_count,
+                        message=f"{'✓' if not failing else '✗'} {self.suite.name}"
+                    )
+
+            # Check if we should stop building next levels
             if self.suite.settings.stop_on_failure:
                 if any(r.status in (ProjectStatus.ERROR, ProjectStatus.FAILURE)
                        for r in project_results):
@@ -154,6 +197,13 @@ class SuiteExecutor(UIReporter):
             overall_status = SuiteStatus.SKIPPED
         else:
             overall_status = SuiteStatus.SUCCESS
+
+        # End progress reporting
+        success = overall_status == SuiteStatus.SUCCESS
+        self.end_progress(
+            success=success,
+            message=f"{successful} successful, {failed} failed, {errors} errors, {skipped} skipped"
+        )
 
         return SuiteResult(
             suite=self.suite,
@@ -449,6 +499,62 @@ class SuiteExecutor(UIReporter):
                 projects_with_files.append((proj_ref, None))
 
         return projects_with_files
+
+    def _apply_tag_filter(self):
+        """Apply tag filtering to suite projects"""
+        original_count = len(self.suite.projects)
+        filtered_projects = []
+
+        for proj in self.suite.projects:
+            # Skip if doesn't have required tags
+            if self.tags:
+                if not any(tag in proj.tags for tag in self.tags):
+                    self.debug(f"Skipping {proj.name}: missing required tags {self.tags}")
+                    continue
+
+            # Skip if has excluded tags
+            if self.exclude_tags:
+                if any(tag in proj.tags for tag in self.exclude_tags):
+                    self.debug(f"Skipping {proj.name}: has excluded tag")
+                    continue
+
+            filtered_projects.append(proj)
+
+        self.suite.projects = filtered_projects
+        self.info(f"Tag filtering: {len(filtered_projects)}/{original_count} projects selected")
+
+    @staticmethod
+    def load_changed_files_from_file(file_path: Path) -> set[Path]:
+        """Load changed files from a file
+
+        Args:
+            file_path: Path to file containing changed file paths (one per line)
+
+        Returns:
+            Set of absolute Path objects for changed files
+        """
+        changed_files = set()
+        with open(file_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    changed_files.add(Path(line).resolve())
+        return changed_files
+
+    @staticmethod
+    def load_changed_files_from_list(file_list) -> set[Path]:
+        """Load changed files from an iterable of path strings
+
+        Args:
+            file_list: Iterable of file path strings (list, tuple, etc.)
+
+        Returns:
+            Set of absolute Path objects for changed files
+        """
+        changed_files = set()
+        for file_str in file_list:
+            changed_files.add(Path(file_str).resolve())
+        return changed_files
 
     async def clean_suite(self, dry_run: bool = False) -> dict[str, Optional[str]]:
         """Clean all projects in the suite

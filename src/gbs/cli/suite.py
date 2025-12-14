@@ -82,6 +82,24 @@ def get_suite_file(ctx) -> Path:
     help="File containing list of changed files (one per line)"
 )
 @click.option(
+    "--filter-files",
+    type=str,
+    multiple=True,
+    help="Explicit list of changed files (can be repeated)"
+)
+@click.option(
+    "--tags",
+    type=str,
+    multiple=True,
+    help="Build only projects with these tags (can be repeated)"
+)
+@click.option(
+    "--exclude-tags",
+    type=str,
+    multiple=True,
+    help="Exclude projects with these tags (can be repeated)"
+)
+@click.option(
     "--stop-on-failure",
     is_flag=True,
     help="Stop suite execution on first project failure"
@@ -94,6 +112,9 @@ async def build(
     suite_log_dir,
     jobs,
     filter_file,
+    filter_files,
+    tags,
+    exclude_tags,
     stop_on_failure
 ):
     """Build all projects in a suite"""
@@ -132,18 +153,28 @@ async def build(
 
         # Load changed files if filtering
         changed_files = set()
+
+        # From file
         if filter_file:
             logger.info(f"Loading changed files from {filter_file}")
-            with open(filter_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        changed_files.add(Path(line).resolve())
-            logger.info(f"Loaded {len(changed_files)} changed files")
+            changed_files = SuiteExecutor.load_changed_files_from_file(filter_file)
+            logger.info(f"Loaded {len(changed_files)} changed files from file")
             suite_def.settings.filter.enabled = True
 
-        # Create executor and build
-        executor = SuiteExecutor(suite_def, gbs_config=gbs_config, changed_files=changed_files)
+        # From explicit file list
+        if filter_files:
+            logger.info(f"Using {len(filter_files)} explicitly specified files")
+            changed_files.update(SuiteExecutor.load_changed_files_from_list(filter_files))
+            suite_def.settings.filter.enabled = True
+
+        # Create executor with filtering options
+        executor = SuiteExecutor(
+            suite_def,
+            gbs_config=gbs_config,
+            changed_files=changed_files,
+            tags=tags if tags else None,
+            exclude_tags=exclude_tags if exclude_tags else None
+        )
 
         hub = get_global_hub()
 
