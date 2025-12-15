@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 import asyncio
 import os
-from .message import *
+from ..ui.messages import MessageSeverity, ToolMessage
 from ..ui.reporter import UIReporter
 
 __all__ = ["MessageSubprocess"]

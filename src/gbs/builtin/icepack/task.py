@@ -5,7 +5,7 @@ import re
 
 from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 
 class IcepackInvocation(MessageSubprocess):
     """Message parser for icepack output"""

@@ -156,7 +156,7 @@ class Project(UIReporter):
 
         # Load the project data model
         try:
-            project_model = load_project_model(path, gbs_config=gbs_config)
+            project_model = load_project_model(path)
         except Exception as e:
             raise LoadError(f"Failed to load project from {path}: {e}")
 
@@ -552,7 +552,7 @@ class PlanRealization:
                 for dep_name in sorted(deps):
                     print_func(f"        ← produced by: {dep_name}")
             else:
-                print_func(f"      {resource.name} ({resource.metadata.get('file_type')} source in {resource.metadata.get('library')})")
+                print_func(f"      {resource.name} ({resource.file_type} source in {resource.library})")
 
         print_func("")
         print_func(f"    Tasks ({len(tasks)} tasks):")

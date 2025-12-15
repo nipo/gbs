@@ -11,7 +11,7 @@ from typing import AsyncIterator
 from pathlib import Path
 
 from ...build import tcl
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 
 __all__ = ["ProgressIndication", "Session", "VivadoCommand", "LongRunningCommand"]
 

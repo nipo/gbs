@@ -73,7 +73,7 @@ class GenerateBatchScript(Task):
         seen_libraries = []
 
         for resource in self.inputs:
-            lib = resource.metadata.get('library', 'work')
+            lib = resource.library or 'work'
             if lib not in seen_libraries:
                 seen_libraries.append(lib)
             inputs_by_library[lib].append(resource)
@@ -93,11 +93,11 @@ class GenerateBatchScript(Task):
         lines.append("# Compile sources")
         for library in seen_libraries:
             for resource in inputs_by_library[library]:
-                file_type = resource.metadata.get('file_type')
+                file_type = resource.file_type
                 file_path = resource.path.resolve()
 
                 if file_type == 'vhdl':
-                    variant = resource.metadata.get('variant')
+                    variant = resource.file_type_version
                     vhdl_ver = self._get_vhdl_version_arg(variant)
                     lines.append(
                         f"vcom -quiet -nologo -work {library} -{vhdl_ver} "
@@ -154,7 +154,7 @@ class GenerateSimulatorScript(Task):
         # Get batch script path from inputs
         batch_script = None
         for resource in self.inputs:
-            if resource.metadata.get('file_type') == 'questa-batch-script':
+            if resource.file_type == 'questa-batch-script':
                 batch_script = resource.path.resolve()
                 break
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ...build.task import Task, BuildError
 from ...build import shell
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 
 __all__ = ["Session"]
 

@@ -134,14 +134,13 @@ def get_repository_loader(name: str) -> Type[RepositoryLoader]:
     )
 
 
-def load_repository(path: Path, discover_libraries: bool = True) -> Repository:
+def load_repository(path: Path) -> Repository:
     """Load a repository using the plugin system
 
     Delegates to the YAML repository loader plugin.
 
     Args:
         path: Path to repository file
-        discover_libraries: Ignored (kept for backwards compatibility)
 
     Returns:
         Repository object
@@ -155,12 +154,11 @@ def load_repository(path: Path, discover_libraries: bool = True) -> Repository:
     return loader.load()
 
 
-def load_project(path: Path, gbs_config=None):
+def load_project(path: Path):
     """Load a project definition from a YAML file
 
     Args:
         path: Path to project YAML file
-        gbs_config: Optional GBSConfig (unused, kept for API compatibility)
 
     Returns:
         Project object
@@ -383,7 +381,7 @@ def load_repositories_from_project(project_data: dict[str, Any], project_base_pa
     return repositories
 
 
-def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Any, list[Repository]]:
+def load_project_with_repositories(path: Path) -> tuple[Any, list[Repository]]:
     """Load a project and its specified repositories
 
     Convenience function that loads a project and any repositories specified
@@ -391,7 +389,6 @@ def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Any, li
 
     Args:
         path: Path to project YAML file
-        gbs_config: Optional GBSConfig for repository merging
 
     Returns:
         Tuple of (Project, list of Repository)
@@ -400,9 +397,9 @@ def load_project_with_repositories(path: Path, gbs_config=None) -> tuple[Any, li
         LoadError: If project or repositories cannot be loaded
     """
     # Load project
-    project = load_project(path, gbs_config=gbs_config)
+    project = load_project(path)
 
     # Use the project's raw_config instead of reloading the YAML file
-    repositories = load_repositories_from_project(project.raw_config, path.parent, gbs_config=gbs_config)
+    repositories = load_repositories_from_project(project.raw_config, path.parent, gbs_config=None)
 
     return project, repositories

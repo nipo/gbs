@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 import re
 
 class NvcInvocation(MessageSubprocess):
@@ -97,9 +97,9 @@ class Analyze(Task):
 
         # Process inputs
         for i in self.inputs:
-            if i.metadata["file_type"] == "vhdl":
+            if i.file_type == "vhdl":
                 sources.append(i.path.resolve())
-            elif i.metadata["file_type"] == "nvc-lib":
+            elif i.file_type == "nvc-lib":
                 # Dependency library - NVC needs parent directory in -L flag
                 # The library is stored as parentdir/libname/, so we need parentdir
                 dep_workdir = i.path.parent.resolve()
@@ -174,8 +174,8 @@ class Elaborate(Task):
         root_workdir = None
 
         for res in self.inputs:
-            if res.metadata.get("file_type") == "nvc-lib":
-                lib = res.metadata.get("library")
+            if res.file_type == "nvc-lib":
+                lib = res.library
                 workdir = res.path.parent.resolve()
                 # NVC needs parent directory in -L flag
                 lib_search_paths.add(workdir.parent)

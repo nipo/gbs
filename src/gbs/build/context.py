@@ -6,7 +6,7 @@ from typing import Any
 from ..logging import get_log_file
 from ..ui import get_global_hub
 from ..ui.reporter import UIReporter
-from .message import *
+from ..ui.messages import MessageSeverity, ToolMessage
 from .task import VirtualResource, Resource, Stamp
 import asyncio
 
@@ -24,7 +24,6 @@ class BuildContext(UIReporter):
     def __init__(
         self,
         max_parallel: int = 4,
-        project_config: Optional[dict[str, Any]] = None,
         project: Optional[Any] = None,
         gbs_config: Optional[Any] = None,
         semaphore: Optional[asyncio.Semaphore] = None,
@@ -35,7 +34,6 @@ class BuildContext(UIReporter):
 
         Args:
             max_parallel: Maximum number of tasks to run in parallel (ignored if semaphore provided)
-            project_config: Optional project configuration (deprecated, use project instead)
             project: Optional Project instance
             gbs_config: Optional GBSConfig instance for tool lookup
             semaphore: Optional shared semaphore for parallel execution control
@@ -54,7 +52,6 @@ class BuildContext(UIReporter):
         self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None
         self._resources: dict[Path, 'Resource'] = {}
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
-        self.project_config = project_config or {}
         self.project = project
         self.gbs_config = gbs_config
         self.steps = set()

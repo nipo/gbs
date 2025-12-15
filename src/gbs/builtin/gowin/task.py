@@ -108,17 +108,17 @@ class ProjectInit(GwShCommand):
 
             # Filter inputs by type (only Resources have metadata, not VirtualResources)
             hdl_inputs = [r for r in self.inputs
-                         if isinstance(r, Resource) and r.metadata.get('file_type') in ('vhdl', 'verilog')]
+                         if isinstance(r, Resource) and r.file_type in ('vhdl', 'verilog')]
             csr_inputs = [r for r in self.inputs
-                         if isinstance(r, Resource) and r.metadata.get('file_type') == 'gowin-serdes-init']
+                         if isinstance(r, Resource) and r.file_type == 'gowin-serdes-init']
 
             # Add HDL files in dependency order
             self.debug(f"Adding {len(hdl_inputs)} HDL source files...")
             total = len(hdl_inputs)
             for i, resource in enumerate(hdl_inputs):
                 # Get metadata attached to this resource
-                lib_name = resource.metadata.get('library')
-                file_type = resource.metadata.get('file_type')
+                lib_name = resource.library
+                file_type = resource.file_type
                 file_path = resource.path
 
                 # Add file (use tcl.String for proper path escaping)
@@ -247,7 +247,7 @@ class AggregateConstraints(Task):
 
         # Filter inputs by file_type from metadata (should all match, only Resources have metadata)
         resources = [r for r in self.inputs
-                    if isinstance(r, Resource) and r.metadata.get('file_type') == self.file_type]
+                    if isinstance(r, Resource) and r.file_type == self.file_type]
 
         # Merge all constraint files
         constraints = []

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ...build.context import BuildContext
 from ...build.task import Task
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 from ...build.subprocess import MessageSubprocess
 
 class IseSubprocess(MessageSubprocess):
@@ -118,8 +118,8 @@ class Xst(IseTask):
         """Call XST"""
         lines = []
         for resource in self.inputs:
-            file_type = resource.metadata.get('file_type', 'unknown')
-            library = resource.metadata.get('library', 'work')
+            file_type = resource.file_type or 'unknown'
+            library = resource.library or 'work'
             file_path = resource.path
 
             if file_type == "ise-settings-sh":

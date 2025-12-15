@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from .interactive import Session as BaseSession, CommandTask as BaseCommandTask
-from .message import MessageSeverity, ToolMessage
+from ..ui.messages import MessageSeverity, ToolMessage
 
 __all__ = ["Session", "CommandTask", "SimpleCommandTask", "Expression", "String", "BareWord", "Command", "Expansion"]
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .. import logging
 from .task import Task, BuildError
-from .message import MessageSeverity, ToolMessage
+from ..ui.messages import MessageSeverity, ToolMessage
 
 __all__ = ["Session", "CommandTask"]
 

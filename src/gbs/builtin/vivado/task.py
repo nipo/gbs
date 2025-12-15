@@ -50,7 +50,7 @@ class NonProjectBuild(VivadoCommand):
 
     def _get_vhdl_file_type(self, resource) -> str:
         """Get Vivado file type for VHDL file based on version"""
-        variant = resource.metadata.get('variant', '')
+        variant = resource.file_type_version or ''
         if variant == '2008':
             return "VHDL 2008"
         return "VHDL"
@@ -65,15 +65,15 @@ class NonProjectBuild(VivadoCommand):
         inputs_by_library = defaultdict(lambda: defaultdict(list))
 
         for resource in self.inputs:
-            file_type = resource.metadata.get('file_type')
-            library = resource.metadata.get('library', 'work')
+            file_type = resource.file_type
+            library = resource.library or 'work'
             inputs_by_type[file_type].append(resource)
             inputs_by_library[library][file_type].append(resource)
 
         # Get library order from input order (preserving first occurrence)
         seen_libraries = []
         for resource in self.inputs:
-            lib = resource.metadata.get('library', 'work')
+            lib = resource.library or 'work'
             if lib not in seen_libraries:
                 seen_libraries.append(lib)
 

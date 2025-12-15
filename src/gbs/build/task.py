@@ -24,7 +24,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import Enum
 import time
-from .message import *
+from ..ui.messages import MessageSeverity, ToolMessage
 
 from ..ui.reporter import UIReporter
 
@@ -418,15 +418,8 @@ class Resource(BuildStep):
         self.typology = typology
         self.generated_by = generated_by
 
-        # Populate metadata dict for backward compatibility with code that accesses
-        # metadata["file_type"], metadata["library"], etc.
+        # Custom metadata dict for additional attributes not in the standard fields
         self.metadata = {}
-        if file_type is not None:
-            self.metadata["file_type"] = file_type
-        if library is not None:
-            self.metadata["library"] = library
-        if file_type_version is not None:
-            self.metadata["file_type_version"] = file_type_version
 
         # Now call parent __init__ which will call step_register() -> __hash__()
         super().__init__(context, path.name)
@@ -450,15 +443,6 @@ class Resource(BuildStep):
             return False
         return self.path == other.path
 
-    @property
-    def is_source(self) -> bool:
-        """Compatibility property for legacy code"""
-        return self.typology == ResourceTypology.SOURCE
-
-    @property
-    def is_output(self) -> bool:
-        """Compatibility property for legacy code"""
-        return self.typology == ResourceTypology.OUTPUT
 
     def __repr__(self):
         return f"Resource({self.path}, {self.file_type}, lib={self.library})"
@@ -605,10 +589,10 @@ class Task(BuildStep):
         ...
 
     def inputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.metadata.get("file_type") == type, self.inputs))
+        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.inputs))
 
     def outputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.metadata.get("file_type") == type, self.outputs))
+        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.outputs))
         
 # Type for task executor function
 TaskExecutor = Callable[['BuildContext', list[Any]], Awaitable[list[Any]]]

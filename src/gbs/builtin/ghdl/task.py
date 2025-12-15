@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
-from ...build.message import MessageSeverity, ToolMessage
+from ...ui.messages import MessageSeverity, ToolMessage
 import re
 import asyncio
 
@@ -75,9 +75,9 @@ class Import(Task):
         workdir = cf_out.path.parent
         
         for i in self.inputs:
-            if i.metadata["file_type"] == "vhdl":
+            if i.file_type == "vhdl":
                 sources.append(i.path.resolve())
-            elif i.metadata["file_type"] == "ghdl-cf":
+            elif i.file_type == "ghdl-cf":
                 i.path.parent.mkdir(parents=True, exist_ok=True)
                 p_flags.append(f"-P{i.path.parent.resolve()}")
             else:
@@ -195,9 +195,9 @@ class CompileLink(Task):
         # Build -P flags for all libraries
         flags = []
         for res in self.inputs:
-            if res.metadata.get("file_type") == "ghdl-cf":
+            if res.file_type == "ghdl-cf":
                 flags.append(f"-P{res.path.parent.resolve()}")
-                if res.metadata.get("library") == self.root_library:
+                if res.library == self.root_library:
                     flags.append(f"--workdir={res.path.parent.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
@@ -253,7 +253,7 @@ class MakeElab(Task):
         # Build -P flags for all libraries
         p_flags = []
         for res in self.inputs:
-            if res.metadata.get("file_type") == "ghdl-cf":
+            if res.file_type == "ghdl-cf":
                 p_flags.append(f"-P{res.path.parent.resolve()}")
 
         process = GhdlInvocation(argv = [
@@ -376,7 +376,7 @@ class RunSimulation(Task):
 
         for output in self.outputs:
             output.path.parent.mkdir(parents=True, exist_ok=True)
-            file_type = output.metadata.get("file_type")
+            file_type = output.file_type
 
             if file_type == "waveform-vcd":
                 argv.append(f"--vcd={output.path.resolve()}")
