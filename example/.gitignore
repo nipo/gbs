@@ -13,3 +13,4 @@ blink.fs
 test-results
 *.fs
 *.log
+*.sh

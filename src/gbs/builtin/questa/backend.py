@@ -12,8 +12,8 @@ class QuestaBackend(BaseBackend):
     """QuestaSim/ModelSim Backend for VHDL/Verilog simulation
 
     Provides simulation pass that generates:
-    - TCL batch script for compilation and simulation
-    - Shell script wrapper for running the simulator
+    - MPF project file for QuestaSim GUI
+    - Shell script launcher for opening the GUI
 
     Configuration options:
         - vhdl_standard: VHDL standard (e.g., "1993", "2008", "2019")
@@ -43,8 +43,8 @@ class QuestaBackend(BaseBackend):
         """
         passes = []
 
-        # Contribute simulation pass if simulator outputs are needed
-        if any(t in output_types for t in ["questa-simulator", "questa-batch-script", "simulator"]):
+        # Contribute simulation pass if GUI project outputs are needed
+        if any(t in output_types for t in ["questa-gui-launcher", "questa-project", "simulator"]):
             passes.append(QuestaSimulatePass(config, project_config, gbs_config))
 
         return passes

@@ -1,6 +1,6 @@
 """QuestaSim/ModelSim Dispatcher
 
-Dispatcher implementation for QuestaSim/ModelSim simulation flow.
+Dispatcher implementation for QuestaSim/ModelSim GUI project generation.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from ...backend.dispatcher import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from ...utils import expand_path
-from .task import GenerateBatchScript, GenerateSimulatorScript
+from .task import GenerateQuestaProject, GenerateGuiScript
 
 
 # Accepted input file types
@@ -18,16 +18,16 @@ ACCEPTED_INPUT_TYPES = {"vhdl", "verilog"}
 
 
 class QuestaDispatcher(BaseDispatcher):
-    """QuestaSim/ModelSim simulation dispatcher
+    """QuestaSim/ModelSim GUI project dispatcher
 
     Workflow:
       First process() call:
-        - Creates batch script generation task
-        - Creates simulator script generation task
+        - Creates MPF project generation task
+        - Creates GUI launcher script generation task
         - Attaches output resources
 
       Subsequent process() calls:
-        - Attaches any pending HDL files to the batch script task
+        - Attaches any pending HDL files to the project task
 
     Priority: 500 (main compilation)
     """
@@ -41,8 +41,8 @@ class QuestaDispatcher(BaseDispatcher):
         super().__init__(context, "questa", tool_name=questa_tool, priority=500)
         self.vhdl_std = vhdl_std
         self.questa_tool = questa_tool
-        self._batch_task: GenerateBatchScript | None = None
-        self._simulator_task: GenerateSimulatorScript | None = None
+        self._project_task: GenerateQuestaProject | None = None
+        self._gui_task: GenerateGuiScript | None = None
 
     def _get_vsim_executable(self) -> Path:
         """Get vsim executable path
@@ -67,65 +67,66 @@ class QuestaDispatcher(BaseDispatcher):
     async def process(self) -> None:
         """Process HDL sources
 
-        On first call, creates batch and simulator tasks.
-        On every call, attaches any pending HDL files to the batch task.
+        On first call, creates project and GUI launcher tasks.
+        On every call, attaches any pending HDL files to the project task.
         """
-        if self._batch_task is None:
+        if self._project_task is None:
             await self._create_tasks()
 
         # Attach any pending HDL files
         await self._attach_pending_inputs()
 
     async def _create_tasks(self) -> None:
-        """Create batch script and simulator script tasks"""
+        """Create MPF project and GUI launcher tasks"""
         vsim_executable = self._get_vsim_executable()
+        topcell = self.context.get_topcell()
 
-        # Create batch script resource
-        batch_script_path = self.context.output_path / "questa_batch.do"
-        batch_script_resource = self.context.get_resource(
-            batch_script_path,
-            file_type="questa-batch-script",
-            typology=ResourceTypology.INTERMEDIATE,
+        # Create MPF project file resource
+        mpf_path = self.context.output_path / f"{topcell}.mpf"
+        mpf_resource = self.context.get_resource(
+            mpf_path,
+            file_type="questa-project",
+            typology=ResourceTypology.OUTPUT,
             generated_by=self.name,
         )
 
-        # Create simulator script resource
-        simulator_script_path = self.context.output_path / "simulator.sh"
-        simulator_resource = self.context.get_resource(
-            simulator_script_path,
-            file_type="questa-simulator",
-            typology=ResourceTypology.INTERMEDIATE,
+        # Create GUI launcher script resource
+        gui_script_path = self.context.output_path / "questa_gui.sh"
+        gui_resource = self.context.get_resource(
+            gui_script_path,
+            file_type="questa-gui-launcher",
+            typology=ResourceTypology.OUTPUT,
             generated_by=self.name,
         )
 
-        # Create batch script task (no inputs yet, added dynamically)
-        self._batch_task = GenerateBatchScript(
+        # Create project generation task (no inputs yet, added dynamically)
+        self._project_task = GenerateQuestaProject(
             dispatcher=self,
             vhdl_std=self.vhdl_std,
             inputs=[],
-            outputs=[batch_script_resource],
+            outputs=[mpf_resource],
         )
 
-        # Create simulator script task (depends on batch script)
-        self._simulator_task = GenerateSimulatorScript(
+        # Create GUI launcher task (depends on MPF file)
+        self._gui_task = GenerateGuiScript(
             dispatcher=self,
             vsim_executable=vsim_executable,
-            inputs=[batch_script_resource],
-            outputs=[simulator_resource],
+            inputs=[mpf_resource],
+            outputs=[gui_resource],
         )
 
-        # Add dependency: simulator task depends on batch task output
-        self._simulator_task.dependency_add(batch_script_resource)
+        # Add dependency: GUI task depends on project task output
+        self._gui_task.dependency_add(mpf_resource)
 
         # Add outputs to pending queue
-        self.context.add_pending(batch_script_resource)
-        self.context.add_pending(simulator_resource)
+        self.context.add_pending(mpf_resource)
+        self.context.add_pending(gui_resource)
 
-        self.info("Created QuestaSim build tasks")
+        self.info("Created QuestaSim GUI project tasks")
 
     async def _attach_pending_inputs(self) -> None:
-        """Attach any pending HDL files to the batch script task"""
-        existing_paths = {r.path for r in self._batch_task.inputs}
+        """Attach any pending HDL files to the project task"""
+        existing_paths = {r.path for r in self._project_task.inputs}
 
         for file_type in ACCEPTED_INPUT_TYPES:
             for source in list(self.context.filter_pending(file_type=file_type)):
@@ -135,12 +136,6 @@ class QuestaDispatcher(BaseDispatcher):
                 self.debug(f"Attaching input: {source.path} (type={file_type})")
 
                 resource = self.context.get_resource(source.path)
-                resource.metadata = {
-                    'file_type': file_type,
-                    'library': source.library,
-                    'variant': getattr(source, 'variant', None),
-                }
-
-                self._batch_task.inputs.append(resource)
-                self._batch_task.dependency_add(resource)
+                self._project_task.inputs.append(resource)
+                self._project_task.dependency_add(resource)
                 self.context.remove_pending(source.path)

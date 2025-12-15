@@ -16,6 +16,6 @@ output:
     filter_vars: {}
     backend_config: {}
     outputs:
-      - type: questa-simulator
-        path: sim.exe
+      - type: questa-gui-launcher
+        path: questa_gui.sh
 

@@ -9,23 +9,23 @@ from .dispatcher import QuestaDispatcher
 
 
 class QuestaSimulatePass(Pass):
-    """Pass that creates a QuestaSim/ModelSim simulator
+    """Pass that creates a QuestaSim/ModelSim GUI project
 
     This pass generates:
-    1. A TCL batch script that compiles and runs simulation
-    2. A shell script wrapper that invokes vsim with the batch script
+    1. An MPF project file with all sources configured
+    2. A shell script that launches the QuestaSim GUI
 
     Input types:
         - vhdl: VHDL source files
         - verilog: Verilog source files
 
     Output types:
-        - questa-batch-script: TCL batch script for compilation and simulation
-        - questa-simulator: Shell script wrapper for running simulation
+        - questa-project: MPF project file for QuestaSim GUI
+        - questa-gui-launcher: Shell script to launch QuestaSim GUI
     """
     name = "questa-simulate"
     input_types = {"vhdl", "verilog"}
-    output_types = {"questa-batch-script", "questa-simulator"}
+    output_types = {"questa-project", "questa-gui-launcher"}
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for QuestaSim simulation
