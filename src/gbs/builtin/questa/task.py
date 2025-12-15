@@ -152,7 +152,6 @@ class GenerateQuestaProject(Task):
     def __init__(
         self,
         dispatcher: "Dispatcher",
-        vhdl_std: str,
         inputs: list,
         outputs: list,
     ):
@@ -163,7 +162,6 @@ class GenerateQuestaProject(Task):
             outputs=outputs,
             description="Generate QuestaSim project file"
         )
-        self.vhdl_std = vhdl_std
 
     def _get_vhdl_version_arg(self, variant: str | None) -> str:
         """Get VHDL version argument for project file
@@ -175,8 +173,8 @@ class GenerateQuestaProject(Task):
             Version argument (e.g., "93", "2008")
         """
         if variant:
-            return self.VHDL_VERSION_MAP.get(variant, self.vhdl_std)
-        return self.VHDL_VERSION_MAP.get(self.vhdl_std, "93")
+            return self.VHDL_VERSION_MAP.get(variant, self.dispatcher.vhdl_std)
+        return self.VHDL_VERSION_MAP.get(self.dispatcher.vhdl_std, "93")
 
     def _generate_file_entry(self, index: int, resource, library: str) -> str:
         """Generate MPF file entry for a source file
@@ -254,7 +252,6 @@ class GenerateGuiScript(Task):
     def __init__(
         self,
         dispatcher: "Dispatcher",
-        vsim_executable: Path,
         inputs: list,
         outputs: list,
     ):
@@ -265,8 +262,11 @@ class GenerateGuiScript(Task):
             outputs=outputs,
             description="Generate QuestaSim GUI launcher"
         )
-        self.vsim_executable = vsim_executable
 
+    @property
+    def vsim_executable(self):
+        return self.dispatcher._get_vsim_executable()
+        
     async def work(self) -> None:
         """Generate the GUI launcher shell script"""
         # Get MPF project file from inputs

@@ -78,7 +78,6 @@ class QuestaDispatcher(BaseDispatcher):
 
     async def _create_tasks(self) -> None:
         """Create MPF project and GUI launcher tasks"""
-        vsim_executable = self._get_vsim_executable()
         topcell = self.context.get_topcell()
 
         # Create MPF project file resource
@@ -102,7 +101,6 @@ class QuestaDispatcher(BaseDispatcher):
         # Create project generation task (no inputs yet, added dynamically)
         self._project_task = GenerateQuestaProject(
             dispatcher=self,
-            vhdl_std=self.vhdl_std,
             inputs=[],
             outputs=[mpf_resource],
         )
@@ -110,7 +108,6 @@ class QuestaDispatcher(BaseDispatcher):
         # Create GUI launcher task (depends on MPF file)
         self._gui_task = GenerateGuiScript(
             dispatcher=self,
-            vsim_executable=vsim_executable,
             inputs=[mpf_resource],
             outputs=[gui_resource],
         )
