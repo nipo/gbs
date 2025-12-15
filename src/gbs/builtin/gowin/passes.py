@@ -7,7 +7,6 @@ import csv
 
 from ...planner.passes import Pass
 from ...backend.dispatcher import Dispatcher
-from ...utils import expand_path
 from .dispatcher import GowinDispatcher
 
 class GowinSynthesizePass(Pass):
@@ -41,13 +40,14 @@ class GowinSynthesizePass(Pass):
         self.device = self.config.get("target", {}).get("part")
         self.gowin_path = None
         self.device_info = None
-        self.gowin_tool = None
+        self.tool_config = None
+        self.tool_name = self.config.get("gowin_tool", "gowin")
 
         if self.gbs_config:
-            self.gowin_tool = self.config.get("gowin_tool", "gowin")
-            tool_config = self.gbs_config.get_tool(self.gowin_tool)
-            if tool_config and tool_config.config.get("path"):
-                self.gowin_path = expand_path(tool_config.config["path"])
+            self.tool_config = self.gbs_config.get_tool(self.tool_name)
+            if self.tool_config and "path" in self.tool_config.config:
+                from ...utils import expand_path
+                self.gowin_path = expand_path(self.tool_config.config["path"])
 
         if self.device and self.gowin_path:
             from .device_info import get_device_info
@@ -87,7 +87,7 @@ class GowinSynthesizePass(Pass):
         return [GowinDispatcher(
             context=context,
             vhdl_std = self.vhdl_std,
-            gowin_tool = self.gowin_tool,
-            gowin_path = self.gowin_path,
+            tool_name = self.tool_name,
+            tool_config = self.tool_config,
             device_info = self.device_info,
         )]

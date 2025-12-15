@@ -51,6 +51,8 @@ tools:
           CV0018: INFO
           EX4319: INFO
           EX4196: INFO
+      env:
+        LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.20.2"
 
   # ISE
   - name: ise

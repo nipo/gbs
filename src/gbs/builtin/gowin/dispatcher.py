@@ -37,13 +37,12 @@ class GowinDispatcher(BaseDispatcher):
         self,
             context: BuildContext,
             vhdl_std: str,
-            gowin_tool: str,
-            gowin_path: Path,
+            tool_name: str,
+            tool_config: "ToolConfig",
             device_info: DeviceInfo
     ):
-        super().__init__(context, "gowin", tool_name=gowin_tool, priority=600)
-        self.gowin_tool = gowin_tool
-        self.gowin_path = gowin_path
+        super().__init__(context, "gowin", tool_name=tool_name, priority=600)
+        self.tool_config = tool_config
         self.output_base_name = "project"
         self.vhdl_std = vhdl_std
         self.device_info = device_info
@@ -52,6 +51,11 @@ class GowinDispatcher(BaseDispatcher):
         # Task references (created on first process() call with HDL)
         self._pin_cst_task: Task | None = None
         self._timing_sdc_task: Task | None = None
+
+    @property
+    def gowin_path(self) -> Path:
+        from ...utils import expand_path
+        return expand_path(self.tool_config.config["path"])
 
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
@@ -77,6 +81,10 @@ class GowinDispatcher(BaseDispatcher):
             env["QT_QPA_PLATFORM"] = "minimal"
             env["DISPLAY"] = ""
 
+        # Inject user-specified environment variables from tool config
+        user_env = self.tool_config.config.get("env", {})
+        env.update(user_env)
+
         self._session = Session(
             argv=[str(gw_sh)],
             cwd=self.context.output_path,
@@ -99,7 +107,7 @@ class GowinDispatcher(BaseDispatcher):
 
         if not self.device_info:
             # No target device configured - skip Gowin backend (simulation-only project)
-            self.debug("No target device configured, skipping Gowin backend")
+            self.warning("No target device configured, skipping Gowin backend")
             return
 
         # Get output base name
@@ -243,7 +251,6 @@ class GowinDispatcher(BaseDispatcher):
                 # Create SerDes to CSR conversion task
                 task.SerDesToCsr(
                     dispatcher=self,
-                    gowin_tool=self.gowin_tool,
                     klut_count=self.device_info.klut_count,
                     inputs=[toml_resource],
                     outputs=[serdes_csr_resource]
@@ -264,7 +271,6 @@ class GowinDispatcher(BaseDispatcher):
         init_task = task.ProjectInit(
             dispatcher=self,
             session=session,
-            gowin_tool=self.gowin_tool,
             output_base_name=output_base_name,
             output_dir=self.context.output_path,
             inputs=init_inputs,

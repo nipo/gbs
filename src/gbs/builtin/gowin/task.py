@@ -52,7 +52,6 @@ class ProjectInit(GwShCommand):
         self,
         dispatcher: "Dispatcher",
         session: Session,
-        gowin_tool: str,
         output_base_name: str,
         output_dir: Path,
         inputs: list,
@@ -65,7 +64,6 @@ class ProjectInit(GwShCommand):
             outputs = outputs,
             description = f"Gowin project init"
         )
-        self.gowin_tool = gowin_tool
         self.output_base_name = output_base_name
         self.output_dir = output_dir
 
@@ -277,7 +275,6 @@ class SerDesToCsr(Task):
     def __init__(
         self,
         dispatcher: "Dispatcher",
-        gowin_tool: str,
         klut_count: str,
         inputs: list[Resource],
         outputs: list[Resource],
@@ -286,7 +283,6 @@ class SerDesToCsr(Task):
 
         Args:
             context: Build context
-            gowin_tool: Tool identifier for Gowin installation lookup
             inputs: List with single TOML config file resource
             outputs: List with single CSR output file resource
         """
@@ -296,7 +292,6 @@ class SerDesToCsr(Task):
             outputs=outputs,
             description="Convert SerDes TOML to CSR"
         )
-        self.gowin_tool = gowin_tool
 
     async def work(self) -> None:
         """Execute SerDes TOML to CSR conversion"""
@@ -304,7 +299,7 @@ class SerDesToCsr(Task):
         csr_file = self.outputs[0].path
 
         # Get Gowin tool path
-        gowin_config = self.dispatcher.context.get_tool(self.gowin_tool)
+        gowin_config = self.dispatcher.context.get_tool(self.dispatcher.tool_name)
         # Expand ~ and environment variables in tool path
         gowin_path = expand_path(gowin_config["path"])
 

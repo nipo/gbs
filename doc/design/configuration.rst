@@ -135,6 +135,11 @@ Tool Configuration Examples
        config:
          # Directory containing IDE/ and Programmer/
          path: /opt/Gowin/V1.9.12
+         # Optional: environment variables to set when running gw_sh
+         # Useful for workarounds like LD_PRELOAD on systems where
+         # Gowin's bundled libraries conflict with system libraries
+         env:
+           LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libfreetype.so.6
 
 **Xilinx ISE**:
 
