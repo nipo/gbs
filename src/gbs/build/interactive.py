@@ -259,9 +259,24 @@ class Session(ABC, Generic[CommandT]):
         """Initialize session after process launch
 
         Waits for initial prompt. Override to send initialization commands.
+
+        Raises:
+            BuildError: If process exits before producing initial prompt
         """
         while True:
-            m = await self._queue.get()
+            # Check if process died while waiting for prompt
+            if self._process.returncode is not None:
+                raise BuildError(
+                    f"Process exited with code {self._process.returncode} "
+                    f"before initialization completed"
+                )
+
+            try:
+                # Use timeout to periodically check process health
+                m = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+
             if m is _eoc_marker:
                 break
 
