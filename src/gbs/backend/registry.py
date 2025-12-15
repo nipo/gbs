@@ -52,27 +52,23 @@ class BackendRegistry:
 
         # Iterate over each plugin and get its backends
         for plugin in plugin_registry.get_all_plugins():
-            try:
-                # Get backends provided by this plugin
-                backends = plugin.enumerate_backends()
+            # Get backends provided by this plugin
+            backends = plugin.enumerate_backends()
 
-                # Register each backend
-                for backend in backends:
-                    # Use the plugin name as the module path
-                    # For built-in plugins, this is "gbs.builtin.ghdl", etc.
-                    module_path = plugin.name
+            # Register each backend
+            for backend in backends:
+                # Use the plugin name as the module path
+                # For built-in plugins, this is "gbs.builtin.ghdl", etc.
+                module_path = plugin.name
 
-                    # Create BackendInfo
-                    backend_info = BackendInfo(
-                        backend=backend,
-                        module_path=module_path
-                    )
+                # Create BackendInfo
+                backend_info = BackendInfo(
+                    backend=backend,
+                    module_path=module_path
+                )
 
-                    self._backends[module_path] = backend_info
-                    logger.debug(f"Registered backend: {backend.name} from {module_path}")
-
-            except Exception as e:
-                logger.error(f"Error enumerating backends from plugin {plugin.name}: {e}")
+                self._backends[module_path] = backend_info
+                logger.debug(f"Registered backend: {backend.name} from {module_path}")
 
         logger.info(
             f"Backend discovery complete: {len(self._backends)} backends"
