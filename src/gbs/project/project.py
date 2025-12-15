@@ -17,13 +17,11 @@ from ..build.task import ResourceTypology
 from ..backend.protocol import Backend
 from ..backend.registry import get_backend_registry
 from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
-from ..repository.model import Repository
 from ..repository.model import SourceFileSet, Repository
-from ..planner.planner import BuildPlan
 
 # Avoid circular imports by using TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..repository.model import Repository
+    from ..planner.planner import BuildPlan
 
 logger = get_logger(__name__)
 
@@ -424,7 +422,7 @@ class Project(UIReporter):
 class PlanRealization:
     def __init__(self,
                  project: Project,
-                 plan: BuildPlan,
+                 plan: 'BuildPlan',
                  source_fileset: SourceFileSet):
         backend_registry = get_backend_registry()
         backends = backend_registry.get_all_backends()
