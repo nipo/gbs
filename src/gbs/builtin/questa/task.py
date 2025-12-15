@@ -6,7 +6,6 @@ Generates MPF project files and GUI launcher scripts.
 
 from __future__ import annotations
 from pathlib import Path
-from collections import defaultdict
 
 from ...build.task import Task, BuildError
 
@@ -216,16 +215,6 @@ class GenerateQuestaProject(Task):
         """Generate the MPF project file"""
         top_lib = self.dispatcher.context.get_topcell_library() or "work"
 
-        # Group inputs by library, preserving order
-        inputs_by_library = defaultdict(list)
-        seen_libraries = []
-
-        for resource in self.inputs:
-            lib = resource.library or 'work'
-            if lib not in seen_libraries:
-                seen_libraries.append(lib)
-            inputs_by_library[lib].append(resource)
-
         # Build MPF content
         lines = []
 
@@ -237,17 +226,15 @@ class GenerateQuestaProject(Task):
         lines.append(f"Project_DefaultLib = {top_lib}")
 
         # Count total files
-        total_files = sum(len(files) for files in inputs_by_library.values())
-        lines.append(f"Project_Files_Count = {total_files}")
+        lines.append(f"Project_Files_Count = {len(self.inputs)}")
         lines.append("")
 
-        # Add file entries in library order
-        file_index = 0
-        for library in seen_libraries:
-            for resource in inputs_by_library[library]:
-                file_entry = self._generate_file_entry(file_index, resource, library)
-                lines.append(file_entry)
-                file_index += 1
+        # Add file entries in original input order (preserves dependency order)
+        for file_index, resource in enumerate(self.inputs):
+            lib = resource.library or 'work'
+            file_entry = self._generate_file_entry(file_index, resource, lib)
+            lines.append(file_entry)
+            file_index += 1
 
         # Write MPF file
         mpf_path = self.outputs[0].path
