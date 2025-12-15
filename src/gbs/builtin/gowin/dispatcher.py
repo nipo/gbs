@@ -65,14 +65,17 @@ class GowinDispatcher(BaseDispatcher):
 
         gw_lib = self.gowin_path / "IDE" / "lib"
 
-        env = {"QT_QPA_PLATFORM":"offscreen"}
+        env = {}
 
         import platform
 
         if platform.system() == "Darwin":
             env["DYLD_LIBRARY_PATH"] = str(gw_lib)
+            env["QT_QPA_PLATFORM"] = "offscreen"
         elif platform.system() == "Linux":
             env["LD_LIBRARY_PATH"] = str(gw_lib)
+            env["QT_QPA_PLATFORM"] = "minimal"
+            env["DISPLAY"] = ""
 
         self._session = Session(
             argv=[str(gw_sh)],
