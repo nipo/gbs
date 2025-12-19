@@ -125,7 +125,6 @@ class VivadoDispatcher(BaseDispatcher):
                 generated_by=self.name,
             )
             outputs.append(resource)
-            self.context.add_pending(resource)
 
         # Create the build task with no inputs (inputs added dynamically)
         self._build_task = NonProjectBuild(
@@ -156,6 +155,4 @@ class VivadoDispatcher(BaseDispatcher):
                     'variant': getattr(source, 'variant', None),
                 }
 
-                self._build_task.inputs.append(resource)
-                self._build_task.dependency_add(resource)
-                self.context.remove_pending(source.path)
+                self._build_task.add_input(resource)

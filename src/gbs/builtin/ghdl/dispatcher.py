@@ -215,8 +215,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             outputs=[cf_resource],
         )
 
-        # Add to pending queue
-        self.context.add_pending(cf_resource)
+        # Task.__init__ already added cf_resource to pending via add_output()
         self._library_build[library] = cf_resource, t
 
         return cf_resource, t
@@ -234,8 +233,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
                 dep_cf, _ = self.library_build_get(d)
 
                 if dep_cf not in user_task.inputs:
-                    user_task.inputs.append(dep_cf)
-                    user_task.dependency_add(dep_cf)
+                    user_task.add_input(dep_cf)
 
         # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
@@ -250,11 +248,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
 
                 # Remove from pending (consuming the source)
                 # Add dependents as task dependencies to ensure proper execution order
-                dependents = self.context.remove_pending(resource.path)
-                task_obj.inputs.append(resource)
-                task_obj.dependency_add(resource)
-                for dep in dependents:
-                    task_obj.dependency_add(dep)
+                task_obj.add_input(resource)
 
 
 class GHDLSimulateDispatcher(GHDLBaseDispatcher):
@@ -292,12 +286,9 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
 
         # Ingress files to linker (ghdl-cf and ghdl-vhpidirect-lib)
         for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
-            # Remove from pending (consuming the intermediate files)
-            dependents = self.context.remove_pending(resource.path)
-            self._linker.inputs.append(resource)
-            self._linker.dependency_add(resource)
-            for dep in dependents:
-                self._linker.dependency_add(dep)
+            # These are INTERMEDIATE resources - don't consume them (consume=False)
+            # so they remain available for other tasks
+            self._linker.add_input(resource, consume=False)
 
     def _compile_vhpidirect_sources(self):
         """Compile VHPIDIRECT C sources to shared libraries"""
@@ -331,7 +322,6 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
                 compile_task.dependency_add(dep)
 
             # Add output library to pending queue
-            self.context.add_pending(lib_resource)
             vhpidirect_count += 1
 
         if vhpidirect_count:
@@ -374,8 +364,6 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
             outputs=[executable_resource],
         )
 
-        # Add simulator to pending queue
-        self.context.add_pending(executable_resource)
 
         return link_task
 
@@ -422,7 +410,6 @@ class GHDLRunDispatcher(BaseDispatcher):
                 typology=ResourceTypology.OUTPUT,
                 generated_by=self.name,
             )
-            self.context.add_pending(success_resource)
 
             log_resource = self.context.get_resource(
                 self.context.output_path / "simulation_run" / "simulation.log",
@@ -430,7 +417,6 @@ class GHDLRunDispatcher(BaseDispatcher):
                 typology=ResourceTypology.OUTPUT,
                 generated_by=self.name,
             )
-            self.context.add_pending(log_resource)
 
             self._run_task = task.RunSimulation(
                 dispatcher=self,
@@ -443,6 +429,5 @@ class GHDLRunDispatcher(BaseDispatcher):
                 if waveform.depends_on:
                     continue
 
-                self._run_task.outputs.append(waveform)
-                waveform.dependency_add(self._run_task)
+                self._run_task.add_output(waveform)
                 break

@@ -77,7 +77,6 @@ class NextpnrDispatcher(BaseDispatcher):
                 generated_by=self.name,
             )
             # Add ASC to pending queue
-            self.context.add_pending(asc_resource)
 
             # Create PnR task with netlist only initially
             self._pnr_task = task.PlaceAndRoute(
@@ -86,19 +85,8 @@ class NextpnrDispatcher(BaseDispatcher):
                 outputs=[asc_resource],
             )
 
-            # Remove netlist from pending (consumed by PnR)
-            dependents = self.context.remove_pending(netlist_resource.path)
-            for dep in dependents:
-                self._pnr_task.dependency_add(dep)
-
         # On every process() call, check for new PCF files
         pcf_resources = list(self.context.filter_pending(file_type=["ice40-pcf"]))
         for pcf_resource in pcf_resources:
             self.info(f"Adding PCF constraint: {pcf_resource.path.name}")
-            self._pnr_task.inputs.append(pcf_resource)
-
-            # Remove PCF from pending
-            pcf_dependents = self.context.remove_pending(pcf_resource.path)
-            for dep in pcf_dependents:
-                self._pnr_task.dependency_add(dep)
-            self._pnr_task.dependency_add(pcf_resource)
+            self._pnr_task.add_input(pcf_resource)

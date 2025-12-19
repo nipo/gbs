@@ -136,8 +136,7 @@ class ProjectInit(GwShCommand):
 
             # Add constraint files (even if they don't exist yet)
             for cst_file in [pin_cst_file, timing_sdc_file]:
-                if cst_file.exists() or True:  # Always add placeholder
-                    await self.command_run(tcl.Command(["add_file", str(cst_file.relative_to(self.output_dir))]))
+                await self.command_run(tcl.Command(["add_file", str(cst_file.relative_to(self.output_dir))]))
 
             # Set project options (defaults + user overrides)
             default_options = {
@@ -192,7 +191,8 @@ class Synthesis(LongRunningCommand):
 
     async def prepare(self) -> None:
         """Ensure output directory exists before synthesis"""
-        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
 
 class PnR(LongRunningCommand):
     """Run Gowin place & route via gw_sh"""
@@ -215,7 +215,8 @@ class PnR(LongRunningCommand):
 
     async def prepare(self) -> None:
         """Ensure output directory exists before PnR"""
-        self.outputs[0].path.parent.mkdir(parents=True, exist_ok=True)
+        output = next(self.outputs)
+        output.path.parent.mkdir(parents=True, exist_ok=True)
 
 class AggregateConstraints(Task):
     """Aggregate Gowin constraint files of a single type (.cst or .sdc)"""
@@ -241,7 +242,8 @@ class AggregateConstraints(Task):
     async def work(self) -> None:
         """Aggregate constraint files (iterate over self.inputs with metadata)"""
         # Output file is the single output resource
-        output_file = self.outputs[0].path
+        output, = self.outputs
+        output_file = output.path
 
         # Filter inputs by file_type from metadata (should all match, only Resources have metadata)
         resources = [r for r in self.inputs
@@ -295,8 +297,10 @@ class SerDesToCsr(Task):
 
     async def work(self) -> None:
         """Execute SerDes TOML to CSR conversion"""
-        toml_file = self.inputs[0].path
-        csr_file = self.outputs[0].path
+        input, = self.inputs
+        toml_file = input.path
+        output, = self.outputs
+        csr_file = output.path
 
         # Get Gowin tool path
         gowin_config = self.dispatcher.context.get_tool(self.dispatcher.tool_name)

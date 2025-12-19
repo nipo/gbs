@@ -186,10 +186,11 @@ class CompileLink(Task):
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
-        assert len(self.outputs) == 1
+        assert len(list(self.outputs)) == 1
         ghdl_executable, _ = self.dispatcher._get_ghdl_config()
 
-        out_path = self.outputs[0].path
+        output, = self.outputs
+        out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build -P flags for all libraries
@@ -246,8 +247,9 @@ class MakeElab(Task):
         """Execute GHDL compile and link"""
         ghdl_executable, _ = self.dispatcher._get_ghdl_config()
 
-        assert len(self.outputs) == 1
-        out_path = self.outputs[0].path
+        assert len(list(self.outputs)) == 1
+        output, = self.outputs
+        out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build -P flags for all libraries

@@ -484,8 +484,8 @@ class Task(BuildStep):
         self,
         dispatcher: 'Dispatcher',
         name: str,
-        inputs: list[BuildStep],
-        outputs: list[BuildStep],
+        inputs: list[BuildStep] = None,
+        outputs: list[BuildStep] = None,
         description: str = ""
     ):
         """Initialize task
@@ -493,8 +493,8 @@ class Task(BuildStep):
         Args:
             dispatcher: Creating dispatcher (provides context and tool config access)
             name: Unique task name
-            inputs: Input resources (files or virtual)
-            outputs: Output resources (files or virtual)
+            inputs: Input resources (files or virtual), optional
+            outputs: Output resources (files or virtual), optional
             description: Human-readable description
         """
         # Store dispatcher first (needed for parent_reporter setup)
@@ -510,17 +510,96 @@ class Task(BuildStep):
         )
 
         self.description = description or name
-        self.inputs = inputs
-        self.outputs = outputs
 
-        for o in outputs:
-            o.dependency_add(self)
-        for i in inputs:
-            self.dependency_add(i)
+        # Private storage for inputs/outputs
+        self.__inputs: list[BuildStep] = []
+        self.__outputs: list[BuildStep] = []
+
+        # Add initial inputs and outputs using the proper methods
+        for inp in (inputs or []):
+            self.add_input(inp)
+        for out in (outputs or []):
+            self.add_output(out)
 
     @property
     def pretty_name(self) -> str:
         return self.description or self.name
+
+    @property
+    def inputs(self):
+        """Read-only view of task inputs
+
+        Returns iterator over input BuildSteps. To add inputs, use add_input().
+        """
+        return iter(self.__inputs)
+
+    @property
+    def outputs(self):
+        """Read-only view of task outputs
+
+        Returns iterator over output BuildSteps. To add outputs, use add_output().
+        """
+        return iter(self.__outputs)
+
+    def add_input(self, resource: BuildStep, *, consume: bool = None) -> None:
+        """Add an input resource to this task
+
+        Properly manages:
+        - Optionally removes resource from pending queue based on typology
+        - Adds resource to task inputs
+        - Adds resource as a dependency of this task
+        - Adds any dependents of the resource as dependencies of this task
+
+        Args:
+            resource: Input resource or build step to add
+            consume: If True, remove from pending queue. If False, keep in pending.
+                     If None (default), auto-detect based on typology:
+                     - SOURCE: consume (remove from pending)
+                     - INTERMEDIATE: don't consume (keep in pending for other tasks)
+                     - OUTPUT: don't consume (shouldn't be used as input anyway)
+        """
+        # Determine if we should consume this resource
+        if consume is None and isinstance(resource, Resource):
+            # Auto-detect based on typology
+            consume = resource.typology == ResourceTypology.SOURCE
+
+        # For Resources with paths, optionally remove from pending and get dependents
+        if isinstance(resource, Resource) and resource.path and consume:
+            dependents = self.dispatcher.context.remove_pending(resource.path)
+
+            # Add the resource as dependency
+            self.dependency_add(resource)
+
+            # Add all dependents as dependencies (tasks that depended on this resource)
+            for dep in dependents:
+                self.dependency_add(dep)
+        else:
+            # For virtual resources or other build steps, just add as dependency
+            self.dependency_add(resource)
+
+        # Add to inputs list
+        self.__inputs.append(resource)
+
+    def add_output(self, resource: BuildStep) -> None:
+        """Add an output resource to this task
+
+        Properly manages:
+        - Adds resource to task outputs
+        - Makes resource depend on this task
+        - Adds resource to pending queue (for downstream consumption)
+
+        Args:
+            resource: Output resource or build step to add
+        """
+        # Add to outputs list
+        self.__outputs.append(resource)
+
+        # Resource depends on this task
+        resource.dependency_add(self)
+
+        # For Resources with paths, add to pending for downstream
+        if isinstance(resource, Resource) and resource.path:
+            self.dispatcher.context.add_pending(resource)
 
     def is_rebuild_needed(self) -> bool:
         """Check if rebuild is needed based on timestamps
@@ -589,10 +668,10 @@ class Task(BuildStep):
         ...
 
     def inputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.inputs))
+        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.__inputs))
 
     def outputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.outputs))
+        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.__outputs))
         
 # Type for task executor function
 TaskExecutor = Callable[['BuildContext', list[Any]], Awaitable[list[Any]]]
@@ -628,18 +707,21 @@ class ExecutorTask(Task):
         self.info(f"Task {self.name}: {self.description} - executing")
 
         # Run executor with semaphore
+        # Convert inputs to list since executor expects a list
+        inputs_list = list(self.inputs)
         async with self.context.semaphore:
-            output_values = await self.executor(self.context, self.inputs)
+            output_values = await self.executor(self.context, inputs_list)
 
         # Validate outputs
-        if len(output_values) != len(self.outputs):
+        outputs_list = list(self.outputs)
+        if len(output_values) != len(outputs_list):
             raise RuntimeError(
                 f"Task {self.name} produced {len(output_values)} outputs, "
-                f"expected {len(self.outputs)}"
+                f"expected {len(outputs_list)}"
             )
 
         # Check file outputs were created
-        for output, value in zip(self.outputs, output_values):
+        for output, value in zip(outputs_list, output_values):
             if isinstance(output, Resource):
                 if not output.path.exists():
                     raise RuntimeError(

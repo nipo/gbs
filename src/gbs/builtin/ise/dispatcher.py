@@ -90,25 +90,15 @@ class IseDispatcher(BaseDispatcher):
         if sources:
             self.debug(f"Adding {len(sources)} XST sources")
         for resource in sources:
-            dependents = self.context.remove_pending(resource.path)
-            for dep in dependents:
-                self.xst_task.dependency_add(dep)
-
-            self.xst_task.inputs.append(resource)
-            self.xst_task.dependency_add(resource)
+            self.xst_task.add_input(resource)
 
         # Add UCF input resources
         sources = list(self.context.filter_pending(file_type=["xilinx-ucf"]))
         if sources:
             self.debug(f"Adding {len(sources)} UCF sources")
         for resource in sources:
-            dependents = self.context.remove_pending(resource.path)
-            for dep in dependents:
-                self.net_task.dependency_add(dep)
-
             self.debug(f"Adding netlister UCF: {resource}")
-            self.net_task.inputs.append(resource)
-            self.net_task.dependency_add(resource)
+            self.net_task.add_input(resource)
 
     async def _task_graph_create(self) -> None:
         """Create all ISE build tasks
@@ -249,10 +239,3 @@ class IseDispatcher(BaseDispatcher):
         )
 
         # Add outputs to pending queue
-        self.context.add_pending(ngc_resource)
-        self.context.add_pending(edif_resource)
-        self.context.add_pending(ngd_resource)
-        self.context.add_pending(map_resource)
-        self.context.add_pending(par_resource)
-        self.context.add_pending(twr_resource)
-        self.context.add_pending(bit_resource)

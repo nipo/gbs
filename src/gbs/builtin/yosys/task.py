@@ -69,9 +69,10 @@ class WriteNetlist(SimpleCommandTask):
     description = "Yosys Netlist Dump"
 
     def command_get(self) -> list[str]:
+        output, = self.outputs
         return [
             "write_json",
-            str(self.outputs[0].path.resolve()),
+            str(output.path.resolve()),
             ]
 
 class RawCommand(CommandTask):

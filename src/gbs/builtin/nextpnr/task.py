@@ -63,7 +63,8 @@ class PlaceAndRoute(Task):
     async def work(self) -> None:
         """Execute nextpnr place-and-route"""
         # Ensure output directory exists
-        output_path = self.outputs[0].path
+        output, = self.outputs
+        output_path = output.path
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Get input netlist

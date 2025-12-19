@@ -117,8 +117,7 @@ class YosysDispatcher(BaseDispatcher):
                                     outputs = [output])
                 self.intermediate.append(output)
                 prev = self.intermediate[-1]
-        self.write_netlist.inputs.append(self.intermediate[-1])
-        self.write_netlist.dependency_add(self.intermediate[-1])
+        self.write_netlist.add_input(self.intermediate[-1])
         
         # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
@@ -129,8 +128,4 @@ class YosysDispatcher(BaseDispatcher):
                 if resource.file_type != "vhdl":
                     continue
 
-                dependents = self.context.remove_pending(resource.path)
-                self.vhdl_ingress.inputs.append(resource)
-                self.vhdl_ingress.dependency_add(resource)
-                for dep in dependents:
-                    self.vhdl_ingress.dependency_add(dep)
+                self.vhdl_ingress.add_input(resource)

@@ -154,8 +154,6 @@ class GowinDispatcher(BaseDispatcher):
         verilog_sources = list(self.context.filter_pending(file_type=["verilog"]))
 
         # Get constraint files (may be empty on first call)
-        cst_sources = list(self.context.filter_pending(file_type=["gowin-cst"]))
-        sdc_sources = list(self.context.filter_pending(file_type=["gowin-sdc"]))
         serdes_config_sources = list(self.context.filter_pending(file_type=["gowin-serdes-config"]))
 
         # Define constraint file paths
@@ -255,7 +253,6 @@ class GowinDispatcher(BaseDispatcher):
                 )
 
                 # Add CSR to pending queue
-                self.context.add_pending(serdes_csr_resource)
 
                 self.info(f"SerDes CSR will be generated from {serdes_config_sources[0].path}")
 
@@ -284,18 +281,13 @@ class GowinDispatcher(BaseDispatcher):
         )
 
         # Add netlist to pending queue
-        self.context.add_pending(netlist_resource)
-
-        # Use constraint sources directly (they already have file_type metadata)
-        cst_input_resources = list(cst_sources)
-        sdc_input_resources = list(sdc_sources)
 
         # Create pin constraint aggregation task (.cst files)
         # Store reference for dynamic input updates
         self._pin_cst_task = task.AggregateConstraints(
             dispatcher=self,
             file_type="gowin-cst",
-            inputs=cst_input_resources,
+            inputs=[],
             outputs=[pin_cst_resource]
         )
 
@@ -304,7 +296,7 @@ class GowinDispatcher(BaseDispatcher):
         self._timing_sdc_task = task.AggregateConstraints(
             dispatcher=self,
             file_type="gowin-sdc",
-            inputs=sdc_input_resources,
+            inputs=[],
             outputs=[timing_sdc_resource]
         )
 
@@ -317,8 +309,6 @@ class GowinDispatcher(BaseDispatcher):
         )
 
         # Add bitstreams to pending queue
-        self.context.add_pending(bitstream_resource)
-        self.context.add_pending(bitstream_bin_resource)
 
     async def _update_constraint_inputs(self) -> None:
         """Add new constraint files as inputs to existing aggregation tasks
@@ -333,21 +323,20 @@ class GowinDispatcher(BaseDispatcher):
         # Get current input paths from tasks
         existing_cst_paths = {r.path for r in self._pin_cst_task.inputs}
         existing_sdc_paths = {r.path for r in self._timing_sdc_task.inputs}
+        # Do not consider the file we generate ourselves either
+        existing_cst_paths |= {r.path for r in self._pin_cst_task.outputs}
+        existing_sdc_paths |= {r.path for r in self._timing_sdc_task.outputs}
 
         # Find new .cst files
         for source in cst_sources:
             if source.path not in existing_cst_paths:
                 self.debug(f"Adding new .cst constraint: {source.path}")
-                self._pin_cst_task.inputs.append(source)
-                # Set up dependency so task waits for this resource
-                self._pin_cst_task.dependency_add(source)
+                self._pin_cst_task.add_input(source, consume = False)
 
         # Find new .sdc files
         for source in sdc_sources:
             if source.path not in existing_sdc_paths:
                 self.debug(f"Adding new .sdc constraint: {source.path}")
-                self._timing_sdc_task.inputs.append(source)
-                # Set up dependency so task waits for this resource
-                self._timing_sdc_task.dependency_add(source)
+                self._timing_sdc_task.add_input(source, consume = False)
 
 

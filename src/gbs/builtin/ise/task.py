@@ -192,7 +192,8 @@ class BmmGenerate(Task):
 
     async def work(self) -> None:
         """Generate the placeholder .bmm file"""
-        bmm_file = self.outputs[0].path
+        output, = self.outputs
+        bmm_file = output.path
 
         bmm_file.parent.mkdir(parents=True, exist_ok=True)
         bmm_file.write_text("//\n")

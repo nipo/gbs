@@ -113,7 +113,6 @@ class CompressDispatcher(BaseDispatcher):
                         typology=ResourceTypology.OUTPUT,  # Mark as goal
                         generated_by=None,
                     )
-                    self.context.add_pending(intermediate_resource)
                     self.info(
                         f"Created intermediate goal: {base_type} at {intermediate_path}"
                     )

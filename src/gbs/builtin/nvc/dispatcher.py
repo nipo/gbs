@@ -104,7 +104,6 @@ class NVCDispatcher(BaseDispatcher):
         )
 
         # Add to pending queue
-        self.context.add_pending(lib_resource)
         self._library_build[library] = lib_resource, t
 
         return lib_resource, t
@@ -122,8 +121,7 @@ class NVCDispatcher(BaseDispatcher):
                 dep_lib, _ = self.library_build_get(d)
 
                 if dep_lib not in user_task.inputs:
-                    user_task.inputs.append(dep_lib)
-                    user_task.dependency_add(dep_lib)
+                    user_task.add_input(dep_lib)
 
         if not self._linker:
             # Create elaboration task
@@ -134,12 +132,9 @@ class NVCDispatcher(BaseDispatcher):
 
         # Ingress library files to linker
         for resource in list(self.context.filter_pending(file_type=["nvc-lib"])):
-            # Remove from pending (consuming the intermediate files)
-            dependents = self.context.remove_pending(resource.path)
-            self._linker.inputs.append(resource)
-            self._linker.dependency_add(resource)
-            for dep in dependents:
-                self._linker.dependency_add(dep)
+            # These are INTERMEDIATE resources - don't consume them (consume=False)
+            # so they remain available for other tasks
+            self._linker.add_input(resource, consume=False)
 
         # Get libraries in dependency order
         for library_name, library_files in self.context.get_pending_by_library_ordered():
@@ -154,11 +149,7 @@ class NVCDispatcher(BaseDispatcher):
 
                 # Remove from pending (consuming the source)
                 # Add dependents as task dependencies to ensure proper execution order
-                dependents = self.context.remove_pending(resource.path)
-                task_obj.inputs.append(resource)
-                task_obj.dependency_add(resource)
-                for dep in dependents:
-                    task_obj.dependency_add(dep)
+                task_obj.add_input(resource)
 
     def _create_elaboration_task(self,
         topcell: str,
@@ -191,6 +182,5 @@ class NVCDispatcher(BaseDispatcher):
         )
 
         # Add simulator to pending queue
-        self.context.add_pending(executable_resource)
 
         return elab_task

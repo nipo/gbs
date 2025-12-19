@@ -60,11 +60,13 @@ class Pack(Task):
     async def work(self) -> None:
         """Execute icepack to generate binary bitstream"""
         # Ensure output directory exists
-        output_path = self.outputs[0].path
+        output, = self.outputs
+        output_path = output.path
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Get input ASC
-        asc_path = self.inputs[0].path
+        input, = self.inputs
+        asc_path = input.path
 
         self.info(f"Generating binary bitstream: {output_path.name}")
 

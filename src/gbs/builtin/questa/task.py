@@ -223,19 +223,22 @@ class GenerateQuestaProject(Task):
         # Set project default library
         lines.append(f"Project_DefaultLib = {top_lib}")
 
+        inputs = list(self.inputs)
+        
         # Count total files
-        lines.append(f"Project_Files_Count = {len(self.inputs)}")
+        lines.append(f"Project_Files_Count = {len(inputs)}")
         lines.append("")
 
         # Add file entries in original input order (preserves dependency order)
-        for file_index, resource in enumerate(self.inputs):
+        for file_index, resource in enumerate(inputs):
             lib = resource.library or 'work'
             file_entry = self._generate_file_entry(file_index, resource, lib)
             lines.append(file_entry)
             file_index += 1
 
         # Write MPF file
-        mpf_path = self.outputs[0].path
+        output, = self.outputs
+        mpf_path = output.path
         mpf_path.parent.mkdir(parents=True, exist_ok=True)
         mpf_path.write_text("\n".join(lines) + "\n")
 
@@ -292,7 +295,8 @@ exec {self.vsim_executable} -gui "{mpf_file}" -do "vsim -gui {top_lib}.{topcell}
 """
 
         # Write script
-        script_path = self.outputs[0].path
+        output, = self.outputs
+        script_path = output.path
         script_path.parent.mkdir(parents=True, exist_ok=True)
         script_path.write_text(script_content)
         script_path.chmod(0o755)

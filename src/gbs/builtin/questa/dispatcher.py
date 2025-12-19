@@ -114,8 +114,6 @@ class QuestaDispatcher(BaseDispatcher):
         self._gui_task.dependency_add(mpf_resource)
 
         # Add outputs to pending queue
-        self.context.add_pending(mpf_resource)
-        self.context.add_pending(gui_resource)
 
         self.info("Created QuestaSim GUI project tasks")
 
@@ -131,6 +129,4 @@ class QuestaDispatcher(BaseDispatcher):
                 self.debug(f"Attaching input: {source.path} (type={file_type})")
 
                 resource = self.context.get_resource(source.path)
-                self._project_task.inputs.append(resource)
-                self._project_task.dependency_add(resource)
-                self.context.remove_pending(source.path)
+                self._project_task.add_input(resource)

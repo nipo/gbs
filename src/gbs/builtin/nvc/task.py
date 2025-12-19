@@ -162,10 +162,11 @@ class Elaborate(Task):
 
     async def work(self) -> None:
         """Execute NVC elaborate and create run script"""
-        assert len(self.outputs) == 1
+        assert len(list(self.outputs)) == 1
         nvc_executable = self.dispatcher._get_nvc_config()
 
-        out_path = self.outputs[0].path
+        output, = self.outputs
+        out_path = output.path
 #        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build library flags for all dependencies

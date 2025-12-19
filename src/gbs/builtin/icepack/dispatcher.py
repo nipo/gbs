@@ -82,4 +82,3 @@ class IcepackDispatcher(BaseDispatcher):
             pack_task.dependency_add(dep)
 
         # Add BIN to pending queue
-        self.context.add_pending(bin_resource)

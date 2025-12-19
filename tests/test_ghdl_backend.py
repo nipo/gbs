@@ -7,7 +7,7 @@ from gbs.builtin.ghdl.backend import GHDLBackend
 from gbs.builtin.ghdl.passes import GHDLSimulatePass
 from gbs.protocol import Backend
 from gbs.base import BaseBackend
-from gbs.backend.dispatcher import Dispatcher
+from gbs.protocol import Dispatcher
 from gbs.build import BuildContext
 
 
