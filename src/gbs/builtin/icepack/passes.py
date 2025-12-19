@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
+from ...base import BasePass
 from .dispatcher import IcepackDispatcher
-from ...backend.dispatcher import Dispatcher
+from ...protocol import Dispatcher
 
 
-class IcepackPass(Pass):
+class IcepackPass(BasePass):
     """Pass that generates binary bitstream for Ice40
 
     This pass takes an ASCII bitstream (.asc) and:

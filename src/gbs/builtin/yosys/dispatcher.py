@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...utils import expand_path
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from .yosys_interactive import Session

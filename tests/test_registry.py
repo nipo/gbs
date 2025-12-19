@@ -9,20 +9,19 @@ from gbs.backend.registry import (
     get_backend_registry,
     reset_backend_registry,
 )
-from gbs.backend.protocol import BaseBackend, Backend
-from gbs.planner.passes import Pass
-from gbs.backend.dispatcher import Dispatcher
+from gbs.protocol import Backend, Dispatcher
+from gbs.base import BaseBackend, BasePass
 
 
 # Mock passes for testing
-class MockSimulatePass(Pass):
+class MockSimulatePass(BasePass):
     """Mock simulation pass"""
     name = "simulate"
     input_types = {"vhdl"}
     output_types = {"simulator"}
 
 
-class MockSynthesizePass(Pass):
+class MockSynthesizePass(BasePass):
     """Mock synthesis pass"""
     name = "synthesize"
     input_types = {"vhdl", "verilog"}
@@ -32,7 +31,7 @@ class MockSynthesizePass(Pass):
         return {"syn": 1}
 
 
-class MockTransformPass(Pass):
+class MockTransformPass(BasePass):
     """Mock transformation pass"""
     name = "transform"
     input_types = {"verilog"}
@@ -55,7 +54,7 @@ class MockBackendA(BaseBackend):
         return passes
 
     def create_dispatcher(self, config):
-        from gbs.backend.dispatcher import BaseDispatcher
+        from gbs.base import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def __init__(self, context):
@@ -81,7 +80,7 @@ class MockBackendB(BaseBackend):
         return []
 
     def create_dispatcher(self, config):
-        from gbs.backend.dispatcher import BaseDispatcher
+        from gbs.base import BaseDispatcher
 
         class TestDispatcher(BaseDispatcher):
             def __init__(self, context):

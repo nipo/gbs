@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
+from ...base import BasePass
 from .dispatcher import YosysDispatcher
-from ...backend.dispatcher import Dispatcher
+from ...protocol import Dispatcher
 
 
-class YosysBasePass(Pass):
+class YosysBasePass(BasePass):
     """Base pass for Yosys synthesis
 
     Provides common functionality for all Yosys target passes.

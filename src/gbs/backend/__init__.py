@@ -1,8 +1,11 @@
-"""Backend system"""
-from .protocol import Backend, BaseBackend
-from .dispatcher import Dispatcher, BaseDispatcher, DispatcherRegistry, run_dispatcher_iteration
-from .registry import BackendRegistry, get_backend_registry
+"""Backend system
 
-__all__ = ["Backend", "BaseBackend", "Dispatcher", "BaseDispatcher",
-           "DispatcherRegistry", "run_dispatcher_iteration",
-           "BackendRegistry", "get_backend_registry"]
+This module provides backend registry and dispatcher iteration utilities.
+
+For protocols, import from gbs.protocol
+For base classes, import from gbs.base
+"""
+
+from .registry import BackendRegistry, get_backend_registry, DispatcherRegistry, run_dispatcher_iteration
+
+__all__ = ["BackendRegistry", "get_backend_registry", "DispatcherRegistry", "run_dispatcher_iteration"]

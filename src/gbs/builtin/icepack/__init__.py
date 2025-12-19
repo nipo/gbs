@@ -1,10 +1,10 @@
 """icepack bitstream generation backend plugin"""
 
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import IcepackBackend
 
 
-class IcepackPlugin(Plugin):
+class IcepackPlugin(BasePlugin):
     """icepack plugin providing Ice40 bitstream generation"""
 
     def __init__(self):

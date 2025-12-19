@@ -15,7 +15,7 @@ from typing import Optional
 from pathlib import Path
 
 from ..logging import get_logger
-from .plugin import Plugin
+from ..protocol import Plugin
 
 logger = get_logger(__name__)
 

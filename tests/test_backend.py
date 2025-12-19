@@ -4,9 +4,9 @@ import pytest
 import asyncio
 from pathlib import Path
 
+from gbs.protocol import Dispatcher
+from gbs.base import BaseDispatcher
 from gbs.backend import (
-    Dispatcher,
-    BaseDispatcher,
     DispatcherRegistry,
     run_dispatcher_iteration,
 )

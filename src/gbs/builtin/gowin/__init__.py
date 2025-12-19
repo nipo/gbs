@@ -1,9 +1,9 @@
 """Gowin Backend Plugin"""
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import GowinBackend
 
 
-class GowinPlugin(Plugin):
+class GowinPlugin(BasePlugin):
     """Gowin plugin providing FPGA synthesis and implementation backend"""
 
     def __init__(self):

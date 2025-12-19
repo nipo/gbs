@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
+from ...base import BasePass
 from .dispatcher import NextpnrDispatcher
-from ...backend.dispatcher import Dispatcher
+from ...protocol import Dispatcher
 
 
-class NextpnrIce40Pass(Pass):
+class NextpnrIce40Pass(BasePass):
     """Pass that performs place-and-route for Ice40 using nextpnr
 
     This pass takes a Yosys-generated JSON netlist and:

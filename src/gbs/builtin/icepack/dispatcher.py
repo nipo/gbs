@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...utils import expand_path
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from . import task

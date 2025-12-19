@@ -14,9 +14,9 @@ from .model import ProjectModel
 from ..logging import get_logger
 from ..build import BuildContext
 from ..build.task import ResourceTypology
-from ..backend.protocol import Backend
+from ..protocol import Backend
 from ..backend.registry import get_backend_registry
-from ..backend.dispatcher import DispatcherRegistry, run_dispatcher_iteration
+from ..backend import DispatcherRegistry, run_dispatcher_iteration
 from ..repository.model import SourceFileSet, Repository
 
 # Avoid circular imports by using TYPE_CHECKING

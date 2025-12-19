@@ -1,10 +1,10 @@
 """QuestaSim/ModelSim Backend Plugin"""
 
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import QuestaBackend
 
 
-class QuestaPlugin(Plugin):
+class QuestaPlugin(BasePlugin):
     """QuestaSim/ModelSim simulation backend plugin"""
 
     def __init__(self):

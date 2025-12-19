@@ -3,17 +3,18 @@
 from pathlib import Path
 import pytest
 
-from gbs.planner.passes import Pass, PassMetadata
+from gbs.base import BasePass
+from gbs.planner import PassMetadata
 
 
-class MockPass(Pass):
+class MockPass(BasePass):
     """Mock pass for testing"""
     name = "mock_pass"
     input_types = {"vhdl"}
     output_types = {"simulator"}
 
 
-class AnotherMockPass(Pass):
+class AnotherMockPass(BasePass):
     """Another mock pass for testing"""
     name = "another_pass"
     input_types = {"verilog"}
@@ -48,7 +49,7 @@ def test_pass_filter_vars_custom():
 def test_multiple_input_output_types():
     """Test pass with multiple input/output types"""
 
-    class MultiPass(Pass):
+    class MultiPass(BasePass):
         name = "multi"
         input_types = {"vhdl", "verilog", "systemverilog"}
         output_types = {"netlist", "timing"}
@@ -63,7 +64,7 @@ def test_multiple_input_output_types():
 def test_pass_with_priority():
     """Test pass with custom priority"""
 
-    class HighPriorityPass(Pass):
+    class HighPriorityPass(BasePass):
         name = "high_priority"
         input_types = {"vhdl"}
         output_types = {"simulator"}
@@ -76,7 +77,7 @@ def test_pass_with_priority():
 def test_pass_with_fork():
     """Test pass with can_fork flag"""
 
-    class ForkPass(Pass):
+    class ForkPass(BasePass):
         name = "fork_pass"
         input_types = {"vhdl", "verilog"}
         output_types = {"netlist"}
@@ -135,7 +136,7 @@ def test_pass_metadata_with_filter_vars():
 def test_pass_metadata_with_config():
     """Test PassMetadata passes config to filter_vars"""
 
-    class ConfigurablePass(Pass):
+    class ConfigurablePass(BasePass):
         name = "configurable"
         input_types = {"vhdl"}
         output_types = {"simulator"}

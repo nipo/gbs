@@ -1,9 +1,9 @@
 """Xilinx ISE Backend Plugin"""
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import IseBackend
 
 
-class IsePlugin(Plugin):
+class IsePlugin(BasePlugin):
     """Xilinx ISE plugin providing FPGA synthesis and implementation backend"""
 
     def __init__(self):

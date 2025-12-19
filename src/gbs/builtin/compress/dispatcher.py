@@ -13,7 +13,7 @@ transform, creating intermediate goals for inner transforms.
 from __future__ import annotations
 from pathlib import Path
 
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from .task import GzipTask

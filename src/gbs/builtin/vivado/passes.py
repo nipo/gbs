@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...planner.passes import Pass
-from ...backend.dispatcher import Dispatcher
+from ...base import BasePass
+from ...protocol import Dispatcher
 from ...utils import expand_path
 from .dispatcher import VivadoDispatcher
 
 
-class VivadoSynthesizePass(Pass):
+class VivadoSynthesizePass(BasePass):
     """Pass that synthesizes HDL to Xilinx FPGA outputs
 
     This pass uses Vivado tools in non-project mode to:

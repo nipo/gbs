@@ -1,9 +1,9 @@
 """Vivado Backend Plugin"""
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import VivadoBackend
 
 
-class VivadoPlugin(Plugin):
+class VivadoPlugin(BasePlugin):
     """Vivado plugin providing FPGA synthesis and implementation backend"""
 
     def __init__(self):

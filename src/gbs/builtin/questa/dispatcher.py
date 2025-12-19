@@ -6,7 +6,7 @@ Dispatcher implementation for QuestaSim/ModelSim GUI project generation.
 from __future__ import annotations
 from pathlib import Path
 
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from ...utils import expand_path

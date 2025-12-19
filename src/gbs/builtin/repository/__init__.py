@@ -3,10 +3,10 @@
 Provides the standard YAML-based repository format loader.
 """
 
-from ...plugins.plugin import Plugin
+from ...base import BasePlugin
 
 
-def gbs_register() -> Plugin:
+def gbs_register() -> BasePlugin:
     """Register the builtin YAML repository loader plugin"""
     from .plugin import BuiltinRepositoryPlugin
     return BuiltinRepositoryPlugin()

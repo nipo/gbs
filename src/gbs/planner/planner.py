@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from pathlib import Path
 
-from .passes import Pass, PassMetadata
-from ..backend.protocol import Backend
+from .passes import PassMetadata
+from ..protocol import Backend, Pass
 from ..repository.model import Repository, SourceFileSet
 from ..project.model import OutputGroup, OutputFile
 from ..ui.reporter import UIReporter

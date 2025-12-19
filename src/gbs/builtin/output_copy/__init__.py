@@ -3,9 +3,9 @@
 This backend copies files from the build fileset to the output paths
 specified in the project configuration.
 """
-from ...plugins import Plugin
+from ...base import BasePlugin
 
-class OutputCopyPlugin(Plugin):
+class OutputCopyPlugin(BasePlugin):
     """Output copy plugin for extracting build outputs"""
 
     def __init__(self):

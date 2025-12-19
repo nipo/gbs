@@ -1,6 +1,11 @@
-"""Build planning"""
-from .passes import Pass, PassMetadata
-from .planner import BuildPlanner, BuildPlan, PlanningError
+"""Build planning
 
-__all__ = ["Pass", "PassMetadata",
-           "BuildPlanner", "BuildPlan", "PlanningError"]
+This module provides build planning utilities.
+
+For Pass protocol and base class, import from gbs.protocol and gbs.base
+"""
+
+from .planner import BuildPlanner, BuildPlan, PlanningError
+from .passes import PassMetadata
+
+__all__ = ["BuildPlanner", "BuildPlan", "PlanningError", "PassMetadata"]

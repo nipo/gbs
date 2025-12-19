@@ -5,11 +5,11 @@ from typing import Any
 from pathlib import Path
 import csv
 
-from ...planner.passes import Pass
-from ...backend.dispatcher import Dispatcher
+from ...base import BasePass
+from ...protocol import Dispatcher
 from .dispatcher import GowinDispatcher
 
-class GowinSynthesizePass(Pass):
+class GowinSynthesizePass(BasePass):
     """Pass that synthesizes HDL to Gowin FPGA bitstream
 
     This pass uses Gowin EDA tools (via gw_sh) to:

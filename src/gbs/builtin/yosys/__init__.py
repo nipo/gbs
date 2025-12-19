@@ -1,10 +1,10 @@
 """Yosys synthesis backend plugin"""
 
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import YosysBackend
 
 
-class YosysPlugin(Plugin):
+class YosysPlugin(BasePlugin):
     """Yosys plugin providing FPGA synthesis backend"""
 
     def __init__(self):

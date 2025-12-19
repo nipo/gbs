@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from . import task

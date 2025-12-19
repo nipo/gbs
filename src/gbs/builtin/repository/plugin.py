@@ -3,10 +3,10 @@
 Provides the standard YAML-based repository format.
 """
 
-from ...plugins.plugin import Plugin
+from ...base import BasePlugin
 
 
-class BuiltinRepositoryPlugin(Plugin):
+class BuiltinRepositoryPlugin(BasePlugin):
     """Plugin providing YAML repository loader"""
 
     def __init__(self):

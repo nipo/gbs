@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 import re
-from ...planner.passes import Pass
-from ...backend.dispatcher import Dispatcher
+from ...base import BasePass
+from ...protocol import Dispatcher
 from .dispatcher import IseDispatcher
 
 
-class IseSynthesizePass(Pass):
+class IseSynthesizePass(BasePass):
     """Pass that synthesizes HDL to Xilinx ISE bitstream
 
     This pass uses Xilinx ISE tools to:

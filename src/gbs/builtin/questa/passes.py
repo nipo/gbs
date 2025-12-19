@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
-from ...backend.dispatcher import Dispatcher
+from ...base import BasePass
+from ...protocol import Dispatcher
 from .dispatcher import QuestaDispatcher
 
 
-class QuestaSimulatePass(Pass):
+class QuestaSimulatePass(BasePass):
     """Pass that creates a QuestaSim/ModelSim GUI project
 
     This pass generates:

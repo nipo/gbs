@@ -3,11 +3,11 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
+from ...base import BasePass
 from .dispatcher import NVCDispatcher
-from ...backend.dispatcher import Dispatcher
+from ...protocol import Dispatcher
 
-class NVCSimulatePass(Pass):
+class NVCSimulatePass(BasePass):
     """Pass that compiles VHDL designs and creates a simulator executable
 
     This pass uses NVC to:

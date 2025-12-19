@@ -3,10 +3,10 @@
 Provides a generic dispatcher that compresses files in the build fileset
 based on type suffixes like "+gzip".
 """
-from ...plugins import Plugin
+from ...base import BasePlugin
 
 
-class CompressPlugin(Plugin):
+class CompressPlugin(BasePlugin):
     """Compression plugin for compressing build outputs"""
 
     def __init__(self):

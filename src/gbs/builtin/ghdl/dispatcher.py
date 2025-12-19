@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ...utils import expand_path
 from ...logging import get_logger
-from ...backend.dispatcher import BaseDispatcher
+from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Task, ResourceTypology
 from . import task

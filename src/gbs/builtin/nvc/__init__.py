@@ -1,9 +1,9 @@
 """NVC Backend Plugin"""
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import NVCBackend
 
 
-class NVCPlugin(Plugin):
+class NVCPlugin(BasePlugin):
     """NVC plugin providing VHDL simulation backend"""
 
     def __init__(self):

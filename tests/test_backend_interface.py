@@ -2,8 +2,8 @@
 
 import pytest
 from pathlib import Path
-from gbs.backend.protocol import Backend, BaseBackend
-from gbs.backend.dispatcher import BaseDispatcher
+from gbs.protocol import Backend
+from gbs.base import BaseBackend, BaseDispatcher
 
 
 class TestBackendInterface:

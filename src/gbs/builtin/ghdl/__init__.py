@@ -1,9 +1,9 @@
 """GHDL Backend Plugin"""
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import GHDLBackend
 
 
-class GHDLPlugin(Plugin):
+class GHDLPlugin(BasePlugin):
     """GHDL plugin providing VHDL simulation backend"""
 
     def __init__(self):

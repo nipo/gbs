@@ -3,8 +3,8 @@
 from __future__ import annotations
 from typing import Any
 
-from ...backend.protocol import BaseBackend
-from ...planner.passes import Pass
+from ...base import BaseBackend
+from ...base import BasePass
 from .passes import IcepackPass
 
 

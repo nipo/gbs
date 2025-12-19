@@ -1,10 +1,10 @@
 """nextpnr place-and-route backend plugin"""
 
-from ...plugins import Plugin
+from ...base import BasePlugin
 from .backend import NextpnrBackend
 
 
-class NextpnrPlugin(Plugin):
+class NextpnrPlugin(BasePlugin):
     """nextpnr plugin providing FPGA place-and-route backend"""
 
     def __init__(self):

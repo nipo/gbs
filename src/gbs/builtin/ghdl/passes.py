@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...planner.passes import Pass
+from ...base import BasePass
 from .dispatcher import GHDLAnalyzeDispatcher, GHDLSimulateDispatcher, GHDLRunDispatcher
-from ...backend.dispatcher import Dispatcher
+from ...protocol import Dispatcher
 
 
-class GHDLAnalyzePass(Pass):
+class GHDLAnalyzePass(BasePass):
     """Pass that analyzes VHDL sources into GHDL library intermediates
 
     This pass uses GHDL to analyze VHDL sources (ghdl -i/-a) and
@@ -58,7 +58,7 @@ class GHDLAnalyzePass(Pass):
         )]
 
 
-class GHDLSimulatePass(Pass):
+class GHDLSimulatePass(BasePass):
     """Pass that creates a simulator executable from GHDL libraries
 
     This pass takes GHDL library intermediates (.cf files) and:
@@ -111,7 +111,7 @@ class GHDLSimulatePass(Pass):
         )]
 
 
-class GHDLRunPass(Pass):
+class GHDLRunPass(BasePass):
     """Pass that runs GHDL simulator to produce waveforms and simulation logs
 
     This pass takes a ghdl-simulator executable and runs it to produce:
