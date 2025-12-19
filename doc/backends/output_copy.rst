@@ -83,17 +83,6 @@ You can specify multiple output copies of the same file:
 
 The output_copy backend will copy the same source bitstream to all three locations.
 
-Dispatcher Priority
--------------------
-
-The output_copy backend runs at priority 900, which means:
-
-- Runs **after** compression backend (priority 850)
-- Runs **after** all compilation backends (priority 1000-2000)
-- One of the **last** dispatchers to run
-
-This ensures all transformations are complete before final output copying.
-
 Build Directory Structure
 --------------------------
 

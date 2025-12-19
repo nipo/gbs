@@ -25,20 +25,8 @@ class TestDispatcher:
                 pass
 
         ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test_backend", tool_name="test", priority=100)
+        dispatcher = TestBackend(ctx, "test_backend", tool_name="test")
         assert dispatcher.name == "test_backend"
-        assert dispatcher.priority == 100
-
-    def test_base_dispatcher_default_priority(self):
-        """Test default priority is 500"""
-
-        class TestBackend(BaseDispatcher):
-            async def process(self):
-                pass
-
-        ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test", tool_name="test")
-        assert dispatcher.priority == 500
 
     # Test removed - get_filter_variables no longer part of Dispatcher protocol
     # Filter variables are now only provided by Pass.filter_vars() during planning
@@ -81,7 +69,7 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        dispatcher = TestBackend(ctx, "test", tool_name="test", priority=100)
+        dispatcher = TestBackend(ctx, "test", tool_name="test")
         registry.register(dispatcher)
 
         assert len(registry) == 1
@@ -95,73 +83,16 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        dispatcher1 = TestBackend(ctx, "test", tool_name="test", priority=100)
-        dispatcher2 = TestBackend(ctx, "test", tool_name="test", priority=200)
+        dispatcher1 = TestBackend(ctx, "test", tool_name="test")
+        dispatcher2 = TestBackend(ctx, "test", tool_name="test")
 
         registry.register(dispatcher1)
 
         with pytest.raises(ValueError, match="already registered"):
             registry.register(dispatcher2)
 
-    def test_dispatchers_ordered_by_priority(self):
-        """Test dispatchers are ordered by priority"""
-
-        class TestBackend(BaseDispatcher):
-            async def process(self):
-                pass
-
-        registry = DispatcherRegistry()
-
-        # Register in random order
-        ctx = BuildContext()
-        dispatcher3 = TestBackend(ctx, "backend3", tool_name="test", priority=300)
-        ctx = BuildContext()
-        dispatcher1 = TestBackend(ctx, "backend1", tool_name="test", priority=100)
-        ctx = BuildContext()
-        dispatcher2 = TestBackend(ctx, "backend2", tool_name="test", priority=200)
-
-        registry.register(dispatcher3)
-        registry.register(dispatcher1)
-        registry.register(dispatcher2)
-
-        ordered = registry.get_dispatchers_ordered()
-
-        assert len(ordered) == 3
-        assert ordered[0].name == "backend1"
-        assert ordered[1].name == "backend2"
-        assert ordered[2].name == "backend3"
-
-    def test_dispatchers_ordered_by_name_when_same_priority(self):
-        """Test dispatchers with same priority are ordered by name"""
-
-        class TestBackend(BaseDispatcher):
-            async def process(self):
-                pass
-
-        registry = DispatcherRegistry()
-
-        ctx = BuildContext()
-        dispatcher_c = TestBackend(ctx, "c", tool_name="test", priority=100)
-        ctx = BuildContext()
-        dispatcher_a = TestBackend(ctx, "a", tool_name="test", priority=100)
-        ctx = BuildContext()
-        dispatcher_b = TestBackend(ctx, "b", tool_name="test", priority=100)
-
-        registry.register(dispatcher_c)
-        registry.register(dispatcher_a)
-        registry.register(dispatcher_b)
-
-        ordered = registry.get_dispatchers_ordered()
-
-        assert ordered[0].name == "a"
-        assert ordered[1].name == "b"
-        assert ordered[2].name == "c"
-
-    # Test removed - get_filter_variables no longer part of Dispatcher protocol
-    # Filter variables are now only provided by Pass.filter_vars() during planning
-
     def test_iterate_over_registry(self):
-        """Test iterating over registry yields backends in order"""
+        """Test iterating over registry yields dispatchers in registration order"""
 
         class TestBackend(BaseDispatcher):
             async def process(self):
@@ -169,12 +100,12 @@ class TestDispatcherRegistry:
 
         registry = DispatcherRegistry()
         ctx = BuildContext()
-        registry.register(TestBackend(ctx, "b", tool_name="test", priority=200))
+        registry.register(TestBackend(ctx, "b", tool_name="test"))
         ctx = BuildContext()
-        registry.register(TestBackend(ctx, "a", tool_name="test", priority=100))
+        registry.register(TestBackend(ctx, "a", tool_name="test"))
 
         names = [b.name for b in registry]
-        assert names == ["a", "b"]
+        assert names == ["b", "a"]
 
 
 # Temporarily disabled - needs rewrite for new API without BuildFileSet

@@ -50,8 +50,6 @@ class VivadoDispatcher(BaseDispatcher):
       Subsequent process() calls:
         - Attaches any pending files of accepted input types to the task
         - HDL files are added in library dependency order
-
-    Priority: 600 (synthesis/backend compilation)
     """
 
     def __init__(
@@ -61,7 +59,7 @@ class VivadoDispatcher(BaseDispatcher):
         vivado_tool: str = "vivado",
         target: dict[str, str] | None = None,
     ):
-        super().__init__(context, "vivado", tool_name=vivado_tool, priority=600)
+        super().__init__(context, "vivado", tool_name=vivado_tool)
         self.vivado_tool = vivado_tool
         self.vhdl_std = vhdl_std
         self.target = target or {}

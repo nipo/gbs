@@ -20,8 +20,6 @@ class YosysDispatcher(BaseDispatcher):
     3. Applies user-defined transformation steps
     4. Runs target-specific synthesis (e.g., synth_ice40)
     5. Writes output netlist
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(
@@ -32,7 +30,7 @@ class YosysDispatcher(BaseDispatcher):
             yosys_tool: str = "yosys",
             steps: list[str] = None,
     ):
-        super().__init__(context, f"yosys-{synth_target}", tool_name=yosys_tool, priority=500)
+        super().__init__(context, f"yosys-{synth_target}", tool_name=yosys_tool)
         self.synth_target = synth_target
         self.yosys_tool = yosys_tool
         self.steps = steps or []

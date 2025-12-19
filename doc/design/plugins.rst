@@ -263,8 +263,8 @@ Creating Dispatchers
    from .task import MySynthTask
 
    class MyDispatcher(BaseDispatcher):
-       def __init__(self, config):
-           super().__init__(name="mybackend", priority=500)
+       def __init__(self, context, config):
+           super().__init__(context, name="mybackend", tool_name="mybackend")
            self.config = config
 
        def get_filter_variables(self, context):
@@ -337,14 +337,13 @@ Creating Tasks
 Preprocessing Dispatchers
 -------------------------
 
-Dispatchers can preprocess files before main compilation. Use low
-priority numbers to run early:
+Dispatchers can preprocess files before main compilation:
 
 .. code-block:: python
 
    class TranspileDispatcher(BaseDispatcher):
-       def __init__(self):
-           super().__init__(name="transpile", priority=200)
+       def __init__(self, context):
+           super().__init__(context, name="transpile", tool_name="transpile")
 
        async def process(self, context, fileset):
            # Find files to transpile

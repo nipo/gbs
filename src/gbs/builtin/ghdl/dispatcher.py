@@ -29,8 +29,7 @@ class GHDLBaseDispatcher(BaseDispatcher):
         context: BuildContext,
         name: str,
         vhdl_std: str = "1993",
-        tool_name: str = "ghdl",
-        priority: int = 500
+        tool_name: str = "ghdl"
     ):
         """Initialize GHDL base dispatcher
 
@@ -39,9 +38,8 @@ class GHDLBaseDispatcher(BaseDispatcher):
             name: Dispatcher name
             vhdl_std: VHDL standard year (e.g., "1993", "2008")
             tool_name: Tool identifier for lookup (default: "ghdl")
-            priority: Dispatcher priority
         """
-        super().__init__(context, name, tool_name=tool_name, priority=priority)
+        super().__init__(context, name, tool_name=tool_name)
         self.vhdl_std = vhdl_std
         self._ghdl_executable: str | None = None
         self._ghdl_backend_type: str | None = None
@@ -173,8 +171,6 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
     - GHDLSimulateDispatcher for simulation
     - Yosys+GHDL for synthesis
     - Other tools that can use GHDL libraries
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(self,
@@ -182,7 +178,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
         vhdl_std: str = "1993",
         tool_name: str = "ghdl"
     ):
-        super().__init__(context, "ghdl-analyze", vhdl_std, tool_name, priority=500)
+        super().__init__(context, "ghdl-analyze", vhdl_std, tool_name)
         self._library_build: dict[str, tuple['Resource', Task]] = {}
 
     def library_build_get(self, library: str) -> tuple['Resource', Task]:
@@ -279,7 +275,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         vhdl_std: str = "1993",
         tool_name: str = "ghdl"
     ):
-        super().__init__(context, "ghdl-simulate", vhdl_std, tool_name, priority=500)
+        super().__init__(context, "ghdl-simulate", vhdl_std, tool_name)
         self._linker: Task = None
 
     async def process(self) -> None:
@@ -399,8 +395,7 @@ class GHDLRunDispatcher(BaseDispatcher):
                  tool_name: str = "ghdl",
                  config: dict = {}):
         super().__init__(context, "ghdl-run",
-                         tool_name = tool_name,
-                         priority=900)
+                         tool_name = tool_name)
         self._run_task = None
         self.config = config
 

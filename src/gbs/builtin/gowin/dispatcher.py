@@ -29,8 +29,6 @@ class GowinDispatcher(BaseDispatcher):
 
     This allows other backends (e.g., NSL) to generate constraints between
     iterations by inspecting the netlist.
-
-    Priority: 600 (synthesis/backend compilation)
     """
 
     def __init__(
@@ -41,7 +39,7 @@ class GowinDispatcher(BaseDispatcher):
             tool_config: "ToolConfig",
             device_info: DeviceInfo
     ):
-        super().__init__(context, "gowin", tool_name=tool_name, priority=600)
+        super().__init__(context, "gowin", tool_name=tool_name)
         self.tool_config = tool_config
         self.output_base_name = "project"
         self.vhdl_std = vhdl_std

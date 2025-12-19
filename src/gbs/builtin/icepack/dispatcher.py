@@ -14,8 +14,6 @@ class IcepackDispatcher(BaseDispatcher):
 
     This dispatcher takes an ASCII bitstream (.asc) and:
     1. Converts it to binary format (.bin)
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(
@@ -23,7 +21,7 @@ class IcepackDispatcher(BaseDispatcher):
         context: BuildContext,
         icepack_tool: str = "icepack",
     ):
-        super().__init__(context, "icepack", tool_name=icepack_tool, priority=500)
+        super().__init__(context, "icepack", tool_name=icepack_tool)
         self.icepack_tool = icepack_tool
         self._icepack_executable: str | None = None
 

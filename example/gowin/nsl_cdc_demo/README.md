@@ -6,7 +6,7 @@ This project demonstrates the NSL CDC (Clock Domain Crossing) constraint generat
 
 The NSL CDC backend (`gbs.plugin.nsl.cdc.NslCdcBackend`):
 
-1. **Runs after Gowin synthesis** (priority=650)
+1. **Runs after Gowin synthesis**
 2. **Parses the generated netlist** for NSL timing-insensitive patterns:
    - `tig_reg_clr`: Registers with timing-ignored CLEAR pins
    - `tig_reg_pre`: Registers with timing-ignored PRE pins

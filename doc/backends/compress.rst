@@ -101,16 +101,6 @@ For example:
   - Source: ``firmware.bit`` (type: ``ise-bitstream``)
   - Compressed: ``firmware.bit.gz`` (type: ``ise-bitstream+gzip``)
 
-Dispatcher Priority
--------------------
-
-The compress backend runs at priority 850, which means:
-
-- Runs **after** main compilation backends (priority 1000-2000)
-- Runs **before** output-copy backend (priority 800)
-
-This ensures compressed files are available before final output copying.
-
 Use Cases
 ---------
 

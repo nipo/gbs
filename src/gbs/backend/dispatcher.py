@@ -27,14 +27,12 @@ class Dispatcher(Protocol):
 
     All dispatchers must implement:
     - name: Unique identifier
-    - priority: Execution order (lower = earlier, default range 100-999)
     - context: BuildContext reference (provided to constructor)
     - process(): Transform the pending work queue
     - get_clean_paths(): Return paths to clean
     """
 
     name: str
-    priority: int
     context: BuildContext
 
     async def process(self) -> None:
@@ -88,24 +86,17 @@ class BaseDispatcher(UIReporter, ABC):
     Inherits from UIReporter to provide logging and progress reporting.
     """
 
-    def __init__(self, context: BuildContext, name: str, tool_name: str, priority: int = 500):
+    def __init__(self, context: BuildContext, name: str, tool_name: str):
         """Initialize dispatcher
 
         Args:
             context: Build context for this realization
             name: Unique dispatcher name
             tool_name: Tool identifier for configuration lookup
-            priority: Execution priority (lower = earlier)
-                     Suggested ranges:
-                     100-299: Preprocessing (transpilers, code generators)
-                     300-499: Intermediate processing
-                     500-699: Main compilation
-                     700-999: Post-processing
         """
         self.context = context
         self.name = name
         self.tool_name = tool_name
-        self.priority = priority
 
         # Initialize UIReporter with BuildContext as parent
         UIReporter.__init__(self,
@@ -161,7 +152,7 @@ class BaseDispatcher(UIReporter, ABC):
         return {self.context.output_path}
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name}, priority={self.priority})"
+        return f"{self.__class__.__name__}(name={self.name})"
 
 
 class DispatcherRegistry:
@@ -169,8 +160,7 @@ class DispatcherRegistry:
 
     Maintains the list of registered dispatchers and provides methods for:
     - Registering dispatchers
-    - Getting dispatchers in priority order
-    - Collecting filter variables from all dispatchers
+    - Iterating over dispatchers
     """
 
     def __init__(self):
@@ -192,23 +182,15 @@ class DispatcherRegistry:
             raise ValueError(f"Dispatcher with name '{dispatcher.name}' already registered")
 
         self._dispatchers.append(dispatcher)
-        self.logger.debug(f"Registered dispatcher: {dispatcher.name} (priority={dispatcher.priority})")
-
-    def get_dispatchers_ordered(self) -> list[Dispatcher]:
-        """Get dispatchers in priority order (lowest priority first)
-
-        Returns:
-            List of dispatchers sorted by priority
-        """
-        return sorted(self._dispatchers, key=lambda d: (d.priority, d.name))
+        self.logger.debug(f"Registered dispatcher: {dispatcher.name}")
 
     def __len__(self) -> int:
         """Number of registered dispatchers"""
         return len(self._dispatchers)
 
     def __iter__(self):
-        """Iterate over dispatchers in priority order"""
-        return iter(self.get_dispatchers_ordered())
+        """Iterate over dispatchers in registration order"""
+        return iter(self._dispatchers)
 
 
 async def run_dispatcher_iteration(

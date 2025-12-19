@@ -55,20 +55,15 @@ def parse_output_type(type_str: str) -> tuple[str, str | None]:
 class CompressDispatcher(BaseDispatcher):
     """Dispatcher that compresses files based on type suffixes.
 
-    This dispatcher runs before output-copy (priority 850) to ensure
-    compressed variants are available for copying.
-
     It works backwards from unsatisfied outputs:
     1. Find outputs with compression suffixes (e.g., "+gzip") that have no producer
     2. Strip the last transform to get the source type needed
     3. Look for source in pending queue, or create an intermediate output goal
     4. Create compression task from source to output
-
-    Priority: 850 (runs after main compilation, before output-copy)
     """
 
     def __init__(self, context: BuildContext):
-        super().__init__(context, "compress", tool_name="compress", priority=850)
+        super().__init__(context, "compress", tool_name="compress")
 
     async def process(self) -> None:
         """Create compression tasks for unsatisfied compressed outputs.

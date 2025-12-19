@@ -39,8 +39,6 @@ class IseDispatcher(BaseDispatcher):
     6. BITGEN:
        - Takes .par.ncd
        - Produces .bit bitstream
-
-    Priority: 600 (synthesis/backend compilation)
     """
 
     def __init__(
@@ -50,7 +48,7 @@ class IseDispatcher(BaseDispatcher):
             tool: str,
             target: dict[str, str] = {},
     ):
-        super().__init__(context, "ise", tool_name=tool, priority=600)
+        super().__init__(context, "ise", tool_name=tool)
         self.output_base_name = "project"
         self.target = target
         self.device = target["part"]

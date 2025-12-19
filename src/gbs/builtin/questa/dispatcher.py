@@ -28,8 +28,6 @@ class QuestaDispatcher(BaseDispatcher):
 
       Subsequent process() calls:
         - Attaches any pending HDL files to the project task
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(
@@ -38,7 +36,7 @@ class QuestaDispatcher(BaseDispatcher):
         vhdl_std: str = "1993",
         questa_tool: str = "questa",
     ):
-        super().__init__(context, "questa", tool_name=questa_tool, priority=500)
+        super().__init__(context, "questa", tool_name=questa_tool)
         self.vhdl_std = vhdl_std
         self.questa_tool = questa_tool
         self._project_task: GenerateQuestaProject | None = None

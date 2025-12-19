@@ -831,7 +831,7 @@ class PlanRealization:
 
         # Collect paths to clean from all dispatchers
         paths_to_clean = set()
-        for dispatcher in self.dispatcher_registry.get_dispatchers_ordered():
+        for dispatcher in self.dispatcher_registry:
             dispatcher_paths = dispatcher.get_clean_paths()
             paths_to_clean |= dispatcher_paths
         paths_to_clean |= self.build_ctx.to_clean()

@@ -15,8 +15,6 @@ class NVCDispatcher(BaseDispatcher):
     1. Analyze (-a) each library in dependency order
     2. Elaborate (-e) the top-level design unit
     3. Generate executable wrapper script
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(self,
@@ -24,7 +22,7 @@ class NVCDispatcher(BaseDispatcher):
         vhdl_std: str = "1993",
         nvc_tool: str = "nvc"
     ):
-        super().__init__(context, "nvc", tool_name=nvc_tool, priority=500)
+        super().__init__(context, "nvc", tool_name=nvc_tool)
         self.vhdl_std = vhdl_std
         self.nvc_tool = nvc_tool  # Tool identifier for lookup
         self._nvc_executable: str | None = None  # Cached executable path

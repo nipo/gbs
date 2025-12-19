@@ -19,19 +19,15 @@ from .task import CopyTask
 class OutputCopyDispatcher(BaseDispatcher):
     """Dispatcher that copies build outputs to specified paths.
 
-    This dispatcher runs late (high priority number) to ensure all
-    other backends have generated their outputs. It works backwards
-    from unsatisfied output goals:
+    This dispatcher works backwards from unsatisfied output goals:
 
     1. Find outputs marked typology=OUTPUT with no producer
     2. Look for source files in pending queue matching the output's file_type
     3. Create copy task from source to output
-
-    Priority: 900 (runs after compression and main compilation)
     """
 
     def __init__(self, context: BuildContext):
-        super().__init__(context, "output-copy", tool_name="output-copy", priority=900)
+        super().__init__(context, "output-copy", tool_name="output-copy")
 
     async def process(self) -> None:
         """Copy matching files to output paths.

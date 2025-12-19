@@ -16,8 +16,6 @@ class NextpnrDispatcher(BaseDispatcher):
     This dispatcher takes a JSON netlist and:
     1. Runs nextpnr to place and route the design
     2. Generates ASCII bitstream (.asc)
-
-    Priority: 500 (main compilation)
     """
 
     def __init__(
@@ -27,7 +25,7 @@ class NextpnrDispatcher(BaseDispatcher):
             part: str = "",
             package: str = "",
     ):
-        super().__init__(context, "nextpnr-ice40", tool_name=nextpnr_tool, priority=500)
+        super().__init__(context, "nextpnr-ice40", tool_name=nextpnr_tool)
         self.nextpnr_tool = nextpnr_tool
         self.part = part
         self.package = package

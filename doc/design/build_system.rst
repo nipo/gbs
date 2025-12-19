@@ -80,8 +80,6 @@ Each Pass class defines:
        name: str              # Human-readable name
        input_types: set[str]  # Required input file types
        output_types: set[str] # Produced output file types
-       priority: int = 100    # Planning priority (lower = preferred)
-       can_fork: bool = False # Allow multiple paths through this pass
 
 Pass Methods
 ~~~~~~~~~~~~
@@ -185,11 +183,6 @@ Dispatcher Protocol
 
    class Dispatcher(Protocol):
        name: str
-       priority: int
-
-       def get_filter_variables(self, context: BuildContext) -> dict[str, Any]:
-           """Provide filter variables for partition evaluation"""
-           ...
 
        async def process(
            self,
@@ -198,14 +191,6 @@ Dispatcher Protocol
        ) -> None:
            """Process the fileset, creating tasks"""
            ...
-
-**Priority Ranges**:
-
-- 100-299: Preprocessing (transpilers, code generators)
-- 300-499: Intermediate processing
-- 500-699: Main compilation
-- 700-899: Post-processing
-- 900+: Output extraction (output-copy)
 
 Dispatcher Iteration
 ~~~~~~~~~~~~~~~~~~~~
@@ -219,7 +204,7 @@ Dispatchers run in a loop until convergence:
        while iteration < max_iterations:
            serial_before = fileset.modification_serial
 
-           for dispatcher in registry.get_dispatchers_ordered():
+           for dispatcher in registry:
                await dispatcher.process(context, fileset)
 
            if fileset.modification_serial == serial_before:
