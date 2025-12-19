@@ -15,8 +15,7 @@ from ..logging import get_logger
 from ..build import BuildContext
 from ..build.task import ResourceTypology
 from ..protocol import Backend
-from ..backend.registry import get_backend_registry
-from ..backend import DispatcherRegistry, run_dispatcher_iteration
+from ..plugins import get_plugin_registry
 from ..repository.model import SourceFileSet, Repository
 
 # Avoid circular imports by using TYPE_CHECKING
@@ -215,13 +214,13 @@ class Project(UIReporter):
             for p in self.__realizations:
                 yield p
 
-        backend_registry = get_backend_registry()
+        plugin_registry = get_plugin_registry()
 
         # Plan build for all output groups
         logger.info("")
         logger.info(f"Planning build for {len(self.model.output_groups)} output group(s)...")
-        backends = backend_registry.get_all_backends()
-        backend_names = backend_registry.list_backends()
+        backends = plugin_registry.get_all_backends()
+        backend_names = plugin_registry.list_backends()
 
         # Include all repositories for planning
         all_repositories = self.repositories
@@ -424,9 +423,9 @@ class PlanRealization:
                  project: Project,
                  plan: 'BuildPlan',
                  source_fileset: SourceFileSet):
-        backend_registry = get_backend_registry()
-        backends = backend_registry.get_all_backends()
-        backend_names = backend_registry.list_backends()
+        plugin_registry = get_plugin_registry()
+        backends = plugin_registry.get_all_backends()
+        backend_names = plugin_registry.list_backends()
 
 
         self.project = project
@@ -482,28 +481,24 @@ class PlanRealization:
         # 2. Backends configured in backend_config (may be post-processors like NSL CDC)
         backend_modules_used = set()
 
-        # Create dispatcher registry for this plan
-        self.dispatcher_registry = DispatcherRegistry()
+        # Register dispatchers for this plan (into BuildContext)
         for pass_metadata in self.plan.passes:
             contributed_dispatchers = pass_metadata.pass_obj.dispatchers(self.build_ctx)
             for dispatcher in contributed_dispatchers:
-                self.dispatcher_registry.register(dispatcher)
+                self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered dispatcher: {dispatcher.name}")
 
-        from ..plugins import get_plugin_registry
         plugin_registry = get_plugin_registry()
 
         for plugin in plugin_registry.get_all_plugins():
             for dispatcher in plugin.generic_dispatchers(self.build_ctx):
-                self.dispatcher_registry.register(dispatcher)
+                self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
 
 
     async def dispatch(self, max_iterations = 10) -> None:
         # Run dispatcher iteration
-        iterations = await run_dispatcher_iteration(
-            self.build_ctx,
-            self.dispatcher_registry,
+        iterations = await self.build_ctx.run_dispatcher_iteration(
             max_iterations=max_iterations
         )
         logger.info(f"  Converged after {iterations} iteration(s)")
@@ -831,7 +826,7 @@ class PlanRealization:
 
         # Collect paths to clean from all dispatchers
         paths_to_clean = set()
-        for dispatcher in self.dispatcher_registry:
+        for dispatcher in self.build_ctx._dispatchers:
             dispatcher_paths = dispatcher.get_clean_paths()
             paths_to_clean |= dispatcher_paths
         paths_to_clean |= self.build_ctx.to_clean()

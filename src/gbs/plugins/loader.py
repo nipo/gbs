@@ -13,11 +13,24 @@ import pkgutil
 import traceback
 from typing import Optional
 from pathlib import Path
+from dataclasses import dataclass
 
 from ..logging import get_logger
-from ..protocol import Plugin
+from ..protocol import Plugin, Backend
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class BackendInfo:
+    """Information about a registered backend
+
+    Attributes:
+        backend: The Backend instance
+        module_path: Module path (e.g., "gbs.builtin.ghdl")
+    """
+    backend: Backend
+    module_path: str
 
 
 class PluginRegistry:
@@ -169,6 +182,68 @@ class PluginRegistry:
         """
         return list(self._plugins.values())
 
+    # Backend methods (backends are discovered via plugins)
+
+    def get_backend(self, module_path: str) -> Optional[Backend]:
+        """Get backend instance by module path
+
+        Args:
+            module_path: Backend module path (e.g., "gbs.builtin.ghdl")
+
+        Returns:
+            Backend instance, or None if not found
+        """
+        backend_info = self.get_backend_info(module_path)
+        return backend_info.backend if backend_info else None
+
+    def get_backend_info(self, module_path: str) -> Optional[BackendInfo]:
+        """Get backend info by module path
+
+        Args:
+            module_path: Backend module path (e.g., "gbs.builtin.ghdl")
+
+        Returns:
+            BackendInfo, or None if not found
+        """
+        # Find the plugin that matches this module path
+        plugin = self._plugins.get(module_path)
+        if not plugin:
+            return None
+
+        # Get backends from this plugin
+        backends = plugin.enumerate_backends()
+        if backends:
+            # Assume one backend per plugin module
+            return BackendInfo(backend=backends[0], module_path=module_path)
+
+        return None
+
+    def list_backends(self) -> list[str]:
+        """List all registered backend module paths
+
+        Returns:
+            List of backend module paths
+        """
+        backend_paths = []
+        for plugin in self._plugins.values():
+            backends = plugin.enumerate_backends()
+            if backends:
+                # Each plugin provides its own backend(s)
+                backend_paths.append(plugin.name)
+        return backend_paths
+
+    def get_all_backends(self) -> list[Backend]:
+        """Get all registered backend instances
+
+        Returns:
+            List of Backend instances
+        """
+        all_backends = []
+        for plugin in self._plugins.values():
+            backends = plugin.enumerate_backends()
+            all_backends.extend(backends)
+        return all_backends
+
 
 # Global plugin registry singleton
 _registry: Optional[PluginRegistry] = None
@@ -198,4 +273,9 @@ def reset_plugin_registry():
     _registry = None
 
 
-__all__ = ["PluginRegistry", "get_plugin_registry", "reset_plugin_registry"]
+__all__ = [
+    "PluginRegistry",
+    "get_plugin_registry",
+    "reset_plugin_registry",
+    "BackendInfo",
+]

@@ -1,13 +1,12 @@
-"""Tests for BackendRegistry"""
+"""Tests for Backend discovery via PluginRegistry"""
 
 import pytest
 from pathlib import Path
 
-from gbs.backend.registry import (
-    BackendRegistry,
+from gbs.plugins import (
     BackendInfo,
-    get_backend_registry,
-    reset_backend_registry,
+    get_plugin_registry,
+    reset_plugin_registry,
 )
 from gbs.protocol import Backend, Dispatcher
 from gbs.base import BaseBackend, BasePass
@@ -95,28 +94,31 @@ class MockBackendB(BaseBackend):
 
 
 def test_registry_creation():
-    """Test creating an empty registry"""
-    registry = BackendRegistry()
-    assert registry.list_backends() == []
+    """Test plugin registry provides backend access"""
+    reset_plugin_registry()
+    registry = get_plugin_registry()
+    # At minimum, should discover built-in backends
+    backends = registry.list_backends()
+    assert isinstance(backends, list)
 
 
 def test_global_registry_singleton():
-    """Test that get_backend_registry returns a singleton"""
-    reset_backend_registry()  # Clear any previous state
+    """Test that get_plugin_registry returns a singleton"""
+    reset_plugin_registry()  # Clear any previous state
 
-    registry1 = get_backend_registry()
-    registry2 = get_backend_registry()
+    registry1 = get_plugin_registry()
+    registry2 = get_plugin_registry()
 
     assert registry1 is registry2
 
 
 def test_reset_backend_registry():
     """Test resetting the global registry"""
-    reset_backend_registry()
+    reset_plugin_registry()
 
-    registry1 = get_backend_registry()
-    reset_backend_registry()
-    registry2 = get_backend_registry()
+    registry1 = get_plugin_registry()
+    reset_plugin_registry()
+    registry2 = get_plugin_registry()
 
     # Should be different instances after reset
     assert registry1 is not registry2
@@ -163,8 +165,8 @@ def test_backend_create_dispatcher():
 
 def test_discover_backends_loads_builtins():
     """Test that discover_backends loads built-in backends"""
-    reset_backend_registry()
-    registry = get_backend_registry()
+    reset_plugin_registry()
+    registry = get_plugin_registry()
 
     # Should have loaded at least the 2 built-in backends (ghdl, gowin)
     # May also discover plugins if available

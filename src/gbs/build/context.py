@@ -85,6 +85,9 @@ class BuildContext(UIReporter):
         self._completed_steps = 0
         # Note: self._reporter_progress_id from UIReporter is used instead of _progress_task_id
 
+        # Dispatcher registry (per-build state)
+        self._dispatchers: list['Dispatcher'] = []
+
     def messages_get(
         self,
         severity: Optional[MessageSeverity] = None,
@@ -950,6 +953,117 @@ class BuildContext(UIReporter):
 
     # ========================================================================
     # End of Pending Work Queue Methods
+    # ========================================================================
+
+    # ========================================================================
+    # Dispatcher Management Methods
+    # ========================================================================
+
+    def register_dispatcher(self, dispatcher: 'Dispatcher') -> None:
+        """Register a dispatcher for this build
+
+        Args:
+            dispatcher: Dispatcher to register
+
+        Raises:
+            ValueError: If dispatcher with same name already registered
+        """
+        # Check for duplicate names
+        if any(d.name == dispatcher.name for d in self._dispatchers):
+            raise ValueError(f"Dispatcher with name '{dispatcher.name}' already registered")
+
+        self._dispatchers.append(dispatcher)
+        self.debug(f"Registered dispatcher: {dispatcher.name}")
+
+    def get_dispatcher_count(self) -> int:
+        """Get number of registered dispatchers
+
+        Returns:
+            Number of dispatchers
+        """
+        return len(self._dispatchers)
+
+    async def run_dispatcher_iteration(self, max_iterations: int = 100) -> int:
+        """Run dispatcher iteration loop until convergence
+
+        Iteratively runs all dispatchers until the pending queue stops changing
+        (modification serial stabilizes).
+
+        Args:
+            max_iterations: Maximum iterations before giving up
+
+        Returns:
+            Number of iterations performed
+
+        Raises:
+            RuntimeError: If max_iterations exceeded without convergence
+
+        Example:
+            # Register dispatchers
+            ctx.register_dispatcher(VerilogToVHDLDispatcher())
+            ctx.register_dispatcher(GHDLDispatcher())
+
+            # Populate pending queue with source files
+            ctx.populate_pending(build_set, types_with_library)
+
+            # Run until convergence
+            iterations = await ctx.run_dispatcher_iteration()
+            print(f"Converged after {iterations} iterations")
+        """
+        iteration = 0
+
+        self.info(f"Starting dispatcher iteration with {len(self._dispatchers)} dispatchers")
+
+        while iteration < max_iterations:
+            iteration += 1
+            serial_before = self.pending_modification_serial
+
+            self.debug(f"Iteration {iteration}: serial={serial_before}, pending={self.pending_count()}")
+
+            # Run all dispatchers in registration order
+            for dispatcher in self._dispatchers:
+                s = self.pending_modification_serial
+                self.debug(f"Running dispatcher: {dispatcher.name}")
+                await dispatcher.process()
+                if s != self.pending_modification_serial:
+                    self.debug(f"  Changes happened")
+
+            serial_after = self.pending_modification_serial
+
+            # Check for convergence
+            if serial_after == serial_before:
+                self.info(
+                    f"Converged after {iteration} iterations "
+                    f"(serial={serial_after}, pending={self.pending_count()})"
+                )
+
+                # Verify all outputs have producers
+                unsatisfied = self.get_pending_unsatisfied_outputs()
+                if unsatisfied:
+                    unsatisfied_info = [
+                        f"  - {res.file_type} at {res.path}" for res in unsatisfied
+                    ]
+                    raise RuntimeError(
+                        f"Build planning failed: {len(unsatisfied)} output(s) have no producer:\n"
+                        + "\n".join(unsatisfied_info)
+                    )
+
+                return iteration
+
+            self.debug(
+                f"Iteration {iteration} complete: "
+                f"serial {serial_before} -> {serial_after}, "
+                f"pending={self.pending_count()}"
+            )
+
+        # Failed to converge
+        raise RuntimeError(
+            f"Dispatcher iteration did not converge after {max_iterations} iterations. "
+            f"This may indicate a dispatcher is continuously modifying the pending queue."
+        )
+
+    # ========================================================================
+    # End of Dispatcher Management Methods
     # ========================================================================
 
 

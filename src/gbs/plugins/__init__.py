@@ -11,6 +11,16 @@ Plugins are discovered automatically from:
 For Plugin protocol and base class, import from gbs.protocol and gbs.base
 """
 
-from .loader import PluginRegistry, get_plugin_registry, reset_plugin_registry
+from .loader import (
+    PluginRegistry,
+    get_plugin_registry,
+    reset_plugin_registry,
+    BackendInfo,
+)
 
-__all__ = ["PluginRegistry", "get_plugin_registry", "reset_plugin_registry"]
+__all__ = [
+    "PluginRegistry",
+    "get_plugin_registry",
+    "reset_plugin_registry",
+    "BackendInfo",
+]
