@@ -5,7 +5,7 @@ from typing import Any
 
 from ...base import BaseBackend
 from ...base import BasePass
-from .passes import NextpnrIce40Pass
+from .passes import NextpnrIce40Pass, NextpnrEcp5Pass
 
 
 class NextpnrBackend(BaseBackend):
@@ -14,11 +14,13 @@ class NextpnrBackend(BaseBackend):
     Provides place-and-route passes for various FPGA targets.
     Currently supports:
     - Ice40 (via nextpnr-ice40)
+    - ECP5 (via nextpnr-ecp5)
 
     Configuration options:
-        - nextpnr_tool: Tool identifier for lookup (default: "nextpnr-ice40")
-        - package: FPGA package (e.g., "hx1k", "up5k")
-        - pcf: Path to PCF constraint file (optional)
+        - nextpnr_tool: Tool identifier for lookup (default: target-specific)
+        - part: FPGA part (e.g., "hx1k", "25k")
+        - package: FPGA package (e.g., "tq144", "CABGA256")
+        - Constraint files: PCF for ice40, LPF for ecp5
     """
 
     def __init__(self):
@@ -47,5 +49,9 @@ class NextpnrBackend(BaseBackend):
         # Contribute ice40 PnR pass if ice40 bitstream is needed
         if "ice40-asc" in output_types:
             passes.append(NextpnrIce40Pass(config, project_config, gbs_config))
+
+        # Contribute ecp5 PnR pass if ecp5 config is needed
+        if "ecp5-config" in output_types:
+            passes.append(NextpnrEcp5Pass(config, project_config, gbs_config))
 
         return passes

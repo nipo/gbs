@@ -75,3 +75,21 @@ class YosysIce40Pass(YosysBasePass):
     output_types = {"ice40-netlist-json"}
     synth_target = "synth_ice40"
     extra_filter_vars = {"hwdep": "lattice-ice40"}
+
+
+class YosysEcp5Pass(YosysBasePass):
+    """Pass that synthesizes VHDL to ECP5 netlist using Yosys
+
+    This pass takes GHDL library intermediates (.cf files) and:
+    - Reads the design using the GHDL plugin
+    - Applies user-defined transformation steps
+    - Runs synth_ecp5
+    - Outputs JSON netlist
+
+    Input types: ghdl-cf
+    Output types: ecp5-netlist-json
+    """
+    name = "yosys-ecp5"
+    output_types = {"ecp5-netlist-json"}
+    synth_target = "synth_ecp5"
+    extra_filter_vars = {"hwdep": "lattice-ecp5"}

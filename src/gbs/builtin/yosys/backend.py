@@ -5,7 +5,7 @@ from typing import Any
 
 from ...base import BaseBackend
 from ...base import BasePass
-from .passes import YosysIce40Pass
+from .passes import YosysIce40Pass, YosysEcp5Pass
 
 
 class YosysBackend(BaseBackend):
@@ -14,6 +14,7 @@ class YosysBackend(BaseBackend):
     Provides synthesis passes for various FPGA targets using Yosys.
     Currently supports:
     - Ice40 (via synth_ice40)
+    - ECP5 (via synth_ecp5)
 
     Configuration options:
         - yosys_tool: Tool identifier for lookup (default: "yosys")
@@ -46,5 +47,9 @@ class YosysBackend(BaseBackend):
         # Contribute ice40 synthesis pass if ice40 netlist is needed
         if "ice40-netlist-json" in output_types:
             passes.append(YosysIce40Pass(config, project_config, gbs_config))
+
+        # Contribute ecp5 synthesis pass if ecp5 netlist is needed
+        if "ecp5-netlist-json" in output_types:
+            passes.append(YosysEcp5Pass(config, project_config, gbs_config))
 
         return passes

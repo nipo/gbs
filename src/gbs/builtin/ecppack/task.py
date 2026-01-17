@@ -1,7 +1,6 @@
-"""nextpnr place-and-route tasks"""
+"""ecppack bitstream generation tasks"""
 
 from __future__ import annotations
-from pathlib import Path
 import re
 
 from ...build.task import Task, BuildError
@@ -9,10 +8,10 @@ from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
 
 
-class NextpnrInvocation(MessageSubprocess):
-    """Message parser for nextpnr output"""
+class EcppackInvocation(MessageSubprocess):
+    """Message parser for ecppack output"""
 
-    # nextpnr message format: "Level: message"
+    # ecppack message format: "Level: message"
     msg_pattern = re.compile(r'^(?P<level>Info|Warning|Error|Fatal):\s+(?P<message>.*)$')
 
     level_map = {
@@ -23,7 +22,7 @@ class NextpnrInvocation(MessageSubprocess):
     }
 
     async def stderr_transform(self, lines):
-        """Parse nextpnr stderr output into ToolMessage objects"""
+        """Parse ecppack stderr output into ToolMessage objects"""
         async for line in lines:
             match = self.msg_pattern.match(line)
             if match:
@@ -42,8 +41,8 @@ class NextpnrInvocation(MessageSubprocess):
                 )
 
 
-class PlaceAndRoute(Task):
-    """nextpnr place-and-route task"""
+class Pack(Task):
+    """ecppack bitstream generation task"""
 
     def __init__(
         self,
@@ -54,49 +53,38 @@ class PlaceAndRoute(Task):
         topcell = dispatcher.context.get_topcell()
         super().__init__(
             dispatcher=dispatcher,
-            name=f"nextpnr_pnr_{topcell}",
+            name=f"ecppack_{topcell}",
             inputs=inputs,
             outputs=outputs,
-            description=f"nextpnr place-and-route {topcell}",
+            description=f"ecppack {topcell}",
         )
 
     async def work(self) -> None:
-        """Execute nextpnr place-and-route"""
+        """Execute ecppack to generate binary bitstream"""
         # Ensure output directory exists
         output, = self.outputs
         output_path = output.path
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        tc = self.dispatcher.target_config
+        # Get input config
+        input, = self.inputs
+        config_path = input.path
 
-        # Get input netlist
-        netlist_rsrc, = self.inputs_of_type(tc.netlist_type)
+        self.info(f"Generating binary bitstream: {output_path.name}")
 
-        # Build nextpnr command
-        topcell = self.dispatcher.context.get_topcell()
-        cmd = [
-            self.dispatcher._get_nextpnr_executable(),
-            f"--{self.dispatcher.part}",
-            "--package", self.dispatcher.package,
-            "--json", str(netlist_rsrc.path),
-            tc.output_flag, str(output_path),
-            "--top", topcell,
-        ]
-
-        # Add constraint files if provided
-        constraints = self.inputs_of_type(tc.constraint_type)
-        for constraint_res in constraints:
-            cmd.extend([tc.constraint_flag, str(constraint_res.path)])
-        if not constraints:
-            cmd.append("--pcf-allow-unconstrained")
-
-        # Run nextpnr
-        process = NextpnrInvocation(argv=cmd)
+        # Run ecppack
+        process = EcppackInvocation(argv=[
+            self.dispatcher._get_ecppack_executable(),
+            "--input", str(config_path),
+            "--bit", str(output_path),
+        ])
 
         async for msg in process:
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise BuildError(f"nextpnr failed with exit code {process.returncode}")
+            # ecppack may create an empty file in case of error... delete it.
+            output_path.unlink(missing_ok=True)
+            raise BuildError(f"ecppack failed with exit code {process.returncode}")
 
-        self.info("Place-and-route complete")
+        self.info("Bitstream generation complete")

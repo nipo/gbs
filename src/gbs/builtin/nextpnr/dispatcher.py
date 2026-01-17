@@ -1,6 +1,7 @@
 """nextpnr Dispatcher - FPGA place-and-route"""
 
 from __future__ import annotations
+from dataclasses import dataclass
 from pathlib import Path
 
 from ...utils import expand_path
@@ -10,22 +11,62 @@ from ...build.task import ResourceTypology
 from . import task
 
 
+@dataclass
+class NextpnrTargetConfig:
+    """Configuration for a specific nextpnr target"""
+    name: str                    # Target name (e.g., "ice40", "ecp5")
+    default_executable: str      # Default executable name
+    netlist_type: str            # Input netlist file type
+    output_type: str             # Output file type
+    output_extension: str        # Output file extension
+    output_flag: str             # Command-line flag for output file
+    constraint_type: str         # Constraint file type
+    constraint_flag: str         # Command-line flag for constraint file
+
+
+# Target configurations
+NEXTPNR_TARGETS = {
+    "ice40": NextpnrTargetConfig(
+        name="ice40",
+        default_executable="nextpnr-ice40",
+        netlist_type="ice40-netlist-json",
+        output_type="ice40-asc",
+        output_extension=".asc",
+        output_flag="--asc",
+        constraint_type="ice40-pcf",
+        constraint_flag="--pcf",
+    ),
+    "ecp5": NextpnrTargetConfig(
+        name="ecp5",
+        default_executable="nextpnr-ecp5",
+        netlist_type="ecp5-netlist-json",
+        output_type="ecp5-config",
+        output_extension=".config",
+        output_flag="--textcfg",
+        constraint_type="ecp5-lpf",
+        constraint_flag="--lpf",
+    ),
+}
+
+
 class NextpnrDispatcher(BaseDispatcher):
     """nextpnr place-and-route dispatcher
 
     This dispatcher takes a JSON netlist and:
     1. Runs nextpnr to place and route the design
-    2. Generates ASCII bitstream (.asc)
+    2. Generates target-specific output (ASC for ice40, config for ecp5)
     """
 
     def __init__(
             self,
             context: BuildContext,
-            nextpnr_tool: str = "nextpnr-ice40",
+            target: str,
+            nextpnr_tool: str,
             part: str = "",
             package: str = "",
     ):
-        super().__init__(context, "nextpnr-ice40", tool_name=nextpnr_tool)
+        self.target_config = NEXTPNR_TARGETS[target]
+        super().__init__(context, f"nextpnr-{target}", tool_name=nextpnr_tool)
         self.nextpnr_tool = nextpnr_tool
         self.part = part
         self.package = package
@@ -41,9 +82,9 @@ class NextpnrDispatcher(BaseDispatcher):
         if self._nextpnr_executable is None:
             tool_config = self.context.get_tool(self.nextpnr_tool, required=False)
             if tool_config:
-                executable = tool_config.get("executable", "nextpnr-ice40")
+                executable = tool_config.get("executable", self.target_config.default_executable)
             else:
-                executable = "nextpnr-ice40"
+                executable = self.target_config.default_executable
             self._nextpnr_executable = str(expand_path(executable))
             self.debug(f"Using nextpnr executable: {self._nextpnr_executable}")
 
@@ -51,10 +92,12 @@ class NextpnrDispatcher(BaseDispatcher):
 
     async def process(self) -> None:
         """Run place-and-route using nextpnr"""
+        tc = self.target_config
+
         # Create PnR task if possible
         if not self._pnr_task:
             # Find the JSON netlist input
-            netlist_resources = list(self.context.filter_pending(file_type=["ice40-netlist-json"]))
+            netlist_resources = list(self.context.filter_pending(file_type=[tc.netlist_type]))
 
             if not netlist_resources:
                 # No netlist yet, wait for next process() call
@@ -67,26 +110,25 @@ class NextpnrDispatcher(BaseDispatcher):
             topcell = self.context.get_topcell()
             topcell_library = self.context.get_topcell_library()
 
-            # Create output ASC file
-            asc_path = self.context.output_path / f"{topcell}.asc"
-            asc_resource = self.context.get_resource(
-                asc_path,
-                file_type="ice40-asc",
+            # Create output file
+            output_path = self.context.output_path / f"{topcell}{tc.output_extension}"
+            output_resource = self.context.get_resource(
+                output_path,
+                file_type=tc.output_type,
                 library=topcell_library,
                 typology=ResourceTypology.INTERMEDIATE,
                 generated_by=self.name,
             )
-            # Add ASC to pending queue
 
             # Create PnR task with netlist only initially
             self._pnr_task = task.PlaceAndRoute(
                 dispatcher=self,
                 inputs=[netlist_resource],
-                outputs=[asc_resource],
+                outputs=[output_resource],
             )
 
-        # On every process() call, check for new PCF files
-        pcf_resources = list(self.context.filter_pending(file_type=["ice40-pcf"]))
-        for pcf_resource in pcf_resources:
-            self.info(f"Adding PCF constraint: {pcf_resource.path.name}")
-            self._pnr_task.add_input(pcf_resource)
+        # On every process() call, check for new constraint files
+        constraint_resources = list(self.context.filter_pending(file_type=[tc.constraint_type]))
+        for constraint_resource in constraint_resources:
+            self.info(f"Adding constraint: {constraint_resource.path.name}")
+            self._pnr_task.add_input(constraint_resource)
