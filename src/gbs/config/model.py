@@ -13,6 +13,7 @@ from typing import Any, Optional
 import yaml
 
 from ..logging import get_logger
+from ..utils import expand_path
 
 logger = get_logger(__name__)
 
@@ -169,8 +170,20 @@ class GBSConfig:
                 config=tool_data.get('config', {})
             ))
 
-        # Parse repositories
-        repositories = data.get('repositories', [])
+        # Parse repositories - resolve relative paths now using config file's directory
+        config_dir = path.parent
+        repositories = []
+        for repo_spec in data.get('repositories', []):
+            if not isinstance(repo_spec, dict) or 'path' not in repo_spec:
+                logger.warning(f"Invalid repository spec in {path}, skipping: {repo_spec}")
+                continue
+            # Make a copy to avoid mutating the original
+            repo_spec = dict(repo_spec)
+            repo_path = expand_path(repo_spec['path'])
+            if not repo_path.is_absolute():
+                repo_path = (config_dir / repo_path).resolve()
+            repo_spec['path'] = str(repo_path)
+            repositories.append(repo_spec)
 
         # Parse max_parallel
         max_parallel = data.get('max_parallel')
