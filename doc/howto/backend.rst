@@ -18,7 +18,8 @@ Passes
 Passes are queried to backends by the build planner. Planner starts
 from user-requested output file type. In turn, passes define what they
 need in terms of inputs to be able to work.  Planner is responsible
-for finding its way between the user-provided inputs and outputs.
+for finding its way between the user-provided inputs and outputs file
+types.
 
 When contributing passes, backend code can evaluate backend
 configuration and project configuration.
@@ -26,8 +27,8 @@ configuration and project configuration.
 A backend must not return a pass that is not able to produce any of
 the output types requested.
 
-One the pass is kept for final build, it may contribute filter_vars
-for source enumeration or dispatchers.
+All passes kept for final build may contribute filter_vars for source
+enumeration or dispatchers.
 
 Dispatcher
 ==========
@@ -66,7 +67,8 @@ Usual pattern is:
 * keep track internally for per-something tasks that are not linked
   exactly to a file (libraries for instance).
 
-Dispatcher code must not create anything in the filesystem.
+Dispatcher code must not create anything in the filesystem at the time
+Task objects are created from process().
 
 Tasks
 =====

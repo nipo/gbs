@@ -1,23 +1,24 @@
 # GBS: Gateware Build System
 
-A build system for gateware projects targeting FPGAs and ASICs.
+A build system for gateware projects targeting FPGAs.
 
 ## Overview
 
-GBS provides a flexible, extensible build infrastructure for hardware description language (HDL) projects. It supports:
+GBS provides a flexible, extensible build infrastructure for hardware
+description language (HDL) projects. It supports:
 
 - **Configuration System**: User and tree-level configs with profiles for reusable setups
 - **Multiple repositories and libraries**: Organize code into logical units
 - **Dependency management**: Topological sorting ensures correct build order
 - **Conditional source filtering**: Target-specific code selection
-- **Pluggable backend architecture**: Support for different toolchains (GHDL, Vivado, etc.)
+- **Pluggable backend architecture**: Support for different toolchains, can add support for custom backends as plugins
 - **Tool management**: Multiple installations with variant support
-- **Asyncio-based execution**: Parallel builds for faster compilation
+- **Asyncio-based execution**: Parallel builds when possible
 
 ## Installation
 
 ```bash
-pip install -e .
+pip install .
 ```
 
 For development:
@@ -32,10 +33,10 @@ pip install -e ".[dev]"
 
 ```bash
 # Build a project
-gbs build project.gbs.yaml
+gbs project build project.gbs.yaml
 
 # Clean build artifacts
-gbs clean
+gbs project clean
 
 # Show project configuration
 gbs project show project.gbs.yaml
@@ -86,20 +87,8 @@ See [`doc/examples/`](doc/examples/) for more configuration examples.
 
 See the `doc/` directory for detailed documentation:
 
-- [GBS Overview](doc/gbs_overview.md) - Project goals and architecture
-- [Configuration System](doc/plan/configuration_system.md) - Complete configuration guide
-- [Configuration Examples](doc/examples/) - Example configs for common scenarios
-- [Implementation Plan](doc/plan/implementation_plan.md) - Development roadmap
-- [Filter Design](doc/plan/filter_design.md) - Conditional filtering design
-
-### Key Features
-
-**Configuration System**:
-- User-wide configs (`~/.config/gbs.yaml`) for tool paths and reusable profiles
-- Tree-level configs (`.gbs.yaml`) for project-specific settings
-- Profiles for quick setup of common configurations (simulation, synthesis, etc.)
-- Tool variants for managing multiple installations (e.g., `ghdl:llvm`, `ghdl:gcc`)
-- Automatic repository merging from multiple sources
+- [GBS Overview](doc/overview.rst) - Project goals and architecture
+- [Configuration System](doc/design/configuration.rst) - Complete configuration guide
 
 ## Requirements
 
@@ -107,7 +96,7 @@ See the `doc/` directory for detailed documentation:
 
 ## Development Status
 
-⚠️ **Alpha** - This project is in early development. API stability is not guaranteed.
+YMMV
 
 ## License
 

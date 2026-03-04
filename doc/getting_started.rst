@@ -87,13 +87,9 @@ Create a simple VHDL project with a testbench that prints "Hello World".
    output:
      - name: simulation
        topcell: top
-       filter_vars: {}
-       backend_config:
-         gbs.builtin.ghdl:
-           vhdl_standard: "1993"
        outputs:
          - type: ghdl-simulator
-           path: build/top
+           path: simulator.exe
 
 4. Build and run:
 
@@ -102,7 +98,7 @@ Create a simple VHDL project with a testbench that prints "Hello World".
    gbs project build project.gbs.yaml
 
    # Run the simulation
-   ./build/top
+   ./simulator.exe
 
    # Output: Hello World!
 
@@ -134,7 +130,7 @@ configuration:
 
    repositories:
      - path: /path/to/external/lib
-       loader: gbs.plugin.nsl.tree
+       loader: nsl-tree
 
 2. Reference library partitions in your project:
 
@@ -143,7 +139,7 @@ configuration:
    root:
      name: top
      deps:
-       - nsl_data.text         # External library partition
+       - nsl_data.text
        - nsl_simulation.assertions
      sources:
        - file_type: vhdl

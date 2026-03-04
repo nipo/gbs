@@ -104,7 +104,7 @@ DEFAULT_MAX_LOG_COUNT = 10
 async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):
     """GBS: Gateware Build System
 
-    A build system for FPGA and ASIC gateware projects.
+    A build system for gateware projects.
     """
     # Change directory if -C specified
     import os

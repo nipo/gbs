@@ -156,6 +156,9 @@ Remove build artifacts.
 Repository Commands
 -------------------
 
+This set of commands is used for inspecting gbs builtin repository
+metadata and definition format.
+
 gbs repo list
 ~~~~~~~~~~~~~
 
@@ -174,11 +177,11 @@ List contents of a repository.
 
 .. code-block:: bash
 
-   gbs repo list /path/to/nsl
+   gbs repo list /path/to/my_lib/repository.gbs.yaml
 
    # Output:
-   # Repository: nsl
-   # Root: /path/to/nsl
+   # Repository: my_lib
+   # Root: /path/to/my_lib
    #
    # Libraries (42):
    #   nsl_data
@@ -206,7 +209,7 @@ Checks for:
 
 .. code-block:: bash
 
-   gbs repo validate /path/to/my_lib
+   gbs repo validate /path/to/my_lib/repository.gbs.yaml
 
    # Output:
    # Repository: my_lib
@@ -214,51 +217,6 @@ Checks for:
    # Partitions: 12
    #
    # ✓ Repository is valid
-
-gbs repo query
-~~~~~~~~~~~~~~
-
-Query dependency traversal with filter variables.
-
-.. code-block:: bash
-
-   gbs repo query PATH -p PARTITION [-f VAR=VALUE]...
-
-**Arguments:**
-
-``PATH``
-    Repository path.
-
-``-p, --partition PARTITION``
-    Starting partition (format: ``library.partition``).
-
-``-f, --filter VAR=VALUE``
-    Filter variable (can be repeated).
-
-**Example:**
-
-.. code-block:: bash
-
-   gbs repo query /path/to/nsl -p nsl_data.text -f vendor=xilinx
-
-   # Output:
-   # Query: nsl_data.text
-   # Filters: {'vendor': 'xilinx'}
-   #
-   # Dependency tree (4 partitions):
-   #
-   #   nsl_data.bytestream
-   #     Sources: 3 files
-   #
-   #   nsl_data.crc
-   #     Sources: 2 files
-   #     Depends on: nsl_data.bytestream
-   #
-   # → nsl_data.text
-   #     Sources: 4 files
-   #     Depends on: nsl_data.bytestream, nsl_data.crc
-   #
-   # Build order: nsl_data.bytestream → nsl_data.crc → nsl_data.text
 
 Project File Discovery
 ----------------------
