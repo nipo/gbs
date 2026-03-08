@@ -10,7 +10,6 @@ import shutil
 from pathlib import Path
 
 from ...build.task import Task, Resource
-from ...build.context import BuildContext
 
 
 def _gzip_file(source_path: Path, dest_path: Path) -> None:
@@ -35,17 +34,10 @@ class GzipTask(Task):
 
     def __init__(
         self,
-        context: BuildContext,
+        dispatcher,
         source: Resource,
         destination: Resource,
     ):
-        """Initialize gzip task.
-
-        Args:
-            context: Build context
-            source: Source file resource
-            destination: Destination file resource (compressed)
-        """
         super().__init__(
             dispatcher=dispatcher,
             name=f"gzip:{destination.path.name}",
