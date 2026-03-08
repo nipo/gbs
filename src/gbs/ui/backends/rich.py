@@ -6,6 +6,7 @@ is not available.
 """
 
 from __future__ import annotations
+import atexit
 import sys
 from typing import TextIO, Optional, Dict
 from pathlib import Path
@@ -98,6 +99,16 @@ class RichBackend(FeedbackBackend):
         self._progress_transient: Dict[str, bool] = {}  # task_id -> is_transient
         self._progress_started = False
 
+        # Register atexit handler to restore terminal state (cursor visibility)
+        # in case of abnormal exit while progress bars are active
+        atexit.register(self._restore_terminal)
+
+    def _restore_terminal(self):
+        """Restore terminal state (show cursor) on exit"""
+        if self._progress_started:
+            self.progress.stop()
+            self._progress_started = False
+
     async def start(self):
         """Initialize backend"""
         pass
@@ -107,6 +118,7 @@ class RichBackend(FeedbackBackend):
         if self._progress_started:
             self.progress.stop()
             self._progress_started = False
+        atexit.unregister(self._restore_terminal)
 
     async def render(self, msg):
         """Render a message with Rich formatting
