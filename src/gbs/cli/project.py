@@ -142,3 +142,56 @@ async def show(ctx, diagram: Path | None):
         logger.exception("Build failed")
         click.echo(f"Build failed: {e}", err=True)
         sys.exit(1)
+
+
+@project.command()
+@click.option(
+    "--format", "fmt",
+    type=click.Choice(["yaml", "json"]),
+    default="yaml",
+    help="Output format (default: yaml)"
+)
+@click.pass_context
+async def outputs(ctx, fmt: str):
+    """List output files, types, and required backends"""
+    project_file = get_project_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
+
+    proj = await _project_load(project_file, gbs_config)
+
+    # Run planner to determine which backends are needed per output group
+    from ..plugins import get_plugin_registry
+    from ..planner.planner import BuildPlanner
+
+    plugin_registry = get_plugin_registry()
+    backends = plugin_registry.get_all_backends()
+
+    planner = BuildPlanner(
+        proj.repositories,
+        backends,
+        proj.model.raw_config,
+        proj.gbs_config,
+        root_partition_template=proj.model.root_partition_template,
+    )
+
+    data = []
+    for og in proj.model.output_groups:
+        plan = planner.plan(og)
+        backend_names = sorted({pm.backend_name for pm in plan.passes})
+
+        data.append({
+            "group": og.name,
+            "topcell": og.topcell,
+            "backends": backend_names,
+            "outputs": [
+                {"type": of.type, "path": str(of.path)}
+                for of in og.outputs
+            ],
+        })
+
+    if fmt == "json":
+        import json
+        click.echo(json.dumps(data, indent=2))
+    else:
+        import yaml
+        click.echo(yaml.dump(data, default_flow_style=False), nl=False)
