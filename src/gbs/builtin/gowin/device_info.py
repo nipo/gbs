@@ -107,7 +107,7 @@ def get_device_info(gowin_path: Path, device: str) -> DeviceInfo:
                 matching.append(dev)
                 
     if len(matching) < 1:
-        raise ValueError("Bad part number {device}")
+        raise ValueError(f"Bad part number {device}")
 
     if len(matching) > 1:
         raise ValueError(f"Ambiguous part number {device}, use {device}#<revision>")
