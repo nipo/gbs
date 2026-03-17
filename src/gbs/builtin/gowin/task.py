@@ -9,6 +9,7 @@ from ...build.context import BuildContext
 from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
 from ...build import tcl
 from ...utils import expand_path
+from ...report_aggregator import ReportPage, aggregate_html
 from .gw_sh import *
 from ...build.subprocess import MessageSubprocess
 
@@ -341,3 +342,89 @@ class SerDesToCsr(Task):
             raise RuntimeError(f"failed with return code {process.returncode}")
 
         self.info("complete")
+
+
+class AggregateSynthesisReport(Task):
+    """Aggregate Gowin synthesis HTML reports into a single file."""
+
+    # Synthesis reports relative to output_path/impl/gwsynthesis/
+    REPORT_FILES = [
+        "project_syn.rpt.html",
+        "project_syn_resource.html",
+    ]
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        output_base_name: str,
+        build_dir: Path,
+        inputs: list,
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name="gowin_synthesis_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="Aggregate Gowin synthesis reports",
+        )
+        self.build_dir = build_dir
+        self.output_base_name = output_base_name
+
+    async def work(self) -> None:
+        syn_dir = self.build_dir / "impl" / "gwsynthesis"
+        pages = []
+        for filename in self.REPORT_FILES:
+            path = syn_dir / filename.replace("project", self.output_base_name)
+            if path.exists():
+                pages.append(ReportPage.from_file(path))
+            else:
+                self.warning(f"Synthesis report not found: {path}")
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_html(pages, title="Gowin Synthesis Report"))
+        self.info(f"Aggregated {len(pages)} synthesis reports to {output.path}")
+
+
+class AggregatePnrReport(Task):
+    """Aggregate Gowin PnR HTML reports into a single file."""
+
+    # PnR reports relative to output_path/impl/pnr/
+    REPORT_FILES = [
+        "project.rpt.html",
+        "project.pin.html",
+        "project.power.html",
+        "project_tr_content.html",
+    ]
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        output_base_name: str,
+        build_dir: Path,
+        inputs: list,
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name="gowin_pnr_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="Aggregate Gowin PnR reports",
+        )
+        self.build_dir = build_dir
+        self.output_base_name = output_base_name
+
+    async def work(self) -> None:
+        pnr_dir = self.build_dir / "impl" / "pnr"
+        pages = []
+        for filename in self.REPORT_FILES:
+            path = pnr_dir / filename.replace("project", self.output_base_name)
+            if path.exists():
+                pages.append(ReportPage.from_file(path))
+            else:
+                self.warning(f"PnR report not found: {path}")
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_html(pages, title="Gowin PnR Report"))
+        self.info(f"Aggregated {len(pages)} PnR reports to {output.path}")

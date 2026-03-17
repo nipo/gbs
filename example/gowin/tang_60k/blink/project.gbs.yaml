@@ -28,4 +28,8 @@ output:
         part: GW5AT-LV60PG484AC1/I0
     outputs:
       - type: gowin-fs
-        path: build/blink.fs
+        path: blink.fs
+      - type: gowin-synthesis-report
+        path: synthesis-report.html
+      - type: gowin-pnr-report
+        path: pnr-report.html

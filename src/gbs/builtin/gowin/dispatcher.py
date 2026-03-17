@@ -308,6 +308,29 @@ class GowinDispatcher(BaseDispatcher):
             outputs=[bitstream_resource, bitstream_bin_resource]
         )
 
+        # Create report aggregation tasks for any requested report outputs
+        syn_report_outputs = list(self.context.filter_pending(file_type="gowin-synthesis-report"))
+        if syn_report_outputs:
+            for dest in syn_report_outputs:
+                task.AggregateSynthesisReport(
+                    dispatcher=self,
+                    output_base_name=output_base_name,
+                    build_dir=self.context.output_path,
+                    inputs=[netlist_resource],  # synthesis must complete first
+                    outputs=[dest],
+                )
+
+        pnr_report_outputs = list(self.context.filter_pending(file_type="gowin-pnr-report"))
+        if pnr_report_outputs:
+            for dest in pnr_report_outputs:
+                task.AggregatePnrReport(
+                    dispatcher=self,
+                    output_base_name=output_base_name,
+                    build_dir=self.context.output_path,
+                    inputs=[bitstream_resource],  # PnR must complete first
+                    outputs=[dest],
+                )
+
         # Add bitstreams to pending queue
 
     async def _update_constraint_inputs(self) -> None:
