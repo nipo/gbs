@@ -72,7 +72,7 @@ class NextpnrIce40Pass(NextpnrBasePass):
     target = "ice40"
     default_tool = "nextpnr-ice40"
     input_types = {"ice40-netlist-json", "ice40-pcf"}
-    output_types = {"ice40-asc"}
+    output_types = {"ice40-asc", "nextpnr-pnr-report"}
 
 
 class NextpnrEcp5Pass(NextpnrBasePass):
@@ -90,4 +90,4 @@ class NextpnrEcp5Pass(NextpnrBasePass):
     target = "ecp5"
     default_tool = "nextpnr-ecp5"
     input_types = {"ecp5-netlist-json", "ecp5-lpf"}
-    output_types = {"ecp5-config"}
+    output_types = {"ecp5-config", "nextpnr-pnr-report"}

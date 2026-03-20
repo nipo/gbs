@@ -72,7 +72,7 @@ class YosysIce40Pass(YosysBasePass):
     Output types: ice40-netlist-json
     """
     name = "yosys-ice40"
-    output_types = {"ice40-netlist-json"}
+    output_types = {"ice40-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_ice40"
     extra_filter_vars = {"hwdep": "lattice-ice40"}
 
@@ -90,6 +90,6 @@ class YosysEcp5Pass(YosysBasePass):
     Output types: ecp5-netlist-json
     """
     name = "yosys-ecp5"
-    output_types = {"ecp5-netlist-json"}
+    output_types = {"ecp5-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_ecp5"
     extra_filter_vars = {"hwdep": "lattice-ecp5"}

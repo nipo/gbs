@@ -4,9 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
-from ...build.task import Task, BuildError
+from ...build.task import Task, Resource, BuildError
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
+from ...report_aggregator import TextReport, aggregate_text
 
 
 class NextpnrInvocation(MessageSubprocess):
@@ -63,7 +64,8 @@ class PlaceAndRoute(Task):
     async def work(self) -> None:
         """Execute nextpnr place-and-route"""
         # Ensure output directory exists
-        output, = self.outputs
+        pnr_outputs = self.outputs_of_type(self.dispatcher.target_config.output_type)
+        output = pnr_outputs[0]
         output_path = output.path
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -83,6 +85,11 @@ class PlaceAndRoute(Task):
             "--top", topcell,
         ]
 
+        # Always generate log file
+        log_outputs = self.outputs_of_type("nextpnr-log")
+        if log_outputs:
+            cmd.extend(["--log", str(log_outputs[0].path)])
+
         # Add constraint files if provided
         constraints = self.inputs_of_type(tc.constraint_type)
         for constraint_res in constraints:
@@ -100,3 +107,30 @@ class PlaceAndRoute(Task):
             raise BuildError(f"nextpnr failed with exit code {process.returncode}")
 
         self.info("Place-and-route complete")
+
+
+class AggregatePnrReport(Task):
+    """Aggregate nextpnr PnR log into a single tabbed HTML file."""
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list[Resource],
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name="nextpnr_pnr_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="Aggregate nextpnr PnR report",
+        )
+
+    async def work(self) -> None:
+        tabs = []
+        for rsrc in self.inputs:
+            tabs.append(TextReport.from_file(rsrc.path, title="Place & Route"))
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_text(tabs, title="nextpnr PnR Report"))
+        self.info(f"Aggregated PnR report to {output.path}")

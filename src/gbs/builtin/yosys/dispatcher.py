@@ -100,11 +100,46 @@ class YosysDispatcher(BaseDispatcher):
                                               inputs = [self.vhdl_ingress_stamp],
                                               outputs = [self.synthesize_stamp])
 
+            # Always generate stat and ltp reports after synthesis
+            stat_resource = self.context.get_resource(
+                self.context.output_path / "stat.txt",
+                file_type="yosys-stat",
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
+            task.CaptureCommandTask(self,
+                name="yosys_stat",
+                command=["stat"],
+                inputs=[self.synthesize_stamp],
+                outputs=[stat_resource],
+                description="Yosys Statistics")
+
+            ltp_resource = self.context.get_resource(
+                self.context.output_path / "ltp.txt",
+                file_type="yosys-ltp",
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
+            task.CaptureCommandTask(self,
+                name="yosys_ltp",
+                command=["ltp"],
+                inputs=[self.synthesize_stamp],
+                outputs=[ltp_resource],
+                description="Yosys Longest Path")
+
+            # Aggregate on demand
+            for dest in self.context.filter_pending(file_type="yosys-synthesis-report"):
+                task.AggregateSynthesisReport(
+                    dispatcher=self,
+                    inputs=[stat_resource, ltp_resource],
+                    outputs=[dest],
+                )
+
         if self.write_netlist is None:
             self.write_netlist = task.WriteNetlist(self,
                                                    inputs = [self.synthesize_stamp],
                                                    outputs = [self.output_rsrc])
-            
+
         if not self.intermediate:
             prev = self.vhdl_ingress_stamp
             for i, step in enumerate(self.steps):

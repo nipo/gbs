@@ -120,12 +120,28 @@ class NextpnrDispatcher(BaseDispatcher):
                 generated_by=self.name,
             )
 
+            # Always generate log file as intermediate resource
+            log_resource = self.context.get_resource(
+                self.context.output_path / "pnr.log",
+                file_type="nextpnr-log",
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
+
             # Create PnR task with netlist only initially
             self._pnr_task = task.PlaceAndRoute(
                 dispatcher=self,
                 inputs=[netlist_resource],
-                outputs=[output_resource],
+                outputs=[output_resource, log_resource],
             )
+
+            # Aggregate on demand
+            for dest in self.context.filter_pending(file_type="nextpnr-pnr-report"):
+                task.AggregatePnrReport(
+                    dispatcher=self,
+                    inputs=[log_resource],
+                    outputs=[dest],
+                )
 
         # On every process() call, check for new constraint files
         constraint_resources = list(self.context.filter_pending(file_type=[tc.constraint_type]))
