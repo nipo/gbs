@@ -22,3 +22,7 @@ output:
     outputs:
       - type: vivado-bitstream
         path: blink.bit
+      - type: vivado-synthesis-report
+        path: synthesis-report.html
+      - type: vivado-pnr-report
+        path: pnr-report.html

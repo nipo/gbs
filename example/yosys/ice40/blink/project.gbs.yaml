@@ -33,4 +33,7 @@ output:
     outputs:
       - type: ice40-bitstream
         path: blink.bin
-
+      - type: yosys-synthesis-report
+        path: synthesis-report.html
+      - type: nextpnr-pnr-report
+        path: pnr-report.html

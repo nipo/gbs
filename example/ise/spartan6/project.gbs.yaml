@@ -22,3 +22,7 @@ output:
     outputs:
       - type: ise-bitstream
         path: blink.bit
+      - type: ise-synthesis-report
+        path: synthesis-report.html
+      - type: ise-pnr-report
+        path: pnr-report.html
