@@ -24,7 +24,8 @@ class IseSynthesizePass(BasePass):
     """
     name = "ise-synthesize"
     input_types = {"vhdl", "verilog", "xilinx-ucf"}
-    output_types = {"ise-bitstream", "ise-timing-report", "ise-netlist"}
+    output_types = {"ise-bitstream", "ise-timing-report", "ise-netlist",
+                     "ise-synthesis-report", "ise-pnr-report"}
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for ISE synthesis

@@ -7,9 +7,10 @@ import re
 from pathlib import Path
 
 from ...build.context import BuildContext
-from ...build.task import Task
+from ...build.task import Task, Resource
 from ...ui.messages import MessageSeverity, ToolMessage
 from ...build.subprocess import MessageSubprocess
+from ...report_aggregator import TextReport, HtmlFragment, aggregate_text, csv_to_html_table
 
 class IseSubprocess(MessageSubprocess):
     def __init__(self,
@@ -474,3 +475,51 @@ class Bitgen(IseTask):
         output_dir = out_bit.path.parent
         output_dir.mkdir(parents=True, exist_ok=True)
         await self.run_command(cmd, output_dir)
+
+
+class AggregateReport(Task):
+    """Aggregate ISE report resources into a single tabbed HTML file.
+
+    Tab titles and rendering are determined by each input resource's file_type.
+    CSV reports (ise-par-pad-csv) are rendered as HTML tables; others as <pre>.
+    """
+
+    TAB_TITLES = {
+        "ise-xst-log": "Synthesis",
+        "ise-map-report": "Mapping",
+        "ise-par-log": "Place&Route",
+        "ise-par-pad-csv": "Pads",
+        "ise-timing-report": "Timing",
+    }
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        name: str,
+        title: str,
+        inputs: list[Resource],
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name=name,
+            inputs=inputs,
+            outputs=outputs,
+            description=f"Aggregate {title}",
+        )
+        self.title = title
+
+    async def work(self) -> None:
+        tabs = []
+        for rsrc in self.inputs:
+            tab_title = self.TAB_TITLES.get(rsrc.file_type, rsrc.path.stem)
+            text = rsrc.path.read_text(errors="replace")
+
+            if rsrc.file_type == "ise-par-pad-csv":
+                tabs.append(HtmlFragment(title=tab_title, html=csv_to_html_table(text)))
+            else:
+                tabs.append(TextReport(title=tab_title, text=text))
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_text(tabs, title=self.title))
+        self.info(f"Aggregated {len(tabs)} reports to {output.path}")
