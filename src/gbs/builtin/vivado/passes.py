@@ -54,6 +54,8 @@ class VivadoSynthesizePass(BasePass):
         "vivado-netlist-edif",
         "vivado-drc-report",
         "vivado-bitstream",
+        "vivado-synthesis-report",
+        "vivado-pnr-report",
     }
 
     def filter_vars(self) -> dict[str, Any]:

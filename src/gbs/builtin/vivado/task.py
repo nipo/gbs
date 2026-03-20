@@ -10,8 +10,9 @@ from pathlib import Path
 from collections import defaultdict
 
 from ...build.context import BuildContext
-from ...build.task import Task
+from ...build.task import Task, Resource
 from ...build import tcl
+from ...report_aggregator import TextReport, aggregate_text
 from .vivado_tcl import Session, VivadoCommand
 
 
@@ -323,3 +324,72 @@ class NonProjectBuild(VivadoCommand):
             ]))
 
             self.info(f"Bitstream saved to: {rsrc.path}")
+
+
+class AggregateSynthesisReport(Task):
+    """Aggregate Vivado synthesis text reports into a single HTML file."""
+
+    REPORT_TYPES = ["vivado-usage-report"]
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list[Resource],
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name="vivado_synthesis_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="Aggregate Vivado synthesis reports",
+        )
+
+    async def work(self) -> None:
+        reports = []
+        for rsrc in self.inputs:
+            if rsrc.path.exists():
+                reports.append(TextReport.from_file(rsrc.path))
+            else:
+                self.warning(f"Report not found: {rsrc.path}")
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_text(reports, title="Vivado Synthesis Report"))
+        self.info(f"Aggregated {len(reports)} synthesis reports to {output.path}")
+
+
+class AggregatePnrReport(Task):
+    """Aggregate Vivado PnR text reports into a single HTML file."""
+
+    REPORT_TYPES = [
+        "vivado-routing-report",
+        "vivado-timing-report",
+        "vivado-power-report",
+        "vivado-drc-report",
+    ]
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list[Resource],
+        outputs: list[Resource],
+    ):
+        super().__init__(dispatcher,
+            name="vivado_pnr_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="Aggregate Vivado PnR reports",
+        )
+
+    async def work(self) -> None:
+        reports = []
+        for rsrc in self.inputs:
+            if rsrc.path.exists():
+                reports.append(TextReport.from_file(rsrc.path))
+            else:
+                self.warning(f"Report not found: {rsrc.path}")
+
+        output, = self.outputs
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+        output.path.write_text(aggregate_text(reports, title="Vivado PnR Report"))
+        self.info(f"Aggregated {len(reports)} PnR reports to {output.path}")

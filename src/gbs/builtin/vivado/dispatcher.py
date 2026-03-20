@@ -12,7 +12,7 @@ from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from ...utils import expand_path
-from .task import NonProjectBuild
+from .task import NonProjectBuild, AggregateSynthesisReport, AggregatePnrReport
 from .vivado_tcl import Session
 
 
@@ -136,6 +136,28 @@ class VivadoDispatcher(BaseDispatcher):
         )
 
         self.info(f"Created Vivado build task for part {part}")
+
+        # Create report aggregation tasks for any requested aggregate outputs
+        # Map intermediate report resources by type for lookup
+        intermediate_by_type = {r.file_type: r for r in outputs}
+
+        for dest in self.context.filter_pending(file_type="vivado-synthesis-report"):
+            inputs = [intermediate_by_type[t] for t in AggregateSynthesisReport.REPORT_TYPES
+                       if t in intermediate_by_type]
+            AggregateSynthesisReport(
+                dispatcher=self,
+                inputs=inputs,
+                outputs=[dest],
+            )
+
+        for dest in self.context.filter_pending(file_type="vivado-pnr-report"):
+            inputs = [intermediate_by_type[t] for t in AggregatePnrReport.REPORT_TYPES
+                       if t in intermediate_by_type]
+            AggregatePnrReport(
+                dispatcher=self,
+                inputs=inputs,
+                outputs=[dest],
+            )
 
     async def _attach_pending_inputs(self) -> None:
         """Attach any pending files of accepted types to the build task"""
