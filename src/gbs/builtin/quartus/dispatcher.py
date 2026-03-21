@@ -52,6 +52,8 @@ class QuartusDispatcher(BaseDispatcher):
 
         self._setup_task = None
         self._map_task = None
+        self._fit_task = None
+        self._sta_task = None
 
     def _get_quartus_bin(self) -> Path:
         """Get path to quartus bin directory"""
@@ -89,15 +91,33 @@ class QuartusDispatcher(BaseDispatcher):
         await self._sources_hookup()
 
     async def _sources_hookup(self) -> None:
-        """Attach pending HDL and constraint sources to tasks"""
-        for resource in self.context.filter_pending(file_type=["vhdl", "verilog"]):
-            self._setup_task.add_input(resource)
+        """Attach pending sources to the tasks that consume them.
 
-        for resource in self.context.filter_pending(file_type=["quartus-sdc"]):
-            self._setup_task.add_input(resource)
+        - HDL sources → quartus_map (reads the actual content)
+                       + project setup (lists paths in QSF, consume=False)
+        - Pin assignments → project setup (appended verbatim into QSF)
+        - SDC constraints → project setup (path listed in QSF, consume=False)
+                           + quartus_sta (reads actual content, consume=False)
+        """
+        existing_map = {r.path for r in self._map_task.inputs}
+        existing_setup = {r.path for r in self._setup_task.inputs}
+        existing_sta = {r.path for r in self._sta_task.inputs}
+
+        for resource in self.context.filter_pending(file_type=["vhdl", "verilog"]):
+            if resource.path not in existing_map:
+                self._map_task.add_input(resource)
+            if resource.path not in existing_setup:
+                self._setup_task.add_input(resource, consume=False)
 
         for resource in self.context.filter_pending(file_type=["quartus-pin-assignment"]):
-            self._setup_task.add_input(resource)
+            if resource.path not in existing_setup:
+                self._setup_task.add_input(resource)
+
+        for resource in self.context.filter_pending(file_type=["quartus-sdc"]):
+            if resource.path not in existing_setup:
+                self._setup_task.add_input(resource, consume=False)
+            if resource.path not in existing_sta:
+                self._sta_task.add_input(resource, consume=False)
 
     async def _task_graph_create(self) -> None:
         """Create all Quartus build tasks"""
@@ -154,7 +174,7 @@ class QuartusDispatcher(BaseDispatcher):
         )
 
         # Fitter
-        task.QuartusFit(
+        self._fit_task = task.QuartusFit(
             dispatcher=self,
             quartus_bin=quartus_bin,
             project_name=self.project_name,
@@ -163,7 +183,7 @@ class QuartusDispatcher(BaseDispatcher):
         )
 
         # Timing Analysis
-        task.QuartusSta(
+        self._sta_task = task.QuartusSta(
             dispatcher=self,
             quartus_bin=quartus_bin,
             project_name=self.project_name,
