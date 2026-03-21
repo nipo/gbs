@@ -134,6 +134,7 @@ class NextpnrDispatcher(BaseDispatcher):
                 inputs=[netlist_resource],
                 outputs=[output_resource, log_resource],
             )
+            self.attach_definition_dependencies(self._pnr_task)
 
             # Aggregate on demand
             for dest in self.context.filter_pending(file_type="nextpnr-pnr-report"):

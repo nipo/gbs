@@ -271,6 +271,7 @@ class GowinDispatcher(BaseDispatcher):
             inputs=init_inputs,
             outputs=[init_marker_resource],
         )
+        self.attach_definition_dependencies(init_task)
 
         # Create synthesis task
         synth_task = task.Synthesis(

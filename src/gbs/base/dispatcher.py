@@ -73,6 +73,16 @@ class BaseDispatcher(UIReporter, ABC):
         """
         return self.context.get_tool(self.tool_name, required=False)
 
+    def attach_definition_dependencies(self, task: 'Task') -> None:
+        """Attach all DEFINITION resources as non-consuming inputs to a task.
+
+        This makes the task re-run when any build definition file changes
+        (project file, GBS configs, repository definitions, config fingerprint).
+        """
+        from ..build.task import ResourceTypology
+        for resource in self.context.filter_pending(typology=ResourceTypology.DEFINITION):
+            task.add_input(resource, consume=False)
+
     @abstractmethod
     async def process(self) -> None:
         """Process the pending work queue

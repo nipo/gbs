@@ -135,6 +135,8 @@ class VivadoDispatcher(BaseDispatcher):
             outputs=outputs,
         )
 
+        self.attach_definition_dependencies(self._build_task)
+
         self.info(f"Created Vivado build task for part {part}")
 
         # Create report aggregation tasks for any requested aggregate outputs

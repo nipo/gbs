@@ -65,6 +65,7 @@ class GBSConfig:
     max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
     file_url_template: str = DEFAULT_FILE_URL_TEMPLATE  # Template for OSC 8 file URLs
+    loaded_files: list[Path] = field(default_factory=list)  # Config files that were loaded
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name' or 'name:variant'
@@ -127,7 +128,9 @@ class GBSConfig:
         config_path = Path.home() / ".config" / "gbs.yaml"
         if config_path.exists():
             logger.debug(f"Loading user config from {config_path}")
-            return cls._parse_config_file(config_path)
+            config = cls._parse_config_file(config_path)
+            config.loaded_files = [config_path.resolve()]
+            return config
         return cls()  # Empty config
 
     @classmethod
@@ -142,7 +145,9 @@ class GBSConfig:
             config_path = current / ".gbs.yaml"
             if config_path.exists():
                 logger.debug(f"Loading tree config from {config_path}")
-                return cls._parse_config_file(config_path)
+                config = cls._parse_config_file(config_path)
+                config.loaded_files = [config_path.resolve()]
+                return config
 
             parent = current.parent
             if parent == current:  # Reached filesystem root
@@ -277,10 +282,14 @@ class GBSConfig:
         else:
             merged_file_url_template = base.file_url_template
 
+        # loaded_files: concatenate all
+        merged_loaded_files = base.loaded_files + override.loaded_files
+
         return cls(
             tools=merged_tools,
             repositories=merged_repos,
             max_parallel=merged_max_parallel,
             max_log_count=merged_max_log_count,
             file_url_template=merged_file_url_template,
+            loaded_files=merged_loaded_files,
         )

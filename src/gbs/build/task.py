@@ -37,6 +37,7 @@ class ResourceTypology(Enum):
     SOURCE = "source"           # User-provided source file
     INTERMEDIATE = "intermediate"  # Generated during build (default)
     OUTPUT = "output"           # Final deliverable
+    DEFINITION = "definition"   # Build-influencing metadata file (not an error if unused)
 
 try:
     import click

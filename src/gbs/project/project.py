@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from .model import ProjectModel
 from ..logging import get_logger
 from ..build import BuildContext
-from ..build.task import ResourceTypology
+from ..build.task import ResourceTypology, BuildStep
 from ..protocol import Backend
 from ..plugins import get_plugin_registry
 from ..repository.model import SourceFileSet, Repository
@@ -418,6 +418,38 @@ class Project(UIReporter):
     def __str__(self) -> str:
         return f"Project({self.model.name}, {len(self.model.output_groups)} output groups, {len(self.repositories)} repositories)"
 
+class ConfigFingerprintStep(BuildStep):
+    """Build step that writes the config fingerprint file.
+
+    Compares the effective configuration against the existing fingerprint
+    file content. Only rewrites when content changes, preserving timestamps
+    for incremental builds.
+    """
+
+    _EMIT_UI_PROGRESS = False
+
+    def __init__(self, context, fingerprint_data: dict, output):
+        import json
+        super().__init__(context, "config-fingerprint")
+        self._content = json.dumps(fingerprint_data, sort_keys=True, indent=2) + "\n"
+        self._output = output
+        # Output resource depends on this step completing
+        output.depends_on.add(self)
+        self.expected_by.add(output)
+
+    async def work(self):
+        path = self._output.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            existing = path.read_text()
+        except FileNotFoundError:
+            existing = None
+
+        if existing != self._content:
+            path.write_text(self._content)
+
+
 class PlanRealization:
     def __init__(self,
                  project: Project,
@@ -463,6 +495,9 @@ class PlanRealization:
         # Pass types_with_library from plan so only declared types get library classification
         self.build_ctx.populate_pending(self.source_fileset, self.plan.types_with_library)
 
+        # Register build definition files as DEFINITION resources
+        self._register_definition_files()
+
         # Add output goals to pending queue
         # These are the desired outputs that dispatchers will work backwards from
         for output in self.plan.output_group.outputs:
@@ -495,6 +530,68 @@ class PlanRealization:
                 self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
 
+
+    def _register_definition_files(self):
+        """Register build definition files as DEFINITION resources.
+
+        These are files that influence the build plan: GBS configs,
+        the project file, repository definition files, and a config
+        fingerprint that captures the effective merged configuration.
+
+        The fingerprint resource is registered but NOT written here —
+        it is only written during an actual build (see _write_config_fingerprint).
+        """
+        definition_paths = set()
+
+        # GBS config files
+        if self.project.gbs_config:
+            for p in self.project.gbs_config.loaded_files:
+                definition_paths.add(p)
+
+        # Project file
+        if self.project.path:
+            definition_paths.add(self.project.path.resolve())
+
+        # Repository definition files
+        for repo in self.plan.repositories:
+            for p in repo.definition_files:
+                definition_paths.add(p)
+
+        # Register each as a DEFINITION resource
+        for path in sorted(definition_paths):
+            if path.exists():
+                resource = self.build_ctx.get_resource(
+                    path,
+                    file_type="build-definition",
+                    typology=ResourceTypology.DEFINITION,
+                )
+                self.build_ctx.add_pending(resource)
+
+        # Config fingerprint — a build step that writes the effective
+        # merged config to a file, only when content changes.
+        fp_path = self.build_ctx.output_path / "gbs-config-fingerprint.json"
+        fp_resource = self.build_ctx.get_resource(
+            fp_path.resolve(),
+            file_type="build-definition",
+            typology=ResourceTypology.DEFINITION,
+        )
+        self.build_ctx.add_pending(fp_resource)
+
+        fingerprint_data = {
+            "output_group": self.plan.output_group.name,
+            "topcell": self.plan.output_group.topcell,
+            "filter_vars": self.plan.filter_vars,
+            "target": self.plan.output_group.target,
+            "backend_config": self.plan.output_group.backend_config,
+            "passes": [pm.pass_obj.name for pm in self.plan.passes],
+        }
+        if self.project.gbs_config:
+            fingerprint_data["tools"] = [
+                {"name": t.name, "variant": t.variant, "config": t.config}
+                for t in self.project.gbs_config.tools
+            ]
+
+        ConfigFingerprintStep(self.build_ctx, fingerprint_data, fp_resource)
 
     async def dispatch(self, max_iterations = 10) -> None:
         # Run dispatcher iteration
@@ -704,6 +801,8 @@ class PlanRealization:
                 # Determine color based on typology
                 if res.typology == ResourceTypology.OUTPUT:
                     fillcolor = "0.33 0.5 1.0"  # Green with 50% saturation
+                elif res.typology == ResourceTypology.DEFINITION:
+                    fillcolor = "0.08 0.3 0.95"  # Orange
                 else:  # INTERMEDIATE
                     fillcolor = "0.16 0.5 1.0"  # Yellow with 50% saturation
 

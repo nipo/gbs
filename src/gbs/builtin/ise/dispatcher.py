@@ -149,6 +149,7 @@ class IseDispatcher(BaseDispatcher):
             inputs=[env_resource],
             outputs=[ngc_resource, xst_log_resource],
         )
+        self.attach_definition_dependencies(self.xst_task)
 
         # Generate BMM file (placeholder)
         self.bmm_task = task.BmmGenerate(

@@ -68,6 +68,7 @@ class Repository(ABC):
         """
         self.name = name
         self.root = root
+        self.definition_files: list[Path] = []  # Files read during loading
 
     @abstractmethod
     def file_types(self) -> set[str]:

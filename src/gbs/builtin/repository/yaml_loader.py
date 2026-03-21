@@ -173,6 +173,10 @@ class YAMLRepository(Repository):
 class YAMLRepositoryLoader(RepositoryLoader):
     """Repository loader for YAML format (.gbs.yaml files)"""
 
+    def __init__(self, path):
+        super().__init__(path)
+        self._files_read: list[Path] = []
+
     def load(self) -> Repository:
         """Load repository from YAML file
 
@@ -182,6 +186,7 @@ class YAMLRepositoryLoader(RepositoryLoader):
         Raises:
             LoadError: If repository cannot be loaded
         """
+        self._files_read = []
         logger.debug(f"Loading YAML repository from {self.path}")
         data = self._load_yaml_file(self.path)
 
@@ -222,7 +227,9 @@ class YAMLRepositoryLoader(RepositoryLoader):
                             logger.warning(f"Failed to load library from {match_path}: {e}")
 
         logger.info(f"Loaded YAML repository '{name}' with {len(libraries)} libraries")
-        return YAMLRepository(name=name, root=root, libraries=libraries)
+        repo = YAMLRepository(name=name, root=root, libraries=libraries)
+        repo.definition_files = list(self._files_read)
+        return repo
 
     def _load_library(self, path: Path) -> LibrarySpec:
         """Load a library from YAML file"""
@@ -363,6 +370,7 @@ class YAMLRepositoryLoader(RepositoryLoader):
 
     def _load_yaml_file(self, path: Path) -> dict:
         """Load and parse a YAML file"""
+        self._files_read.append(path.resolve())
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)

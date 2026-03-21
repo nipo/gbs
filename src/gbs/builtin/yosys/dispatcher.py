@@ -93,6 +93,7 @@ class YosysDispatcher(BaseDispatcher):
         if not self.vhdl_ingress_stamp:
             self.vhdl_ingress_stamp = self.context.get_stamp("vhdl_ingress.stamp")
             self.vhdl_ingress = task.VhdlAnalyze(self, outputs = [self.vhdl_ingress_stamp])
+            self.attach_definition_dependencies(self.vhdl_ingress)
 
         if self.synthesize_stamp is None:
             self.synthesize_stamp = self.context.get_stamp("synthesize.stamp")

@@ -160,6 +160,7 @@ class QuartusDispatcher(BaseDispatcher):
             inputs=[],
             outputs=[qpf_resource, qsf_resource],
         )
+        self.attach_definition_dependencies(self._setup_task)
 
         # Analysis & Synthesis
         # Pro edition renamed quartus_map to quartus_syn
