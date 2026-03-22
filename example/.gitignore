@@ -14,3 +14,4 @@ test-results
 *.fs
 *.log
 *.sh
+*.sof

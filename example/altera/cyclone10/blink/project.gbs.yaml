@@ -1,0 +1,30 @@
+name: blink
+description: A blinker for TE0003 board
+
+root:
+  name: top
+  sources:
+    - file_type: vhdl
+      files:
+        - hdl/clock.pkg.vhd
+        - hdl/clock_internal_altera_cyclone10.vhd
+        - hdl/boundary.vhd
+    - file_type: quartus-pin-assignment
+      files:
+        - pins.tcl
+
+output:
+  - name: synthesis
+    topcell: boundary
+    target:
+      part: 10CL025YU256C8G
+    backend_config:
+      gbs.builtin.quartus:
+        tool: quartus-prime
+    outputs:
+      - type: quartus-sof
+        path: design.sof
+      - type: quartus-synthesis-report
+        path: synthesis-report.html
+      - type: quartus-pnr-report
+        path: pnr-report.html
