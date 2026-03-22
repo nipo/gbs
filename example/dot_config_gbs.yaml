@@ -1,0 +1,73 @@
+# Demo ~/.config/gbs.yaml
+#
+# Global GBS configuration for your system. You should copy this file
+# there and define the tools you actually have.
+
+tools:
+  # GHDL from PATH (system installation)
+  - name: ghdl
+    variant: system
+    config:
+      executable: ghdl
+
+  # NVC from PATH
+  - name: nvc
+    variant: system
+    config:
+      executable: nvc
+
+  # Yosys with GHDL plugin
+  - name: yosys
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/yosys
+      ghdl_plugin: /opt/oss-cad-suite/share/yosys/plugins/ghdl.so
+
+  - name: icepack
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/icepack
+
+  - name: nextpnr-ice40
+    variant: system
+    config:
+      executable: /opt/oss-cad-suite/bin/nextpnr-ice40
+
+  - name: gcc
+    variant: system
+    config:
+      executable: gcc
+
+  - name: gowin
+    variant: V1.9.11.03
+    config:
+      # This path is where "IDE" and "Programmer" directories are
+      path: /opt/Gowin/current
+      message:
+        level_force:
+          EX4800: INFO
+          CV0017: INFO
+          CV0018: INFO
+          EX4319: INFO
+          EX4196: INFO
+      env:
+        # Fixup under Ubuntu, avoids symbol lookup crask
+        LD_PRELOAD: "/usr/lib/x86_64-linux-gnu/libfreetype.so.6.20.2"
+
+  # ISE
+  - name: ise
+    variant: 14.7
+    config:
+      path: /opt/Xilinx/14.7
+
+  # Vivado
+  - name: vivado
+    variant: 2019.2
+    config:
+      path: /opt/Xilinx/Vivado/2019.2
+
+  # Quartus Prime
+  - name: quartus-prime
+    variant: 24.1
+    config:
+      path: /opt/Altera/quartus-prime/24.1
