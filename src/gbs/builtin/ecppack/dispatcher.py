@@ -22,7 +22,6 @@ class EcppackDispatcher(BaseDispatcher):
         ecppack_tool: str = "ecppack",
     ):
         super().__init__(context, "ecppack", tool_name=ecppack_tool)
-        self.ecppack_tool = ecppack_tool
         self._ecppack_executable: str | None = None
 
     def _get_ecppack_executable(self) -> str:
@@ -32,9 +31,8 @@ class EcppackDispatcher(BaseDispatcher):
             Executable path
         """
         if self._ecppack_executable is None:
-            tool_config = self.context.get_tool(self.ecppack_tool, required=False)
-            if tool_config:
-                executable = tool_config.get("executable", "ecppack")
+            if self.tool_config:
+                executable = self.tool_config.get("executable", "ecppack")
             else:
                 executable = "ecppack"
             self._ecppack_executable = str(expand_path(executable))

@@ -38,7 +38,6 @@ class QuestaDispatcher(BaseDispatcher):
     ):
         super().__init__(context, "questa", tool_name=questa_tool)
         self.vhdl_std = vhdl_std
-        self.questa_tool = questa_tool
         self._project_task: GenerateQuestaProject | None = None
         self._gui_task: GenerateGuiScript | None = None
 
@@ -51,8 +50,7 @@ class QuestaDispatcher(BaseDispatcher):
         Raises:
             RuntimeError: If tool is not configured
         """
-        tool_config = self.context.get_tool(self.questa_tool)
-        prefix = expand_path(tool_config.get("path", tool_config.get("prefix", "")))
+        prefix = expand_path(self.tool_config.get("path", self.tool_config.get("prefix", "")))
 
         if prefix:
             vsim_path = prefix / "bin" / "vsim"

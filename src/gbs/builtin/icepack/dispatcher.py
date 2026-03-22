@@ -22,7 +22,6 @@ class IcepackDispatcher(BaseDispatcher):
         icepack_tool: str = "icepack",
     ):
         super().__init__(context, "icepack", tool_name=icepack_tool)
-        self.icepack_tool = icepack_tool
         self._icepack_executable: str | None = None
 
     def _get_icepack_executable(self) -> str:
@@ -32,9 +31,8 @@ class IcepackDispatcher(BaseDispatcher):
             Executable path
         """
         if self._icepack_executable is None:
-            tool_config = self.context.get_tool(self.icepack_tool, required=False)
-            if tool_config:
-                executable = tool_config.get("executable", "icepack")
+            if self.tool_config:
+                executable = self.tool_config.get("executable", "icepack")
             else:
                 executable = "icepack"
             self._icepack_executable = str(expand_path(executable))

@@ -17,7 +17,7 @@ output:
     backend_config:
       gbs.backend.ghdl:
         vhdl_standard: "1993"
-        ghdl_tool: "ghdl:jit"
+        tool: "ghdl:jit"
     outputs:
       - type: ghdl-simulator
         path: build/top

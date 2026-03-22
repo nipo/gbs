@@ -30,45 +30,18 @@ class Dispatcher(Protocol):
     """
 
     name: str
+    tool_name: str
     context: BuildContext
 
     async def process(self) -> None:
-        """Process the pending work queue, transforming it in place
-
-        Dispatchers can:
-        - Add new generated files (e.g., transpiled outputs) via self.context.add_pending()
-        - Remove processed files (e.g., inputs that were transformed) via self.context.remove_pending()
-        - Create build tasks for files
-        - Query and filter pending resources via self.context.filter_pending()
-
-        The pending queue is modified in place. The modification serial will be
-        used to detect convergence.
-
-        Note:
-            This is an async method to support task creation and other
-            async operations. Access context via self.context.
-        """
+        """Process the pending work queue, transforming it in place"""
         ...
 
     def get_clean_paths(self) -> set:
-        """Return paths that should be cleaned by this dispatcher
-
-        Returns:
-            Set of Path objects to clean. Typically includes self.context.output_path
-            or subdirectories within it that this dispatcher creates.
-        """
+        """Return paths that should be cleaned by this dispatcher"""
         ...
 
-    def get_tool(self, name: str, required: bool = True) -> dict:
-        """Get tool configuration from context
-
-        Helper method that delegates to self.context.get_tool().
-
-        Args:
-            name: Tool identifier
-            required: If True, raise error if tool not found
-
-        Returns:
-            Tool configuration dictionary
-        """
+    @property
+    def tool_config(self) -> dict | None:
+        """This dispatcher's tool configuration"""
         ...

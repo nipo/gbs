@@ -17,7 +17,7 @@ output:
     backend_config:
       gbs.builtin.nvc:
         vhdl_standard: "1993"
-        nvc_tool: "nvc"
+        tool: "nvc"
     outputs:
       - type: nvc-simulator
         path: build/top

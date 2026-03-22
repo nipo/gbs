@@ -48,7 +48,7 @@ class YosysBasePass(BasePass):
             YosysDispatcher singleton configured for this target
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        yosys_tool = self.config.get("yosys_tool", "yosys")
+        yosys_tool = self.config.get("tool", "yosys")
         steps = self.config.get("steps", [])
 
         return [YosysDispatcher(

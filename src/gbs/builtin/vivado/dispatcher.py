@@ -60,7 +60,6 @@ class VivadoDispatcher(BaseDispatcher):
         target: dict[str, str] | None = None,
     ):
         super().__init__(context, "vivado", tool_name=vivado_tool)
-        self.vivado_tool = vivado_tool
         self.vhdl_std = vhdl_std
         self.target = target or {}
         self._session: Session | None = None
@@ -69,8 +68,7 @@ class VivadoDispatcher(BaseDispatcher):
     def _get_session(self) -> Session:
         """Get or create shared Vivado TCL session"""
         if self._session is None:
-            vivado_config = self.context.get_tool(self.vivado_tool)
-            vivado_path = expand_path(vivado_config["path"])
+            vivado_path = expand_path(self.tool_config["path"])
 
             # Vivado executable
             vivado_exe = vivado_path / "bin" / "vivado"

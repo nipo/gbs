@@ -304,9 +304,7 @@ class SerDesToCsr(Task):
         csr_file = output.path
 
         # Get Gowin tool path
-        gowin_config = self.dispatcher.context.get_tool(self.dispatcher.tool_name)
-        # Expand ~ and environment variables in tool path
-        gowin_path = expand_path(gowin_config["path"])
+        gowin_path = expand_path(self.dispatcher.tool_config["path"])
 
         # Build tool path
         tool_path = (

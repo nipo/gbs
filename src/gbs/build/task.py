@@ -248,7 +248,7 @@ class BuildStep(UIReporter, asyncio.Future):
         # Apply message severity mangling if configured
         assert self.dispatcher
 
-        tool_config = self.dispatcher.get_tool_config()
+        tool_config = self.dispatcher.tool_config
         if tool_config and msg.identifier:
             # Check for message level overrides in tool config
             level_force = tool_config.get('message', {}).get('level_force', {})

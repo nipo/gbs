@@ -52,7 +52,6 @@ class IseDispatcher(BaseDispatcher):
         self.output_base_name = "project"
         self.target = target
         self.device = target["part"]
-        self.tool = tool
 
         self.xst_task = None
         self.bmm_task = None
@@ -105,8 +104,7 @@ class IseDispatcher(BaseDispatcher):
 
         Creates the full chain: XST -> NGDBUILD -> MAP -> PAR -> TRCE -> BITGEN
         """
-        config = self.context.get_tool(self.tool)
-        ise_path = Path(config["path"])
+        ise_path = Path(self.tool_config["path"])
 
         env_resource = self.context.get_resource(
             ise_path / "ISE_DS" / "settings64.sh",

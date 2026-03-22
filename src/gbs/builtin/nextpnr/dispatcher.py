@@ -67,7 +67,6 @@ class NextpnrDispatcher(BaseDispatcher):
     ):
         self.target_config = NEXTPNR_TARGETS[target]
         super().__init__(context, f"nextpnr-{target}", tool_name=nextpnr_tool)
-        self.nextpnr_tool = nextpnr_tool
         self.part = part
         self.package = package
         self._nextpnr_executable: str | None = None
@@ -80,9 +79,8 @@ class NextpnrDispatcher(BaseDispatcher):
             Executable path
         """
         if self._nextpnr_executable is None:
-            tool_config = self.context.get_tool(self.nextpnr_tool, required=False)
-            if tool_config:
-                executable = tool_config.get("executable", self.target_config.default_executable)
+            if self.tool_config:
+                executable = self.tool_config.get("executable", self.target_config.default_executable)
             else:
                 executable = self.target_config.default_executable
             self._nextpnr_executable = str(expand_path(executable))

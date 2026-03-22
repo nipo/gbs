@@ -25,7 +25,7 @@ output:
     backend_config:
       gbs.builtin.ghdl:
         vhdl_standard: "1993"
-        ghdl_tool: "ghdl:system"
+        tool: "ghdl:system"
         success_regex: "Terminating with error level: 0"
     outputs:
       - type: simulation-log

@@ -74,9 +74,8 @@ class GHDLBaseDispatcher(BaseDispatcher):
             Executable path
         """
         if self._ghdl_executable is None:
-            tool_config = self.context.get_tool(self.tool_name, required=False)
-            if tool_config:
-                ghdl_executable = tool_config.get("executable", "ghdl")
+            if self.tool_config:
+                ghdl_executable = self.tool_config.get("executable", "ghdl")
                 # Expand ~ and environment variables in executable path
                 ghdl_executable = str(expand_path(ghdl_executable))
                 logger.debug(f"Using GHDL executable from config: {ghdl_executable}")

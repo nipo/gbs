@@ -26,7 +26,7 @@ output:
     backend_config:
       gbs.backend.ghdl:
         vhdl_standard: "1993"
-        ghdl_tool: "ghdl:system"
+        tool: "ghdl:system"
     outputs:
       - type: ghdl-simulator
         path: build/tb

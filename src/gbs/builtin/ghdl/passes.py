@@ -49,7 +49,7 @@ class GHDLAnalyzePass(BasePass):
             GHDLAnalyzeDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        tool_name = self.config.get("ghdl_tool", "ghdl")
+        tool_name = self.config.get("tool", "ghdl")
 
         return [GHDLAnalyzeDispatcher(
             context=context,
@@ -102,7 +102,7 @@ class GHDLSimulatePass(BasePass):
             GHDLSimulateDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        tool_name = self.config.get("ghdl_tool", "ghdl")
+        tool_name = self.config.get("tool", "ghdl")
 
         return [GHDLSimulateDispatcher(
             context=context,
@@ -138,7 +138,7 @@ class GHDLRunPass(BasePass):
         Returns:
             GHDLRunDispatcher singleton
         """
-        tool_name = self.config.get("ghdl_tool", "ghdl")
+        tool_name = self.config.get("tool", "ghdl")
         return [GHDLRunDispatcher(context=context,
                                   tool_name = tool_name,
                                   config = self.config)]

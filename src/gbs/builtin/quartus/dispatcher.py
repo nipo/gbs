@@ -47,7 +47,6 @@ class QuartusDispatcher(BaseDispatcher):
         self.project_name = "project"
         self.target = target
         self.device = target["part"]
-        self.tool = tool
         self.vhdl_std = vhdl_std
 
         self._setup_task = None
@@ -57,7 +56,7 @@ class QuartusDispatcher(BaseDispatcher):
 
     def _get_quartus_bin(self) -> Path:
         """Get path to quartus bin directory"""
-        config = self.context.get_tool(self.tool)
+        config = self.tool_config
         quartus_path = expand_path(config["path"])
         return quartus_path / "quartus" / "bin"
 

@@ -32,7 +32,6 @@ class YosysDispatcher(BaseDispatcher):
     ):
         super().__init__(context, f"yosys-{synth_target}", tool_name=yosys_tool)
         self.synth_target = synth_target
-        self.yosys_tool = yosys_tool
         self.steps = steps or []
         self._yosys_executable: str | None = None
         self._session: Session | None = None
@@ -55,9 +54,8 @@ class YosysDispatcher(BaseDispatcher):
             Executable path
         """
         if self._yosys_executable is None:
-            tool_config = self.context.get_tool(self.yosys_tool, required=False)
-            if tool_config:
-                executable = tool_config.get("executable", "yosys")
+            if self.tool_config:
+                executable = self.tool_config.get("executable", "yosys")
             else:
                 executable = "yosys"
             self._yosys_executable = expand_path(executable)

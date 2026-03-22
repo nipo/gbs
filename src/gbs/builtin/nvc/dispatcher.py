@@ -24,7 +24,6 @@ class NVCDispatcher(BaseDispatcher):
     ):
         super().__init__(context, "nvc", tool_name=nvc_tool)
         self.vhdl_std = vhdl_std
-        self.nvc_tool = nvc_tool  # Tool identifier for lookup
         self._nvc_executable: str | None = None  # Cached executable path
         self._library_build: dict[str, tuple['Resource', Task]] = {}
         self._linker: Task = None
@@ -43,9 +42,8 @@ class NVCDispatcher(BaseDispatcher):
             return self._nvc_executable
 
         # Look up NVC tool configuration (optional, falls back to default)
-        tool_config = self.context.get_tool(self.nvc_tool, required=False)
-        if tool_config:
-            nvc_executable = tool_config.get("executable", "nvc")
+        if self.tool_config:
+            nvc_executable = self.tool_config.get("executable", "nvc")
             # Expand ~ and environment variables in executable path
             nvc_executable = str(expand_path(nvc_executable))
             self.debug(f"Using NVC executable from config: {nvc_executable}")

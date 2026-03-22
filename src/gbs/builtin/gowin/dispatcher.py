@@ -36,11 +36,9 @@ class GowinDispatcher(BaseDispatcher):
             context: BuildContext,
             vhdl_std: str,
             tool_name: str,
-            tool_config: "ToolConfig",
             device_info: DeviceInfo
     ):
         super().__init__(context, "gowin", tool_name=tool_name)
-        self.tool_config = tool_config
         self.output_base_name = "project"
         self.vhdl_std = vhdl_std
         self.device_info = device_info
@@ -53,7 +51,7 @@ class GowinDispatcher(BaseDispatcher):
     @property
     def gowin_path(self) -> Path:
         from ...utils import expand_path
-        return expand_path(self.tool_config.config["path"])
+        return expand_path(self.tool_config["path"])
 
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
@@ -80,7 +78,7 @@ class GowinDispatcher(BaseDispatcher):
             env["DISPLAY"] = ""
 
         # Inject user-specified environment variables from tool config
-        user_env = self.tool_config.config.get("env", {})
+        user_env = self.tool_config.get("env", {})
         env.update(user_env)
 
         self._session = Session(

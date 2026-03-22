@@ -19,17 +19,17 @@ output:
       gbs.builtin.ghdl:
         vhdl_standard: "1993"
       gbs.builtin.yosys:
-        yosys_tool: "yosys"
+        tool: "yosys"
         steps:
           - flatten
           - tribuf -logic
           - deminout
       gbs.builtin.nextpnr:
-        nextpnr_tool: "nextpnr-ecp5"
+        tool: "nextpnr-ecp5"
         part: 25k
         package: CABGA256
       gbs.builtin.ecppack:
-        ecppack_tool: "ecppack"
+        tool: "ecppack"
     outputs:
       - type: ecp5-bitstream
         path: blink.bin

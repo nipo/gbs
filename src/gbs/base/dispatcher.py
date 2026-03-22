@@ -47,29 +47,13 @@ class BaseDispatcher(UIReporter, ABC):
             parent_reporter=context
         )
 
-    def get_tool(self, name: str, required: bool = True) -> dict:
-        """Get tool configuration from context
+    @property
+    def tool_config(self) -> dict | None:
+        """This dispatcher's tool configuration.
 
-        Helper method that delegates to self.context.get_tool().
-
-        Args:
-            name: Tool identifier
-            required: If True, raise error if tool not found
-
-        Returns:
-            Tool configuration dictionary
-        """
-        return self.context.get_tool(name, required=required)
-
-    def get_tool_config(self) -> dict | None:
-        """Get this dispatcher's primary tool configuration
-
-        Uses the tool_name provided during initialization to look up
-        the tool's configuration. This enables tasks to access
-        tool-specific settings like message level overrides.
-
-        Returns:
-            Tool configuration dictionary, or None if tool not found
+        Looks up tool_name in the GBS config. Used by tasks for
+        tool-specific settings like executable paths and message
+        level overrides.
         """
         return self.context.get_tool(self.tool_name, required=False)
 

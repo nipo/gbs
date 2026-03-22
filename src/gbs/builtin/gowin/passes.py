@@ -40,14 +40,13 @@ class GowinSynthesizePass(BasePass):
         self.device = self.config.get("target", {}).get("part")
         self.gowin_path = None
         self.device_info = None
-        self.tool_config = None
-        self.tool_name = self.config.get("gowin_tool", "gowin")
+        self._tool_name = self.config.get("tool", "gowin")
 
         if self.gbs_config:
-            self.tool_config = self.gbs_config.get_tool(self.tool_name)
-            if self.tool_config and "path" in self.tool_config.config:
+            _tool_config = self.gbs_config.get_tool(self._tool_name)
+            if _tool_config and "path" in _tool_config.config:
                 from ...utils import expand_path
-                self.gowin_path = expand_path(self.tool_config.config["path"])
+                self.gowin_path = expand_path(_tool_config.config["path"])
 
         if self.device and self.gowin_path:
             from .device_info import get_device_info
@@ -87,7 +86,6 @@ class GowinSynthesizePass(BasePass):
         return [GowinDispatcher(
             context=context,
             vhdl_std = self.vhdl_std,
-            tool_name = self.tool_name,
-            tool_config = self.tool_config,
+            tool_name = self._tool_name,
             device_info = self.device_info,
         )]

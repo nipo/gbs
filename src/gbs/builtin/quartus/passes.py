@@ -53,7 +53,7 @@ class QuartusSynthesizePass(BasePass):
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Quartus dispatcher for execution"""
-        tool = self.config.get("quartus_tool", "quartus")
+        tool = self.config.get("tool", "quartus")
         vhdl_std = self.config.get("vhdl_standard", "1993")
         target = self.config["target"]
 
