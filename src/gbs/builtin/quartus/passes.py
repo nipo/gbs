@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 from typing import Any
+from pathlib import Path
 
 from ...base import BasePass
 from ...protocol import Dispatcher
+from ...utils import expand_path
 from .dispatcher import QuartusDispatcher
 
 
@@ -29,11 +31,28 @@ class QuartusSynthesizePass(BasePass):
         "quartus-pnr-report",
     }
 
+    def __init__(self,
+                 config: dict[str, Any],
+                 project_config: dict[str, Any] | None = None,
+                 gbs_config: 'GBSConfig | None' = None):
+        super().__init__(config, project_config, gbs_config)
+
+        self._quartus_bin = None
+        target = self.config.get("target", {})
+        self._part = target.get("part")
+        tool_name = self.config.get("tool", "quartus")
+
+        if self.gbs_config:
+            tool_config = self.gbs_config.get_tool(tool_name)
+            if tool_config and "path" in tool_config.config:
+                self._quartus_bin = expand_path(tool_config.config["path"]) / "quartus" / "bin"
+
+        self._part_info = {}
+        if self._part and self._quartus_bin:
+            self._part_info = _query_part_info(self._quartus_bin, self._part)
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for Quartus synthesis"""
-        target = self.config.get("target", {})
-        part = target.get("part")
-
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
         filter_vars = {
@@ -43,11 +62,14 @@ class QuartusSynthesizePass(BasePass):
             "vhdl-version": vhdl_std,
         }
 
-        if part:
-            filter_vars["target_part"] = part
-            family = _extract_family(part)
-            if family:
-                filter_vars["target_part_name"] = family
+        if self._part:
+            filter_vars["target_part"] = self._part
+
+        if "family" in self._part_info:
+            filter_vars["target_part_name"] = self._part_info["family"]
+
+        if "device" in self._part_info:
+            filter_vars["target_device"] = self._part_info["device"]
 
         return filter_vars
 
@@ -65,39 +87,51 @@ class QuartusSynthesizePass(BasePass):
         )]
 
 
-def _extract_family(part: str) -> str | None:
-    """Extract FPGA family from Altera part number"""
-    part_upper = part.upper()
+def _query_part_info(quartus_bin: Path, part: str) -> dict[str, str]:
+    """Query device info from quartus_sh.
 
-    # Cyclone 10 LP: 10CL...
-    if part_upper.startswith("10CL"):
-        return "cyclone10lp"
-    # Cyclone 10 GX: 10CX...
-    elif part_upper.startswith("10CX"):
-        return "cyclone10gx"
-    # Cyclone V: 5CS..., 5CE..., 5CG...
-    elif part_upper.startswith("5CS") or part_upper.startswith("5CE") or part_upper.startswith("5CG"):
-        return "cyclonev"
-    # Cyclone IV E: EP4CE...
-    elif part_upper.startswith("EP4CE"):
-        return "cycloneive"
-    # Cyclone IV GX: EP4CGX...
-    elif part_upper.startswith("EP4CGX"):
-        return "cycloneivgx"
-    # MAX 10: 10M...
-    elif part_upper.startswith("10M"):
-        return "max10"
-    # Agilex 5: AGF...
-    elif part_upper.startswith("AGF") or part_upper.startswith("A5"):
-        return "agilex5"
-    # Agilex 7: AGI..., AGM...
-    elif part_upper.startswith("AGI") or part_upper.startswith("AGM"):
-        return "agilex7"
-    # Stratix 10: 1S...
-    elif part_upper.startswith("1S"):
-        return "stratix10"
-    # Arria 10: 10A...
-    elif part_upper.startswith("10A"):
-        return "arria10"
+    Uses get_part_info TCL command to extract family and device
+    name directly from the Quartus device database.
 
-    return None
+    Returns:
+        Dict with 'family' and 'device' keys, or empty if query fails.
+    """
+    import subprocess
+
+    import tempfile
+
+    quartus_sh = quartus_bin / "quartus_sh"
+    if not quartus_sh.exists():
+        return {}
+
+    tcl_script = (
+        f'package require ::quartus::device\n'
+        f'set f [get_part_info -family {part}]\n'
+        f'set d [get_part_info -device {part}]\n'
+        f'puts "family:$f"\n'
+        f'puts "device:$d"\n'
+    )
+
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.tcl', delete=False) as f:
+            f.write(tcl_script)
+            tcl_path = f.name
+
+        result = subprocess.run(
+            [str(quartus_sh), "-t", tcl_path],
+            capture_output=True, text=True, timeout=30,
+        )
+
+        Path(tcl_path).unlink(missing_ok=True)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return {}
+
+    info = {}
+    for line in result.stdout.splitlines():
+        if line.startswith("family:"):
+            # Strip braces from TCL output (e.g., "{Cyclone 10 LP}" -> "Cyclone 10 LP")
+            info["family"] = line[7:].strip().strip("{}")
+        elif line.startswith("device:"):
+            info["device"] = line[7:].strip().strip("{}")
+
+    return info
