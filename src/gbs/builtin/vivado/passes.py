@@ -89,6 +89,22 @@ class VivadoSynthesizePass(BasePass):
             if part_family:
                 filter_vars["target_part_name"] = part_family
 
+            # Extract speed grade and package from part number
+            # Vivado format: xc7a50t-1fgg484 (name+speed+package)
+            import re
+            m = re.match(
+                r"^(?P<name>xc[^-]+?)(?P<speed>-\d)(?P<package>[a-z]+\d+)$",
+                device, re.I,
+            )
+            if m:
+                filter_vars["target_part"] = m.group("name")
+                filter_vars["target_speed"] = m.group("speed")
+                filter_vars["target_package"] = m.group("package")
+            else:
+                import logging
+                logger = logging.getLogger("gbs.builtin.vivado.passes")
+                logger.warning(f"Cannot parse device <{device}>, should be <part><-speed><package>")
+
         return filter_vars
 
     def _extract_family(self, part: str) -> str | None:
