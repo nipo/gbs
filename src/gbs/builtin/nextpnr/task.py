@@ -14,7 +14,7 @@ class NextpnrInvocation(MessageSubprocess):
     """Message parser for nextpnr output"""
 
     # nextpnr message format: "Level: message"
-    msg_pattern = re.compile(r'^(?P<level>Info|Warning|Error|Fatal):\s+(?P<message>.*)$')
+    msg_pattern = re.compile(r'^(?P<level>Info|Warning|Error|Fatal):\s+(?P<message>.*)$', re.I)
 
     level_map = {
         "info": MessageSeverity.INFO,
