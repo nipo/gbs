@@ -1,8 +1,8 @@
 """Vivado build tasks
 
-Task implementations for Vivado FPGA synthesis and implementation flow
-using Vivado project mode with managed runs. This approach is required
-for designs with block designs and external IPs.
+Task implementations for Vivado FPGA synthesis and implementation flow.
+Automatically selects between non-project mode (fast, for HDL-only designs)
+and project mode (required for block designs and external IPs).
 """
 
 from __future__ import annotations
@@ -20,11 +20,13 @@ from .vivado_tcl import Session, VivadoCommand
 
 
 class NonProjectBuild(VivadoCommand):
-    """Run complete Vivado build flow using project mode with managed runs.
+    """Run complete Vivado build flow.
 
-    Uses create_project + launch_runs/wait_on_run for synthesis and
-    implementation. This is required for block designs with external IPs
-    to work correctly.
+    Automatically selects between:
+    - Non-project mode (fast): for HDL-only designs without block designs
+      or external IPs. Uses synth_design/opt_design/place_design/route_design.
+    - Project mode: for designs with block designs (.bd), external IPs (.xci),
+      or packaged IPs (vivado-ip-zip). Uses launch_runs/wait_on_run.
     """
 
     def __init__(
@@ -41,7 +43,7 @@ class NonProjectBuild(VivadoCommand):
             session=session,
             inputs=inputs,
             outputs=outputs,
-            description="Vivado project build"
+            description="Vivado build"
         )
         self.part = part
 
@@ -57,6 +59,7 @@ class NonProjectBuild(VivadoCommand):
         topcell = self.dispatcher.context.get_topcell()
         top_lib = self.dispatcher.context.get_topcell_library() or "work"
         output_dir = self.dispatcher.context.output_path.resolve()
+        userid = f"{random.randint(0, 0xFFFFFFFF):#010x}"
 
         # Group inputs by type and library
         inputs_by_type = defaultdict(list)
@@ -75,34 +78,67 @@ class NonProjectBuild(VivadoCommand):
             if lib not in seen_libraries:
                 seen_libraries.append(lib)
 
-        await self.update_progress(0.01, "Init")
+        # Detect if project mode is needed
+        needs_project_mode = bool(
+            inputs_by_type.get('vivado-block-design')
+            or inputs_by_type.get('xilinx-xci')
+            or inputs_by_type.get('vivado-ip-zip')
+        )
 
-        # Create on-disk project (required for managed runs and block designs)
-        self.info(f"Creating Vivado project for part {self.part}")
-        await self.command_run(tcl.Command([
-            "create_project", "synth", "project",
-            "-part", self.part, "-force",
-        ]))
-
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("source_fileset_obj"),
-            tcl.Expansion(["get_filesets", "sources_1"])
-        ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("constraints_fileset_obj"),
-            tcl.Expansion(["get_filesets", "constrs_1"])
-        ]))
+        if needs_project_mode:
+            self.info(f"Using project mode (design has BD/XCI/IP)")
+            await self._project_mode_init(output_dir)
+        else:
+            self.info(f"Using non-project mode (HDL only)")
+            await self._non_project_mode_init()
 
         await self.update_progress(0.02, "User TCL")
 
-        # Source init TCL files
+        # Source init TCL files (both modes)
         for resource in inputs_by_type.get('vivado-init-tcl', []):
             self.debug(f"Sourcing init TCL: {resource.path}")
             await self.command_run(tcl.Command([
                 "source", tcl.String(str(resource.path))
             ]))
 
-        # Set up IP repository paths for packaged IPs and bus definitions
+        # Set up IP repository paths (both modes, no-op when empty)
+        await self._setup_ip_repos(inputs_by_type, output_dir)
+
+        await self.update_progress(0.05, "Sources")
+
+        # Block design handling (project mode only)
+        if needs_project_mode:
+            await self._add_block_designs(inputs_by_type, output_dir)
+
+        # Add HDL and constraint sources (shared)
+        await self._add_sources(inputs_by_type, inputs_by_library, seen_libraries)
+
+        # Set top module (shared)
+        self.debug(f"Setting top: {topcell} (lib={top_lib})")
+        await self.command_run(tcl.Command([
+            "set_property", "top_lib", top_lib, tcl.BareWord("$source_fileset_obj")
+        ]))
+        await self.command_run(tcl.Command([
+            "set_property", "top", topcell, tcl.BareWord("$source_fileset_obj")
+        ]))
+
+        await self.update_progress(0.2, "IPs")
+
+        # Build
+        if needs_project_mode:
+            await self._project_mode_build(topcell, userid, output_dir)
+        else:
+            await self._non_project_mode_build(topcell, userid)
+
+        # Generate reports (shared — design is open in both modes at this point)
+        await self._generate_reports()
+
+        self.info("Build complete")
+
+    # ── Shared helpers ────────────────────────────────────────────
+
+    async def _setup_ip_repos(self, inputs_by_type, output_dir):
+        """Set up IP repository paths for packaged IPs and bus definitions"""
         ip_repo_paths = []
 
         for resource in inputs_by_type.get('vivado-ip-zip', []):
@@ -122,7 +158,6 @@ class NonProjectBuild(VivadoCommand):
             ip_repo_paths.append(str(bus_repo_dir))
 
         if ip_repo_paths:
-            # Append to existing ip_repo_paths rather than replacing
             await self.command_run(tcl.Command([
                 "set_property", "ip_repo_paths",
                 tcl.Expansion([
@@ -135,52 +170,14 @@ class NonProjectBuild(VivadoCommand):
             ]))
             await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
 
-        await self.update_progress(0.05, "Block designs")
-
-        # Add block designs — copy to build dir, generate targets
-        for resource in inputs_by_type.get('vivado-block-design', []):
-            self.info(f"Adding block design: {resource.path}")
-            bd_build_dir = output_dir / "bd-build"
-
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("_bd_orig"),
-                tcl.Expansion(["file", "normalize", tcl.String(str(resource.path.resolve()))]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("_bd_dir"),
-                tcl.String(str(bd_build_dir)),
-            ]))
-            await self.command_run(tcl.Command([
-                "file", "mkdir", tcl.BareWord("$_bd_dir"),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("_bd_copy"),
-                tcl.Expansion(["file", "join", tcl.BareWord("$_bd_dir"),
-                               tcl.Expansion(["file", "tail", tcl.BareWord("$_bd_orig")])]),
-            ]))
-            await self.command_run(tcl.Command([
-                "file", "copy", "-force", tcl.BareWord("$_bd_orig"), tcl.BareWord("$_bd_copy"),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("_bd_file"),
-                tcl.Expansion(["add_files", tcl.BareWord("$_bd_copy")]),
-            ]))
-            await self.command_run(tcl.Command([
-                "generate_target", "all", tcl.BareWord("$_bd_file"),
-            ]))
-            await self.command_run(tcl.Command([
-                "export_ip_user_files", "-of_objects", tcl.BareWord("$_bd_file"),
-                "-no_script", "-sync", "-force", "-quiet",
-            ]))
-            await self.command_run(tcl.Command([
-                "create_ip_run", tcl.BareWord("$_bd_file"),
-            ]))
-
-        # Add files by library in dependency order
+    async def _add_sources(self, inputs_by_type, inputs_by_library, seen_libraries):
+        """Add HDL and constraint source files to the project"""
         for i, library in enumerate(seen_libraries):
             lib_files = inputs_by_library[library]
 
-            await self.update_progress(0.10 + .05 * (i / max(len(seen_libraries), 1)), f"HDL {library}")
+            await self.update_progress(
+                0.10 + .05 * (i / max(len(seen_libraries), 1)),
+                f"HDL {library}")
 
             # VHDL files
             for resource in lib_files.get('vhdl', []):
@@ -189,8 +186,10 @@ class NonProjectBuild(VivadoCommand):
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset", tcl.BareWord("$source_fileset_obj"),
-                        tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
+                        "add_files", "-norecurse", "-fileset",
+                        tcl.BareWord("$source_fileset_obj"),
+                        tcl.Expansion(["file", "normalize",
+                                       tcl.String(str(resource.path))]),
                     ])
                 ]))
                 await self.command_run(tcl.Command([
@@ -205,8 +204,10 @@ class NonProjectBuild(VivadoCommand):
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset", tcl.BareWord("$source_fileset_obj"),
-                        tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
+                        "add_files", "-norecurse", "-fileset",
+                        tcl.BareWord("$source_fileset_obj"),
+                        tcl.Expansion(["file", "normalize",
+                                       tcl.String(str(resource.path))]),
                     ])
                 ]))
                 await self.command_run(tcl.Command([
@@ -234,8 +235,10 @@ class NonProjectBuild(VivadoCommand):
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset", tcl.BareWord("$constraints_fileset_obj"),
-                        tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
+                        "add_files", "-norecurse", "-fileset",
+                        tcl.BareWord("$constraints_fileset_obj"),
+                        tcl.Expansion(["file", "normalize",
+                                       tcl.String(str(resource.path))]),
                     ])
                 ]))
                 await self.command_run(tcl.Command([
@@ -250,8 +253,10 @@ class NonProjectBuild(VivadoCommand):
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset", tcl.BareWord("$constraints_fileset_obj"),
-                        tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
+                        "add_files", "-norecurse", "-fileset",
+                        tcl.BareWord("$constraints_fileset_obj"),
+                        tcl.Expansion(["file", "normalize",
+                                       tcl.String(str(resource.path))]),
                     ])
                 ]))
                 await self.command_run(tcl.Command([
@@ -260,25 +265,189 @@ class NonProjectBuild(VivadoCommand):
                     tcl.BareWord("$f")
                 ]))
 
-        # Set design properties
-        userid = f"{random.randint(0, 0xFFFFFFFF):#010x}"
-        self.debug(f"Setting USERID to {userid}")
+    async def _generate_reports(self):
+        """Generate reports from the routed design (shared by both modes)"""
+        await self.update_progress(0.7, "Reports")
 
-        # Set top module
-        self.debug(f"Setting top: {topcell} (lib={top_lib})")
+        self.info("Generating reports")
+        for rsrc in self.outputs_of_type("vivado-routing-report"):
+            await self.command_run(tcl.Command([
+                "report_route_status", "-file", str(rsrc.path)
+            ]))
+
+        for rsrc in self.outputs_of_type("vivado-timing-report"):
+            await self.command_run(tcl.Command([
+                "report_timing_summary", "-file", str(rsrc.path)
+            ]))
+
+        await self.update_progress(0.8, "Reports")
+
+        for rsrc in self.outputs_of_type("vivado-power-report"):
+            await self.command_run(tcl.Command([
+                "report_power", "-file", str(rsrc.path)
+            ]))
+
+        for rsrc in self.outputs_of_type("vivado-usage-report"):
+            await self.command_run(tcl.Command([
+                "report_utilization", "-file", str(rsrc.path)
+            ]))
+
+        for rsrc in self.outputs_of_type("vivado-netlist-edif"):
+            await self.command_run(tcl.Command([
+                "write_edif", "-force", str(rsrc.path)
+            ]))
+
+        for rsrc in self.outputs_of_type("vivado-drc-report"):
+            await self.command_run(tcl.Command([
+                "report_drc", "-file", str(rsrc.path)
+            ]))
+
+    # ── Non-project mode (fast, HDL only) ─────────────────────────
+
+    async def _non_project_mode_init(self):
+        """Initialize in-memory project for non-project mode"""
+        await self.update_progress(0.01, "Init")
+
+        self.info(f"Creating in-memory project for part {self.part}")
         await self.command_run(tcl.Command([
-            "set_property", "top_lib", top_lib, tcl.BareWord("$source_fileset_obj")
+            "create_project", "-in_memory", "-part", self.part
         ]))
         await self.command_run(tcl.Command([
-            "set_property", "top", topcell, tcl.BareWord("$source_fileset_obj")
+            "set_property", "source_mgmt_mode", "DisplayOnly",
+            tcl.Expansion(["current_project"])
+        ]))
+        await self.command_run(tcl.Command([
+            "set", tcl.BareWord("source_fileset_obj"),
+            tcl.Expansion(["get_filesets", "sources_1"])
+        ]))
+        await self.command_run(tcl.Command([
+            "set", tcl.BareWord("constraints_fileset_obj"),
+            tcl.Expansion(["get_filesets", "constrs_1"])
         ]))
 
-        await self.update_progress(0.2, "IPs")
+    async def _non_project_mode_build(self, topcell, userid):
+        """Run synthesis+implementation in non-project mode"""
+        # Generate IP targets
+        await self.command_run(tcl.Command([
+            "foreach", tcl.String("ip"),
+            tcl.Expansion(["get_ips"]),
+            tcl.String("generate_target {synthesis implementation} $ip; synth_ip $ip")
+        ]))
 
-        # Generate IP targets — only for top-level IPs (not children of block designs)
+        await self.update_progress(0.3, "Synth")
+
+        # Synthesis
+        self.info("Running synthesis")
+        await self.command_run(tcl.Command([
+            "synth_design", "-top", topcell, "-part", self.part, "-assert"
+        ]))
+
+        await self.update_progress(0.4, "Opt")
+
+        # Optimization
+        self.info("Running optimization")
+        await self.command_run(tcl.Command(["opt_design"]))
+
+        await self.update_progress(0.5, "Place")
+
+        # Place
+        self.info("Running placement")
+        await self.command_run(tcl.Command(["place_design"]))
+
+        await self.update_progress(0.6, "Route")
+
+        # Route
+        self.info("Running routing")
+        await self.command_run(tcl.Command(["route_design"]))
+
+        # Set USERID
+        await self.command_run(tcl.Command([
+            "set_property", "BITSTREAM.CONFIG.USERID", userid,
+            tcl.Expansion(["current_design"])
+        ]))
+        await self.command_run(tcl.Command([
+            "set_param", "drc.maxLimitREQP1839and1840", "0"
+        ]))
+
+        # Generate bitstream
+        await self.update_progress(0.9, "Bitstream")
+        self.info("Generating bitstream")
+        for rsrc in self.outputs_of_type("vivado-bitstream"):
+            await self.command_run(tcl.Command([
+                "write_bitstream", "-force", str(rsrc.path)
+            ]))
+
+    # ── Project mode (for BD/XCI/IP designs) ──────────────────────
+
+    async def _project_mode_init(self, output_dir):
+        """Initialize on-disk project for project mode"""
+        await self.update_progress(0.01, "Init")
+
+        self.info(f"Creating Vivado project for part {self.part}")
+        await self.command_run(tcl.Command([
+            "create_project", "synth", "project",
+            "-part", self.part, "-force",
+        ]))
+        await self.command_run(tcl.Command([
+            "set", tcl.BareWord("source_fileset_obj"),
+            tcl.Expansion(["get_filesets", "sources_1"])
+        ]))
+        await self.command_run(tcl.Command([
+            "set", tcl.BareWord("constraints_fileset_obj"),
+            tcl.Expansion(["get_filesets", "constrs_1"])
+        ]))
+
+    async def _add_block_designs(self, inputs_by_type, output_dir):
+        """Add block designs — copy to build dir, generate targets"""
+        for resource in inputs_by_type.get('vivado-block-design', []):
+            self.info(f"Adding block design: {resource.path}")
+            bd_build_dir = output_dir / "bd-build"
+
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("_bd_orig"),
+                tcl.Expansion(["file", "normalize",
+                               tcl.String(str(resource.path.resolve()))]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("_bd_dir"),
+                tcl.String(str(bd_build_dir)),
+            ]))
+            await self.command_run(tcl.Command([
+                "file", "mkdir", tcl.BareWord("$_bd_dir"),
+            ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("_bd_copy"),
+                tcl.Expansion(["file", "join", tcl.BareWord("$_bd_dir"),
+                               tcl.Expansion(["file", "tail",
+                                              tcl.BareWord("$_bd_orig")])]),
+            ]))
+            await self.command_run(tcl.Command([
+                "file", "copy", "-force",
+                tcl.BareWord("$_bd_orig"), tcl.BareWord("$_bd_copy"),
+            ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("_bd_file"),
+                tcl.Expansion(["add_files", tcl.BareWord("$_bd_copy")]),
+            ]))
+            await self.command_run(tcl.Command([
+                "generate_target", "all", tcl.BareWord("$_bd_file"),
+            ]))
+            await self.command_run(tcl.Command([
+                "export_ip_user_files", "-of_objects",
+                tcl.BareWord("$_bd_file"),
+                "-no_script", "-sync", "-force", "-quiet",
+            ]))
+            await self.command_run(tcl.Command([
+                "create_ip_run", tcl.BareWord("$_bd_file"),
+            ]))
+
+    async def _project_mode_build(self, topcell, userid, output_dir):
+        """Run synthesis+implementation via managed runs"""
+        # Generate IP targets — only top-level (not children of BDs)
         await self.command_run(tcl.Command([
             "foreach", tcl.String("xci"),
-            tcl.Expansion(["get_files", "-of_objects", tcl.BareWord("$source_fileset_obj"), "*.xci"]),
+            tcl.Expansion(["get_files", "-of_objects",
+                           tcl.BareWord("$source_fileset_obj"), "*.xci"]),
             tcl.String(
                 'if {[get_property parent_composite_file $xci] eq {}} {'
                 '    generate_target "synthesis implementation" $xci'
@@ -319,8 +488,6 @@ class NonProjectBuild(VivadoCommand):
             tcl.String("error {Implementation failed}"),
         ]))
 
-        await self.update_progress(0.7, "Reports")
-
         # Extract bitstream from managed run output
         for rsrc in self.outputs_of_type("vivado-bitstream"):
             self.info(f"Copying bitstream to: {rsrc.path}")
@@ -330,7 +497,7 @@ class NonProjectBuild(VivadoCommand):
                 str(rsrc.path),
             ]))
 
-        # Open implementation run for reports
+        # Open implementation run for report generation
         await self.command_run(tcl.Command([
             "open_run", "impl_1",
         ]))
@@ -340,48 +507,6 @@ class NonProjectBuild(VivadoCommand):
             "set_property", "BITSTREAM.CONFIG.USERID", userid,
             tcl.Expansion(["current_design"])
         ]))
-
-        # Generate reports
-        self.info("Generating reports")
-        for rsrc in self.outputs_of_type("vivado-routing-report"):
-            await self.command_run(tcl.Command([
-                "report_route_status", "-file",
-                str(rsrc.path)
-            ]))
-
-        for rsrc in self.outputs_of_type("vivado-timing-report"):
-            await self.command_run(tcl.Command([
-                "report_timing_summary", "-file",
-                str(rsrc.path)
-            ]))
-
-        await self.update_progress(0.8, "Reports")
-
-        for rsrc in self.outputs_of_type("vivado-power-report"):
-            await self.command_run(tcl.Command([
-                "report_power", "-file",
-                str(rsrc.path)
-            ]))
-
-        for rsrc in self.outputs_of_type("vivado-usage-report"):
-            await self.command_run(tcl.Command([
-                "report_utilization", "-file",
-                str(rsrc.path)
-            ]))
-
-        for rsrc in self.outputs_of_type("vivado-netlist-edif"):
-            await self.command_run(tcl.Command([
-                "write_edif", "-force",
-                str(rsrc.path)
-            ]))
-
-        for rsrc in self.outputs_of_type("vivado-drc-report"):
-            await self.command_run(tcl.Command([
-                "report_drc", "-file",
-                str(rsrc.path)
-            ]))
-
-        self.info("Build complete")
 
 
 class AggregateSynthesisReport(Task):
