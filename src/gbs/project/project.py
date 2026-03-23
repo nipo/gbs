@@ -77,6 +77,10 @@ class Project(UIReporter):
         self.base_output_path = None  # Can be set for suite builds to scope output directories
         self.__realizations = None
 
+        # Shared resource registry for cross-output-group dependencies
+        from ..build.registry import ResourceRegistry
+        self._resource_registry = ResourceRegistry()
+
         # Determine max_parallel using precedence chain:
         # 1. Explicitly provided parameter (command line will use this)
         # 2. Project config (model.max_parallel)
@@ -226,21 +230,25 @@ class Project(UIReporter):
         all_repositories = self.repositories
 
         from ..planner.planner import BuildPlanner
-        planner = BuildPlanner(
-            all_repositories,
-            backends,
-            self.model.raw_config,
-            self.gbs_config,
-            root_partition_template=self.model.root_partition_template,
-            parent_reporter=self
-        )
         self.__realizations = []
 
         for output_group in self.model.output_groups:
+            # Get the root partition template for this output group
+            root_template = self.model.get_root_partition_template(output_group)
+
+            planner = BuildPlanner(
+                all_repositories,
+                backends,
+                self.model.raw_config,
+                self.gbs_config,
+                root_partition_template=root_template,
+                parent_reporter=self
+            )
+
             plan = planner.plan(output_group)
 
             # Evaluate root partition template with this output group's filter vars
-            root_partition = self.model.root_partition_template.evaluate(
+            root_partition = root_template.evaluate(
                 plan.filter_vars,
                 self.model.root_library_name
             )
@@ -274,8 +282,17 @@ class Project(UIReporter):
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
             >>> await proj.build()
         """
-        # Build each realization (output group)
+        # Collect all realizations first (plan + dispatch all groups)
+        realizations = []
         async for realization in self.realizations():
+            realizations.append(realization)
+
+        # Execute all output groups concurrently.
+        # Cross-output-group dependencies resolve naturally through
+        # the shared resource registry: if group A produces a file
+        # that group B consumes, both reference the same Resource
+        # future, so group B's task blocks until group A's completes.
+        for realization in realizations:
             logger.info(f"  Realizing build plan {realization.plan}...")
             await realization.execute()
 
@@ -470,7 +487,8 @@ class PlanRealization:
             gbs_config = self.project.gbs_config,
             semaphore = self.project.semaphore,
             base_output_path = self.project.base_output_path,
-            parent_reporter = self.plan)
+            parent_reporter = self.plan,
+            resource_registry = self.project._resource_registry)
 
         num_files = len(self.source_fileset.get_all_files())
         # Extract unique library names from partition names (library.partition format)

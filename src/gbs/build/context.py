@@ -28,7 +28,8 @@ class BuildContext(UIReporter):
         gbs_config: Optional[Any] = None,
         semaphore: Optional[asyncio.Semaphore] = None,
         base_output_path: Optional[Path] = None,
-        parent_reporter: Optional['UIReporter'] = None
+        parent_reporter: Optional['UIReporter'] = None,
+        resource_registry: Optional[Any] = None,
     ):
         """Initialize build context
 
@@ -41,6 +42,9 @@ class BuildContext(UIReporter):
             base_output_path: Optional base path for build outputs (defaults to "gbs-build")
                              Suite builds use this to scope projects to separate directories
             parent_reporter: Optional parent UIReporter (typically a BuildPlan)
+            resource_registry: Optional shared ResourceRegistry for cross-output-group
+                             dependency tracking. When provided, Resources are singletons
+                             across all BuildContexts sharing the same registry.
         """
         # Initialize UIReporter with parent (typically BuildPlan)
         UIReporter.__init__(self,
@@ -50,6 +54,7 @@ class BuildContext(UIReporter):
 
         self._max_parallel = max_parallel
         self._semaphore: Optional[asyncio.Semaphore] = semaphore  # Use provided semaphore or None
+        self._resource_registry = resource_registry
         self._resources: dict[Path, 'Resource'] = {}
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
         self.project = project
@@ -164,6 +169,29 @@ class BuildContext(UIReporter):
         from .task import ResourceTypology
 
         path = path.resolve()  # Normalize path
+
+        # Check shared registry first (cross-output-group sharing)
+        if self._resource_registry is not None:
+            existing = self._resource_registry.get(path)
+            if existing is not None:
+                # Resource exists in shared registry — update metadata and
+                # ensure it's also in our local dict
+                r = existing
+                if file_type is not None:
+                    r.file_type = file_type
+                if library is not None:
+                    r.library = library
+                if file_type_version is not None:
+                    r.file_type_version = file_type_version
+                if typology is not None:
+                    r.typology = typology
+                if generated_by is not None:
+                    r.generated_by = generated_by
+                if metadata:
+                    r.metadata.update(metadata)
+                self._resources[path] = r
+                return r
+
         if path not in self._resources:
             # Use provided typology or default to INTERMEDIATE
             if typology is None:
@@ -180,6 +208,10 @@ class BuildContext(UIReporter):
             if metadata:
                 r.metadata.update(metadata)
             self._resources[path] = r
+
+            # Register in shared registry
+            if self._resource_registry is not None:
+                self._resource_registry.register(path, r)
         else:
             # Update existing resource if new metadata provided
             r = self._resources[path]

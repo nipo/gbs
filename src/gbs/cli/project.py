@@ -166,16 +166,16 @@ async def outputs(ctx, fmt: str):
     plugin_registry = get_plugin_registry()
     backends = plugin_registry.get_all_backends()
 
-    planner = BuildPlanner(
-        proj.repositories,
-        backends,
-        proj.model.raw_config,
-        proj.gbs_config,
-        root_partition_template=proj.model.root_partition_template,
-    )
-
     data = []
     for og in proj.model.output_groups:
+        root_template = proj.model.get_root_partition_template(og)
+        planner = BuildPlanner(
+            proj.repositories,
+            backends,
+            proj.model.raw_config,
+            proj.gbs_config,
+            root_partition_template=root_template,
+        )
         plan = planner.plan(og)
         backend_names = sorted({pm.backend_name for pm in plan.passes})
 

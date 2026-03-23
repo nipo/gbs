@@ -84,6 +84,7 @@ class OutputGroup:
     backend_config: dict[str, dict] = field(default_factory=dict)
     outputs: list[OutputFile] = field(default_factory=list)
     target: dict[str, Any] = field(default_factory=dict)  # Target device configuration
+    partition: Optional[str] = None  # Root partition name (None = use default/only partition)
 
     # Build planning constraints
     require_passes: list[str] = field(default_factory=list)
@@ -111,11 +112,36 @@ class ProjectModel:
         max_parallel: Maximum number of parallel tasks (None = use default from config)
     """
     name: str
-    root_partition_template: Any  # PartitionTemplate from gbs.project.partition
+    root_partition_templates: dict[str, Any]  # name -> PartitionTemplate
     output_groups: list[OutputGroup]
     description: Optional[str] = None
     raw_config: dict = field(default_factory=dict)
     max_parallel: Optional[int] = None  # Maximum parallel tasks
+
+    def get_root_partition_template(self, output_group: OutputGroup) -> Any:
+        """Get the root partition template for an output group.
+
+        If the output group specifies a partition name, returns that template.
+        Otherwise returns the only template (error if ambiguous).
+        """
+        if output_group.partition:
+            if output_group.partition not in self.root_partition_templates:
+                raise ValueError(
+                    f"Output group '{output_group.name}' references unknown "
+                    f"partition '{output_group.partition}'. "
+                    f"Available: {list(self.root_partition_templates.keys())}"
+                )
+            return self.root_partition_templates[output_group.partition]
+
+        if len(self.root_partition_templates) == 1:
+            return next(iter(self.root_partition_templates.values()))
+
+        raise ValueError(
+            f"Output group '{output_group.name}' does not specify a partition, "
+            f"but project has multiple root partitions: "
+            f"{list(self.root_partition_templates.keys())}. "
+            f"Add 'partition: <name>' to the output group."
+        )
 
     @property
     def root_library_name(self) -> str:

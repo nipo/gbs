@@ -205,14 +205,29 @@ def load_project(path: Path):
             logger.warning(f"Invalid max_parallel value in {path}, ignoring")
             max_parallel = None
 
-    # Load root partition (inline definition)
-    # The root partition is always placed in the "work" library
+    # Load root partition(s) (inline definition)
+    # Supports single dict (backward compatible) or list of named partitions
     root_data = data["root"]
     base_path = path.parent
 
-    # Parse root partition template
     from ..project.partition import parse_partition_template
-    root_partition_template = parse_partition_template(root_data, base_path)
+    root_partition_templates = {}
+
+    if isinstance(root_data, list):
+        # Multiple named partitions
+        for entry in root_data:
+            if not isinstance(entry, dict) or "name" not in entry:
+                raise LoadError("Each root partition must be a dict with a 'name' field")
+            name = entry["name"]
+            if name in root_partition_templates:
+                raise LoadError(f"Duplicate root partition name: '{name}'")
+            root_partition_templates[name] = parse_partition_template(entry, base_path, default_name=name)
+    elif isinstance(root_data, dict):
+        # Single partition (backward compatible)
+        template = parse_partition_template(root_data, base_path)
+        root_partition_templates[template.name] = template
+    else:
+        raise LoadError("'root' must be a dict or a list of dicts")
 
     # Parse output groups
     output_data = data.get("output", [])
@@ -268,6 +283,8 @@ def load_project(path: Path):
         og_require_backends = og_data.get("require_backends", [])
         og_exclude_backends = og_data.get("exclude_backends", [])
 
+        og_partition = og_data.get("partition")
+
         output_group = OutputGroup(
             name=og_name,
             topcell=og_topcell,
@@ -275,6 +292,7 @@ def load_project(path: Path):
             backend_config=og_backend_config,
             outputs=og_outputs,
             target=og_target,
+            partition=og_partition,
             require_passes=og_require_passes,
             exclude_passes=og_exclude_passes,
             require_backends=og_require_backends,
@@ -284,7 +302,7 @@ def load_project(path: Path):
 
     project = Project(
         name=name,
-        root_partition_template=root_partition_template,
+        root_partition_templates=root_partition_templates,
         output_groups=output_groups,
         description=description,
         raw_config=data,
