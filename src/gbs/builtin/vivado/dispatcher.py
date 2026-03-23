@@ -25,6 +25,8 @@ ACCEPTED_INPUT_TYPES = {
     "xilinx-constraints-tcl",
     "vivado-block-design",
     "vivado-init-tcl",
+    "vivado-ip-zip",
+    "vivado-bus-definition",
 }
 
 # Output file types and their default filenames

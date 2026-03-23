@@ -45,6 +45,8 @@ class VivadoSynthesizePass(BasePass):
         "xilinx-constraints-tcl",
         "vivado-block-design",
         "vivado-init-tcl",
+        "vivado-ip-zip",
+        "vivado-bus-definition",
     }
     output_types = {
         "vivado-routing-report",
