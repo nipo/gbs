@@ -1,0 +1,67 @@
+name: ip_and_bd
+
+root:
+  - name: pwm_generator_sources
+    sources:
+      - file_type: vhdl
+        files:
+          - hdl/pwm_generator.vhd
+      - file_type: xilinx-xdc
+        files:
+          - timing.xdc
+
+  - name: my_design_sources
+    sources:
+      # The IP zip: this path matches the ip_package output, so
+      # the shared resource registry connects them automatically.
+      - file_type: vivado-ip-zip
+        files:
+          - build/pwm_generator_1.0.zip
+      - file_type: vivado-block-design
+        files:
+          - my_block_design.bd
+      - file_type: xilinx-xdc
+        files:
+          - pins.xdc
+
+output:
+  # First: package the PWM generator as a Vivado IP
+  - name: ip_package
+    partition: pwm_generator_sources
+    topcell: pwm_generator
+    target:
+      part: xc7z020clg400-1
+    backend_config:
+      gbs.builtin.vivado-ip:
+        tool: vivado
+        vendor: gbs
+        library: example
+        name: pwm_generator
+        version: "1.0"
+        taxonomy: /UserIP
+        display_name: "PWM Generator"
+        description: "Configurable PWM output with generic counter width"
+        supported_families:
+          - zynq
+          - artix7
+          - kintex7
+    outputs:
+      - type: vivado-ip-zip
+        path: build/pwm_generator_1.0.zip
+
+  # Second: build a design using the IP in a block design
+  - name: synthesis
+    partition: my_design_sources
+    topcell: my_block_design
+    backend_config:
+      gbs.builtin.vivado:
+        tool: vivado
+        target:
+          part: xc7a35t-2csg324
+    outputs:
+      - type: vivado-bitstream
+        path: build/pwm_in_bd.bit
+      - type: vivado-synthesis-report
+        path: build/synthesis-report.html
+      - type: vivado-pnr-report
+        path: build/pnr-report.html

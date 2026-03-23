@@ -1,0 +1,104 @@
+{
+  "design": {
+    "design_info": {
+      "boundary_crc": "0xD26382C7C1A99D1",
+      "device": "xc7a15tcsg324-2",
+      "gen_directory": "../../../../project_1.gen/sources_1/bd/my_block_design",
+      "name": "my_block_design",
+      "rev_ctrl_bd_flag": "RevCtrlBdOff",
+      "synth_flow_mode": "Hierarchical",
+      "tool_version": "2022.2",
+      "validated": "true"
+    },
+    "design_tree": {
+      "pwm_generator_0": ""
+    },
+    "ports": {
+      "clk": {
+        "type": "clk",
+        "direction": "I",
+        "parameters": {
+          "ASSOCIATED_RESET": {
+            "value": "resetn",
+            "value_src": "default"
+          },
+          "CLK_DOMAIN": {
+            "value": "my_block_design_clk",
+            "value_src": "default"
+          },
+          "FREQ_HZ": {
+            "value": "100000000"
+          },
+          "FREQ_TOLERANCE_HZ": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "INSERT_VIP": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "PHASE": {
+            "value": "0.0",
+            "value_src": "default"
+          }
+        }
+      },
+      "resetn": {
+        "type": "rst",
+        "direction": "I",
+        "parameters": {
+          "INSERT_VIP": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "POLARITY": {
+            "value": "ACTIVE_LOW",
+            "value_src": "default"
+          }
+        }
+      },
+      "duty": {
+        "direction": "I",
+        "left": "7",
+        "right": "0"
+      },
+      "pwm_out": {
+        "direction": "O"
+      }
+    },
+    "components": {
+      "pwm_generator_0": {
+        "vlnv": "gbs:example:pwm_generator:1.0",
+        "xci_name": "my_block_design_pwm_generator_0_0",
+        "xci_path": "ip/my_block_design_pwm_generator_0_0/my_block_design_pwm_generator_0_0.xci",
+        "inst_hier_path": "pwm_generator_0"
+      }
+    },
+    "nets": {
+      "clk_1": {
+        "ports": [
+          "clk",
+          "pwm_generator_0/clk"
+        ]
+      },
+      "duty_1": {
+        "ports": [
+          "duty",
+          "pwm_generator_0/duty"
+        ]
+      },
+      "pwm_generator_0_pwm_out": {
+        "ports": [
+          "pwm_generator_0/pwm_out",
+          "pwm_out"
+        ]
+      },
+      "resetn_1": {
+        "ports": [
+          "resetn",
+          "pwm_generator_0/resetn"
+        ]
+      }
+    }
+  }
+}

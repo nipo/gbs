@@ -1,0 +1,29 @@
+name: pwm_in_bd
+
+root:
+  name: top
+  sources:
+    - file_type: vivado-block-design
+      files:
+        - my_block_design.bd
+    - file_type: vivado-ip-zip
+      files:
+        - ../ip_package/pwm_generator_1.0.zip
+    - file_type: xilinx-xdc
+      files:
+        - pins.xdc
+
+output:
+  - name: synthesis
+    topcell: my_block_design
+    backend_config:
+      gbs.builtin.vivado:
+        target:
+          part: xc7a35t-2csg324
+    outputs:
+      - type: vivado-bitstream
+        path: pwm_in_bd.bit
+      - type: vivado-synthesis-report
+        path: synthesis-report.html
+      - type: vivado-pnr-report
+        path: pnr-report.html
