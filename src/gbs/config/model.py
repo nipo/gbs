@@ -37,6 +37,7 @@ class ToolConfig:
     name: str
     variant: Optional[str] = None
     config: dict[str, Any] = field(default_factory=dict)
+    origin: Optional[Path] = None  # Config file this tool was loaded from
 
     @property
     def identifier(self) -> str:
@@ -172,7 +173,8 @@ class GBSConfig:
             tools.append(ToolConfig(
                 name=tool_data['name'],
                 variant=tool_data.get('variant'),
-                config=tool_data.get('config', {})
+                config=tool_data.get('config', {}),
+                origin=path.resolve(),
             ))
 
         # Parse repositories - resolve relative paths now using config file's directory
@@ -188,6 +190,7 @@ class GBSConfig:
             if not repo_path.is_absolute():
                 repo_path = (config_dir / repo_path).resolve()
             repo_spec['path'] = str(repo_path)
+            repo_spec['_origin'] = str(path.resolve())
             repositories.append(repo_spec)
 
         # Parse max_parallel

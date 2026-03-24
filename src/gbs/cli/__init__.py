@@ -202,10 +202,12 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
 from .repo import repo
 from .project import project
 from .suite import suite
+from .config import config
 
 cli.add_command(repo)
 cli.add_command(project)
 cli.add_command(suite)
+cli.add_command(config)
 
 
 # Add result callback to cleanup hub
