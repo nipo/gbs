@@ -15,6 +15,9 @@ root:
 output:
   - name: pnr
     topcell: top
+    target:
+      part: 25k
+      package: CABGA256
     backend_config:
       gbs.builtin.ghdl:
         vhdl_standard: "1993"
@@ -26,8 +29,6 @@ output:
           - deminout
       gbs.builtin.nextpnr:
         tool: "nextpnr-ecp5"
-        part: 25k
-        package: CABGA256
       gbs.builtin.ecppack:
         tool: "ecppack"
     outputs:

@@ -24,8 +24,7 @@ output:
         - done
         - jtag
     backend_config:
-      gbs.backend.gowin:
-        part: GW5AT-LV60PG484AC1/I0
+      gbs.backend.gowin: {}
     outputs:
       - type: gowin-fs
         path: blink.fs

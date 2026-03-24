@@ -15,6 +15,9 @@ root:
 output:
   - name: pnr
     topcell: top
+    target:
+      part: up5k
+      package: sg48
     backend_config:
       gbs.builtin.ghdl:
         vhdl_standard: "1993"
@@ -26,8 +29,6 @@ output:
           - deminout
       gbs.builtin.nextpnr:
         tool: "nextpnr-ice40"
-        part: up5k
-        package: sg48
       gbs.builtin.icepack:
         tool: "icepack"
     outputs:

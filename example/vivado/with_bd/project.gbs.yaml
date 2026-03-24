@@ -16,10 +16,10 @@ root:
 output:
   - name: synthesis
     topcell: my_block_design
+    target:
+      part: xc7a35t-2csg324
     backend_config:
-      gbs.builtin.vivado:
-        target:
-          part: xc7a35t-2csg324
+      gbs.builtin.vivado: {}
     outputs:
       - type: vivado-bitstream
         path: pwm_in_bd.bit

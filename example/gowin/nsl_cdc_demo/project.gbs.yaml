@@ -20,8 +20,7 @@ output:
     target:
       part: GW5AT-LV60PG484AC1/I0
     backend_config:
-      gbs.builtin.gowin:
-        part: GW5AT-LV60PG484AC1/I0
+      gbs.builtin.gowin: {}
       gbs.plugin.nsl:
         output_dir: build
     outputs:

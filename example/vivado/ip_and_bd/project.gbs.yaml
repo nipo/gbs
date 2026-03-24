@@ -53,11 +53,11 @@ output:
   - name: synthesis
     partition: my_design_sources
     topcell: my_block_design
+    target:
+      part: xc7a35t-2csg324
     backend_config:
       gbs.builtin.vivado:
         tool: vivado
-        target:
-          part: xc7a35t-2csg324
     outputs:
       - type: vivado-bitstream
         path: build/pwm_in_bd.bit

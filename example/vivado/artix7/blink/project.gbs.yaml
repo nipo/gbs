@@ -15,10 +15,10 @@ root:
 output:
   - name: synthesis
     topcell: boundary
+    target:
+      part: xc7a35t-2csg324
     backend_config:
-      gbs.builtin.vivado:
-        target:
-          part: xc7a35t-2csg324
+      gbs.builtin.vivado: {}
     outputs:
       - type: vivado-bitstream
         path: blink.bit

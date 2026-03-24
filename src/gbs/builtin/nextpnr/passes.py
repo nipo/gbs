@@ -45,8 +45,9 @@ class NextpnrBasePass(BasePass):
             NextpnrDispatcher singleton
         """
         nextpnr_tool = self.config.get("tool", self.default_tool)
-        part = self.config["part"]
-        package = self.config["package"]
+        target = self.config.get("target", {})
+        part = target["part"]
+        package = target["package"]
 
         return [NextpnrDispatcher(
             context=context,

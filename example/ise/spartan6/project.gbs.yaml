@@ -15,10 +15,10 @@ root:
 output:
   - name: synthesis
     topcell: boundary
+    target:
+      part: xc6slx9-2tqg144
     backend_config:
-      gbs.builtin.ise:
-        target:
-          part: xc6slx9-2tqg144
+      gbs.builtin.ise: {}
     outputs:
       - type: ise-bitstream
         path: blink.bit
