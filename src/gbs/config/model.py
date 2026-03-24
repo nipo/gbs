@@ -84,7 +84,7 @@ class GBSConfig:
         if ':' in identifier:
             name, variant = identifier.split(':', 1)
             for tool in self.tools:
-                if tool.name == name and tool.variant == variant:
+                if tool.name == name and str(tool.variant) == variant:
                     return tool
         else:
             # Match any variant for this name (first match)

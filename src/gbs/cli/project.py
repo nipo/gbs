@@ -52,6 +52,41 @@ async def _project_load(project_file, gbs_config):
 
     return proj
     
+def _apply_tool_overrides(proj, tool_overrides):
+    """Apply --tool overrides to output group backend configs.
+
+    Each override is "backend_substr=tool_identifier", e.g.
+    "quartus=quartus:prime-25.2". The backend_substr is matched
+    against backend names in backend_config using substring search.
+    """
+    if not tool_overrides:
+        return
+
+    for override in tool_overrides:
+        if '=' not in override:
+            raise click.ClickException(
+                f"Invalid --tool format: '{override}'. "
+                f"Expected 'backend=tool:variant', e.g. 'quartus=quartus:prime'"
+            )
+
+        backend_substr, tool_id = override.split('=', 1)
+
+        for og in proj.model.output_groups:
+            matched = [name for name in og.backend_config if backend_substr in name]
+            if not matched:
+                # Also match backends that WOULD be used but aren't in backend_config yet
+                # by adding an empty config entry for matching backend names
+                from ..plugins import get_plugin_registry
+                registry = get_plugin_registry()
+                for backend_name in registry.list_backends():
+                    if backend_substr in backend_name and backend_name not in og.backend_config:
+                        matched.append(backend_name)
+                        og.backend_config[backend_name] = {}
+
+            for backend_name in matched:
+                og.backend_config[backend_name]["tool"] = tool_id
+
+
 @project.command()
 @click.option(
     "-j", "--jobs",
@@ -59,8 +94,15 @@ async def _project_load(project_file, gbs_config):
     metavar="N",
     help="Maximum number of parallel tasks (overrides config files)"
 )
+@click.option(
+    "-t", "--tool",
+    "tool_overrides",
+    multiple=True,
+    metavar="BACKEND=TOOL:VARIANT",
+    help="Override tool variant for a backend (e.g. quartus=quartus:prime-25.2)"
+)
 @click.pass_context
-async def build(ctx, jobs):
+async def build(ctx, jobs, tool_overrides):
     """Build a project"""
     logger = get_logger()
     project_file = get_project_file(ctx)
@@ -73,9 +115,10 @@ async def build(ctx, jobs):
 
     proj = await _project_load(project_file, gbs_config)
 
-    # Apply command-line override if provided
+    # Apply command-line overrides
     if jobs is not None:
         proj.set_max_parallel(jobs)
+    _apply_tool_overrides(proj, tool_overrides)
 
     try:
         await proj.build()
