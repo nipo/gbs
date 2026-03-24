@@ -104,7 +104,7 @@ class IseDispatcher(BaseDispatcher):
 
         Creates the full chain: XST -> NGDBUILD -> MAP -> PAR -> TRCE -> BITGEN
         """
-        ise_path = Path(self.tool_config["path"])
+        ise_path = Path(self.get_tool_option("path"))
 
         env_resource = self.context.get_resource(
             ise_path / "ISE_DS" / "settings64.sh",

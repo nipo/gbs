@@ -51,7 +51,7 @@ class GowinDispatcher(BaseDispatcher):
     @property
     def gowin_path(self) -> Path:
         from ...utils import expand_path
-        return expand_path(self.tool_config["path"])
+        return expand_path(self.get_tool_option("path"))
 
     def _get_session(self) -> Session:
         """Get or create shared gw_sh session"""
@@ -78,7 +78,7 @@ class GowinDispatcher(BaseDispatcher):
             env["DISPLAY"] = ""
 
         # Inject user-specified environment variables from tool config
-        user_env = self.tool_config.get("env", {})
+        user_env = self.get_tool_option("env", {})
         env.update(user_env)
 
         self._session = Session(

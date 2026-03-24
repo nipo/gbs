@@ -31,10 +31,7 @@ class IcepackDispatcher(BaseDispatcher):
             Executable path
         """
         if self._icepack_executable is None:
-            if self.tool_config:
-                executable = self.tool_config.get("executable", "icepack")
-            else:
-                executable = "icepack"
+            executable = self.get_tool_option("executable", "icepack")
             self._icepack_executable = str(expand_path(executable))
             self.debug(f"Using icepack executable: {self._icepack_executable}")
 

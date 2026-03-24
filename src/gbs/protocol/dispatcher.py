@@ -41,7 +41,6 @@ class Dispatcher(Protocol):
         """Return paths that should be cleaned by this dispatcher"""
         ...
 
-    @property
-    def tool_config(self) -> dict | None:
-        """This dispatcher's tool configuration"""
+    def get_tool_option(self, key: str, default=None):
+        """Get a tool config option (raises MissingToolError if no default and not configured)"""
         ...

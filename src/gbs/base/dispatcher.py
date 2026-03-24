@@ -47,14 +47,49 @@ class BaseDispatcher(UIReporter, ABC):
             parent_reporter=context
         )
 
+    _TOOL_OPTION_MISSING = object()  # sentinel for missing default
+
+    def get_tool_option(self, key: str, default=_TOOL_OPTION_MISSING):
+        """Get a tool configuration option.
+
+        Looks up tool_name in GBS config, then returns config[key].
+
+        If the tool is not configured:
+        - With default: returns default
+        - Without default: raises MissingToolError with config hint
+
+        If the tool IS configured but key is missing:
+        - With default: returns default
+        - Without default: raises KeyError
+
+        Args:
+            key: Config key to look up (e.g., "path", "executable")
+            default: Default value if tool is not configured
+
+        Examples:
+            path = self.get_tool_option("path")  # raises if not configured
+            exe = self.get_tool_option("executable", "yosys")  # fallback
+        """
+        config = self.context.get_tool(self.tool_name, required=False)
+        if config is None:
+            if default is not self._TOOL_OPTION_MISSING:
+                return default
+            from ..build.task import MissingToolError
+            name_part = self.tool_name.split(':')[0] if ':' in self.tool_name else self.tool_name
+            variant_part = self.tool_name.split(':', 1)[1] if ':' in self.tool_name else None
+            hint = f"  tools:\n    - name: {name_part}\n"
+            if variant_part:
+                hint += f"      variant: {variant_part}\n"
+            hint += f"      config:\n        path: /path/to/{name_part}\n"
+            raise MissingToolError(
+                f"Tool '{self.tool_name}' is not configured.\n"
+                f"Add it to ~/.config/gbs.yaml or .gbs.yaml:\n{hint}"
+            )
+        return config.get(key, default) if default is not self._TOOL_OPTION_MISSING else config[key]
+
     @property
     def tool_config(self) -> dict | None:
-        """This dispatcher's tool configuration.
-
-        Looks up tool_name in the GBS config. Used by tasks for
-        tool-specific settings like executable paths and message
-        level overrides.
-        """
+        """Raw tool configuration dict, or None. Prefer get_tool_option()."""
         return self.context.get_tool(self.tool_name, required=False)
 
     def attach_definition_dependencies(self, task: 'Task') -> None:

@@ -79,10 +79,7 @@ class NextpnrDispatcher(BaseDispatcher):
             Executable path
         """
         if self._nextpnr_executable is None:
-            if self.tool_config:
-                executable = self.tool_config.get("executable", self.target_config.default_executable)
-            else:
-                executable = self.target_config.default_executable
+            executable = self.get_tool_option("executable", self.target_config.default_executable)
             self._nextpnr_executable = str(expand_path(executable))
             self.debug(f"Using nextpnr executable: {self._nextpnr_executable}")
 

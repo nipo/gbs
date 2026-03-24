@@ -42,14 +42,10 @@ class NVCDispatcher(BaseDispatcher):
             return self._nvc_executable
 
         # Look up NVC tool configuration (optional, falls back to default)
-        if self.tool_config:
-            nvc_executable = self.tool_config.get("executable", "nvc")
-            # Expand ~ and environment variables in executable path
-            nvc_executable = str(expand_path(nvc_executable))
-            self.debug(f"Using NVC executable from config: {nvc_executable}")
-        else:
-            nvc_executable = "nvc"
-            self.debug(f"Using default NVC executable: {nvc_executable}")
+        nvc_executable = self.get_tool_option("executable", "nvc")
+        # Expand ~ and environment variables in executable path
+        nvc_executable = str(expand_path(nvc_executable))
+        self.debug(f"Using NVC executable: {nvc_executable}")
 
         # Cache the value
         self._nvc_executable = nvc_executable

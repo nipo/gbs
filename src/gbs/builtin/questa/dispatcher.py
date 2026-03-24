@@ -50,7 +50,7 @@ class QuestaDispatcher(BaseDispatcher):
         Raises:
             RuntimeError: If tool is not configured
         """
-        prefix = expand_path(self.tool_config.get("path", self.tool_config.get("prefix", "")))
+        prefix = expand_path(self.get_tool_option("path", self.get_tool_option("prefix", "")))
 
         if prefix:
             vsim_path = prefix / "bin" / "vsim"

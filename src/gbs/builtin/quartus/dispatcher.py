@@ -56,8 +56,7 @@ class QuartusDispatcher(BaseDispatcher):
 
     def _get_quartus_bin(self) -> Path:
         """Get path to quartus bin directory"""
-        config = self.tool_config
-        quartus_path = expand_path(config["path"])
+        quartus_path = expand_path(self.get_tool_option("path"))
         return quartus_path / "quartus" / "bin"
 
     @property

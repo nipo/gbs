@@ -31,10 +31,7 @@ class EcppackDispatcher(BaseDispatcher):
             Executable path
         """
         if self._ecppack_executable is None:
-            if self.tool_config:
-                executable = self.tool_config.get("executable", "ecppack")
-            else:
-                executable = "ecppack"
+            executable = self.get_tool_option("executable", "ecppack")
             self._ecppack_executable = str(expand_path(executable))
             self.debug(f"Using ecppack executable: {self._ecppack_executable}")
 

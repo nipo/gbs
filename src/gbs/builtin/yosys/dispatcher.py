@@ -54,11 +54,7 @@ class YosysDispatcher(BaseDispatcher):
             Executable path
         """
         if self._yosys_executable is None:
-            if self.tool_config:
-                executable = self.tool_config.get("executable", "yosys")
-            else:
-                executable = "yosys"
-            self._yosys_executable = expand_path(executable)
+            self._yosys_executable = expand_path(self.get_tool_option("executable", "yosys"))
             self.debug(f"Using yosys executable: {self._yosys_executable}")
 
         return self._yosys_executable

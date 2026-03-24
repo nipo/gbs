@@ -70,7 +70,7 @@ class VivadoDispatcher(BaseDispatcher):
     def _get_session(self) -> Session:
         """Get or create shared Vivado TCL session"""
         if self._session is None:
-            vivado_path = expand_path(self.tool_config["path"])
+            vivado_path = expand_path(self.get_tool_option("path"))
 
             # Vivado executable
             vivado_exe = vivado_path / "bin" / "vivado"
