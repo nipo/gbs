@@ -73,3 +73,33 @@ async def dump(ctx):
                 lines.append(f"    name: {repo['name']}")
 
     click.echo('\n'.join(lines))
+
+
+@config.command()
+@click.argument("name")
+@click.pass_context
+async def tool(ctx, name: str):
+    """List tool variants matching NAME, in selection order.
+
+    The first match is the one selected when no variant is specified.
+    NAME can be a substring (e.g., 'quartus' matches 'quartus-pro').
+    """
+    gbs_config = ctx.obj.get("gbs_config")
+
+    if gbs_config is None:
+        click.echo("No configuration loaded.", err=True)
+        return
+
+    matches = [t for t in gbs_config.tools if name in t.name]
+
+    if not matches:
+        click.echo(f"No tools matching '{name}'.", err=True)
+        return
+
+    for i, t in enumerate(matches):
+        marker = " (default)" if i == 0 else ""
+        origin = f"  # from {t.origin}" if t.origin else ""
+        variant = f":{t.variant}" if t.variant is not None else ""
+        click.echo(f"  {t.name}{variant}{marker}{origin}")
+        for k, v in t.config.items():
+            click.echo(f"    {k}: {v}")
