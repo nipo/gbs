@@ -123,8 +123,12 @@ async def build(ctx, jobs, tool_overrides):
     try:
         await proj.build()
     except Exception as e:
-        from ..build.task import BuildError
-        if isinstance(e, BuildError):
+        from ..build.task import BuildError, MissingToolError
+        if isinstance(e, MissingToolError):
+            # Configuration error — print the message with config hint
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(1)
+        elif isinstance(e, BuildError):
             # BuildError means _cleanup() already printed failure summary
             # Just exit with error code
             sys.exit(1)
