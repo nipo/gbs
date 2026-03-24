@@ -165,16 +165,16 @@ class VivadoDispatcher(BaseDispatcher):
         """Attach any pending files of accepted types to the build task"""
         existing_paths = {r.path for r in self._build_task.inputs}
 
-        for file_type in ACCEPTED_INPUT_TYPES:
-            for source in list(self.context.filter_pending(file_type=file_type)):
+        for library, resources in self.context.get_pending_by_library_ordered():
+            for source in resources:
+                if source.file_type not in ACCEPTED_INPUT_TYPES:
+                    continue
                 if source.path in existing_paths:
                     continue
 
-                self.debug(f"Attaching input: {source.path} (type={file_type})")
-
                 resource = self.context.get_resource(source.path)
                 resource.metadata = {
-                    'file_type': file_type,
+                    'file_type': source.file_type,
                     'library': source.library,
                     'variant': getattr(source, 'variant', None),
                 }

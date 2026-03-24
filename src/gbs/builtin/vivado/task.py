@@ -18,7 +18,6 @@ from ...build import tcl
 from ...report_aggregator import TextReport, aggregate_text
 from .vivado_tcl import Session, VivadoCommand
 
-
 class NonProjectBuild(VivadoCommand):
     """Run complete Vivado build flow.
 
@@ -71,13 +70,6 @@ class NonProjectBuild(VivadoCommand):
             inputs_by_type[file_type].append(resource)
             inputs_by_library[library][file_type].append(resource)
 
-        # Get library order from input order (preserving first occurrence)
-        seen_libraries = []
-        for resource in self.inputs:
-            lib = resource.library or 'work'
-            if lib not in seen_libraries:
-                seen_libraries.append(lib)
-
         # Detect if project mode is needed
         needs_project_mode = bool(
             inputs_by_type.get('vivado-block-design')
@@ -111,7 +103,7 @@ class NonProjectBuild(VivadoCommand):
             await self._add_block_designs(inputs_by_type, output_dir)
 
         # Add HDL and constraint sources (shared)
-        await self._add_sources(inputs_by_type, inputs_by_library, seen_libraries)
+        await self._add_sources()
 
         # Set top module (shared)
         self.debug(f"Setting top: {topcell} (lib={top_lib})")
@@ -170,19 +162,17 @@ class NonProjectBuild(VivadoCommand):
             ]))
             await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
 
-    async def _add_sources(self, inputs_by_type, inputs_by_library, seen_libraries):
+    async def _add_sources(self):
         """Add HDL and constraint source files to the project"""
-        for i, library in enumerate(seen_libraries):
-            lib_files = inputs_by_library[library]
 
-            await self.update_progress(
-                0.10 + .05 * (i / max(len(seen_libraries), 1)),
-                f"HDL {library}")
+        total = len(list(self.inputs))
+        for i, resource in enumerate(self.inputs):
+            await self.update_progress(0.10 + .05 * i / total, f"HDL")
 
             # VHDL files
-            for resource in lib_files.get('vhdl', []):
+            if resource.file_type == 'vhdl':
                 vhdl_type = self._get_vhdl_file_type(resource)
-                self.debug(f"Adding VHDL: {resource.path} (lib={library}, type={vhdl_type})")
+                self.debug(f"Adding VHDL: {resource.path} (lib={resource.library}, type={vhdl_type})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -194,13 +184,13 @@ class NonProjectBuild(VivadoCommand):
                 ]))
                 await self.command_run(tcl.Command([
                     "set_property", "-dict",
-                    tcl.String(f"file_type {{{vhdl_type}}} library {{{library}}}"),
+                    tcl.String(f"file_type {{{vhdl_type}}} library {{{resource.library}}}"),
                     tcl.BareWord("$f")
                 ]))
 
             # Verilog files
-            for resource in lib_files.get('verilog', []):
-                self.debug(f"Adding Verilog: {resource.path} (lib={library})")
+            if resource.file_type == 'verilog':
+                self.debug(f"Adding Verilog: {resource.path} (lib={resource.library})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion([
@@ -212,25 +202,25 @@ class NonProjectBuild(VivadoCommand):
                 ]))
                 await self.command_run(tcl.Command([
                     "set_property", "-dict",
-                    tcl.String(f"file_type {{Verilog}} library {{{library}}}"),
+                    tcl.String(f"file_type {{Verilog}} library {{{resource.library}}}"),
                     tcl.BareWord("$f")
                 ]))
 
             # XCI (IP) files
-            for resource in lib_files.get('xilinx-xci', []):
-                self.debug(f"Adding XCI: {resource.path} (lib={library})")
+            if resource.file_type == 'xilinx-xci':
+                self.debug(f"Adding XCI: {resource.path} (lib={resource.library})")
                 await self.command_run(tcl.Command([
                     "set", "f",
                     tcl.Expansion(["read_ip", tcl.String(str(resource.path))])
                 ]))
                 await self.command_run(tcl.Command([
                     "set_property", "-dict",
-                    tcl.String(f"library {{{library}}} used_in {{synthesis implementation}}"),
+                    tcl.String(f"library {{{resource.library}}} used_in {{synthesis implementation}}"),
                     tcl.BareWord("$f")
                 ]))
 
             # XDC constraint files
-            for resource in lib_files.get('xilinx-xdc', []):
+            if resource.file_type == 'xilinx-xdc':
                 self.debug(f"Adding XDC: {resource.path}")
                 await self.command_run(tcl.Command([
                     "set", "f",
@@ -248,7 +238,7 @@ class NonProjectBuild(VivadoCommand):
                 ]))
 
             # TCL constraint files
-            for resource in lib_files.get('xilinx-constraints-tcl', []):
+            if resource.file_type == 'xilinx-constraint-tcl':
                 self.debug(f"Adding constraints TCL: {resource.path}")
                 await self.command_run(tcl.Command([
                     "set", "f",
@@ -387,6 +377,10 @@ class NonProjectBuild(VivadoCommand):
         await self.command_run(tcl.Command([
             "create_project", "synth", "project",
             "-part", self.part, "-force",
+        ]))
+        await self.command_run(tcl.Command([
+            "set_property", "source_mgmt_mode", "DisplayOnly",
+            tcl.Expansion(["current_project"])
         ]))
         await self.command_run(tcl.Command([
             "set", tcl.BareWord("source_fileset_obj"),
