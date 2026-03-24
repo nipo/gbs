@@ -10,7 +10,7 @@ specifically for FPGA and ASIC gateware projects. It provides:
 - **Dependency Resolution**: Automatic tracking and resolution of HDL file
   dependencies across libraries and partitions
 - **Multi-Backend Support**: Pluggable backend system supporting GHDL, Gowin,
-  Xilinx ISE, and custom toolchains
+  Xilinx ISE, Xilinx Vivado, Intel Quartus, Yosys/nextpnr, and custom toolchains
 - **Source Filtering**: Conditional source selection based on target platform,
   simulation vs. synthesis, and custom filter variables
 - **Async Build Execution**: AsyncIO-based task system for parallel compilation
@@ -102,5 +102,8 @@ Built-in backends:
 - **GHDL**: VHDL simulation with mcode, GCC, LLVM, or JIT backends
 - **Gowin**: Gowin FPGA synthesis and implementation
 - **Xilinx ISE**: Legacy Xilinx synthesis for Spartan-6 and older devices
+- **Intel Quartus**: Intel/Altera FPGA synthesis and implementation (Standard and Pro editions)
+- **Xilinx Vivado**: Xilinx/AMD synthesis for 7-series and UltraScale devices
+- **Yosys + nextpnr**: Open-source synthesis and place-and-route (iCE40, ECP5)
 
 Additional tools can be integrated via the plugin system.

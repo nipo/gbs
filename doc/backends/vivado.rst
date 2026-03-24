@@ -6,18 +6,25 @@ The Vivado backend provides FPGA synthesis and implementation using Xilinx Vivad
 Overview
 --------
 
-Vivado is Xilinx's industry-standard FPGA design suite supporting 7-series, UltraScale, UltraScale+, and Versal FPGA families. The GBS backend uses Vivado in non-project mode to run synthesis, optimization, placement, routing, and bitstream generation.
+Vivado is Xilinx's industry-standard FPGA design suite supporting 7-series, UltraScale, UltraScale+, and Versal FPGA families.
+
+The backend automatically selects between two modes:
+
+- **Non-project mode** (fast): Used for HDL-only designs. Runs ``synth_design``/``opt_design``/``place_design``/``route_design`` directly.
+- **Project mode**: Automatically enabled when the design includes block designs (``.bd``), IP core files (``.xci``), or packaged IPs (``vivado-ip-zip``). Uses ``launch_runs``/``wait_on_run``.
 
 Supported Inputs
 ----------------
 
 - ``vhdl``: VHDL source files
 - ``verilog``: Verilog source files
-- ``xilinx-xci``: Xilinx IP core files
+- ``xilinx-xci``: Xilinx IP core files (triggers project mode)
 - ``xilinx-xdc``: Xilinx Design Constraints files
 - ``xilinx-constraints-tcl``: TCL-based constraint scripts
-- ``vivado-block-design``: Vivado block design files
+- ``vivado-block-design``: Vivado block design files (triggers project mode)
 - ``vivado-init-tcl``: TCL scripts to run at project initialization
+- ``vivado-bus-definition``: Custom bus interface XML definitions
+- ``vivado-ip-zip``: Packaged IP zip archives (triggers project mode)
 
 Supported Outputs
 -----------------
@@ -29,6 +36,8 @@ Supported Outputs
 - ``vivado-usage-report``: Resource utilization report
 - ``vivado-netlist-edif``: Post-implementation EDIF netlist
 - ``vivado-drc-report``: Design Rule Check report
+- ``vivado-synthesis-report``: Aggregated synthesis report
+- ``vivado-pnr-report``: Aggregated place-and-route report
 
 Configuration
 -------------
@@ -55,7 +64,7 @@ In project file:
    backend_config:
      vivado:
        vhdl_standard: "2008"  # VHDL standard: 1993, 2008, 2019
-       vivado_tool: vivado    # Tool identifier for lookup
+       tool: vivado           # Tool identifier for lookup
 
 Output Group Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -148,5 +157,6 @@ See Also
 --------
 
 - Vivado documentation: https://www.xilinx.com/support/documentation-navigation/design-hubs/dh0006-vivado-design-hub.html
+- :doc:`vivado_ip` - Vivado IP packaging backend
 - :doc:`ise` - Legacy Xilinx ISE backend
 - :doc:`gowin` - Alternative FPGA vendor

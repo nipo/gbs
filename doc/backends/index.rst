@@ -24,9 +24,18 @@ FPGA Synthesis
 
    gowin
    ise
+   quartus
    vivado
    yosys
    nextpnr
+
+IP Packaging
+~~~~~~~~~~~~
+
+.. toctree::
+   :maxdepth: 1
+
+   vivado_ip
 
 Utilities
 ~~~~~~~~~

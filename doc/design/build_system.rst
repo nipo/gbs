@@ -131,12 +131,12 @@ Pass Example
                "vhdl-version": vhdl_std,
            }
 
-       def dispatchers(self):
+       def dispatchers(self, context):
            from .dispatcher import GHDLDispatcher
            return [GHDLDispatcher(
-               output_dir=Path(self.config.get("output_dir", "build")),
+               context=context,
                vhdl_std=self.config.get("vhdl_standard", "1993"),
-               ghdl_tool=self.config.get("ghdl_tool", "ghdl"),
+               tool_name=self.config.get("tool", "ghdl"),
            )]
 
 Build Planning
@@ -585,6 +585,78 @@ Supported Compressions
 
 ``+gzip``
     Standard gzip compression. Adds ``.gz`` extension.
+
+Resource Typology
+-----------------
+
+Each resource in the build graph has a typology that classifies its role:
+
+.. code-block:: python
+
+   class ResourceTypology(Enum):
+       SOURCE = "source"           # User-provided source file
+       INTERMEDIATE = "intermediate"  # Generated during build (default)
+       OUTPUT = "output"           # Final deliverable
+       DEFINITION = "definition"   # Build-influencing metadata file
+
+The ``DEFINITION`` typology marks files that influence the build plan but are
+not source files or build products. These include:
+
+- GBS configuration files (``~/.config/gbs.yaml``, ``.gbs.yaml``)
+- The project file (``*.gbs.yaml``)
+- Repository definition files (partition YAML files read during loading)
+- The config fingerprint file (``gbs-config-fingerprint.json``)
+
+Definition resources are registered at build setup time by
+``_register_definition_files()``. Dispatchers attach them to setup tasks
+via ``attach_definition_dependencies()``, so those tasks re-run when any
+build definition changes.
+
+Config Fingerprint
+~~~~~~~~~~~~~~~~~~
+
+The config fingerprint (``gbs-build/<output_group>/gbs-config-fingerprint.json``)
+is a JSON snapshot of the effective merged configuration for an output group.
+It is itself a ``DEFINITION`` resource. When the effective configuration
+changes between builds, the fingerprint file content changes, which
+invalidates tasks that depend on it and triggers a rebuild.
+
+attach_definition_dependencies()
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``BaseDispatcher`` provides ``attach_definition_dependencies(task)`` as a
+convenience method. It iterates over all pending resources with
+``typology=ResourceTypology.DEFINITION`` and adds each one as a
+non-consuming input to the given task. This is typically called on setup
+or initialization tasks that should re-run when the build configuration
+changes:
+
+.. code-block:: python
+
+   # In a dispatcher's process() method:
+   self._setup_task = MySetupTask(
+       dispatcher=self,
+       inputs=[],
+       outputs=[project_resource],
+   )
+   self.attach_definition_dependencies(self._setup_task)
+
+Shared Resource Registry
+------------------------
+
+When a project has multiple output groups, each gets its own
+``BuildContext``. To support cross-output-group dependencies (e.g., one
+output group produces a file that another consumes), all ``BuildContext``
+instances share a single ``ResourceRegistry``.
+
+The registry ensures that a ``Resource`` at a given resolved path is the
+same Python object regardless of which ``BuildContext`` creates or
+references it. This means if output group A produces a file and output
+group B needs it, both hold the same ``Resource`` future. Group B's task
+naturally blocks until group A's producing task completes.
+
+All output groups execute concurrently via ``asyncio.gather()``, and
+cross-group dependencies resolve through the shared futures.
 
 Tool Messages
 -------------

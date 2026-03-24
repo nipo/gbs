@@ -18,6 +18,7 @@ Supported Outputs
 -----------------
 
 - ``ice40-asc``: ASCII bitstream file for iCE40 FPGAs
+- ``nextpnr-pnr-report``: Place-and-route report (timing, routing statistics)
 
 FPGA Targets
 ------------
@@ -55,7 +56,7 @@ In project file, specify device in the output group:
 
    backend_config:
      nextpnr:
-       nextpnr_tool: nextpnr-ice40  # Tool identifier for lookup
+       tool: nextpnr-ice40          # Tool identifier for lookup
 
    output_groups:
      - name: bitstream
@@ -79,7 +80,7 @@ Example Project
      yosys:
        vhdl_standard: "2008"
      nextpnr:
-       nextpnr_tool: nextpnr-ice40
+       tool: nextpnr-ice40
 
    output_groups:
      - name: bitstream

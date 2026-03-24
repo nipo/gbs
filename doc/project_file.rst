@@ -11,7 +11,7 @@ Basic Structure
 
    name: project_name
 
-   # Root partition definition
+   # Root partition definition (single)
    root:
      name: partition_name
      deps:
@@ -52,8 +52,41 @@ Required. Project name used for identification.
 Root Partition
 --------------
 
-The ``root`` section defines the project's root partition, placed in the
-"work" library.
+The ``root`` section defines the project's root partition(s), placed in the
+"work" library. It can be either a single dict (backward compatible) or a
+list of named partitions.
+
+**Single partition** (dict form):
+
+.. code-block:: yaml
+
+   root:
+     name: top
+     sources:
+       - file_type: vhdl
+         files:
+           - top.vhd
+
+**Multiple partitions** (list form):
+
+.. code-block:: yaml
+
+   root:
+     - name: partition_a
+       sources:
+         - file_type: vhdl
+           files:
+             - design_a.vhd
+
+     - name: partition_b
+       sources:
+         - file_type: vhdl
+           files:
+             - design_b.vhd
+
+When multiple root partitions are defined, each output group must specify
+which partition it builds from using the ``partition:`` field (see
+`output[].partition`_).
 
 root.name
 ~~~~~~~~~
@@ -102,9 +135,9 @@ Source file definitions:
            - modern_code.vhd
 
        # Constraint files
-       - file_type: xilinx-ucf
+       - file_type: xilinx-xdc
          files:
-           - constraints.ucf
+           - constraints.xdc
 
        # Gowin constraints
        - file_type: gowin-cst
@@ -116,8 +149,18 @@ Supported file types:
 - ``vhdl`` - VHDL source files
 - ``verilog`` - Verilog source files
 - ``systemverilog`` - SystemVerilog source files
-- ``gowin-cst`` - Gowin constraint files
-- ``xilinx-ucf`` - Xilinx UCF constraint files
+- ``gowin-cst`` - Gowin physical constraint files
+- ``gowin-serdes-init`` - Gowin SerDes initialization files
+- ``xilinx-ucf`` - Xilinx UCF constraint files (ISE)
+- ``xilinx-xdc`` - Xilinx XDC constraint files (Vivado)
+- ``xilinx-xci`` - Xilinx IP core files
+- ``xilinx-constraints-tcl`` - TCL-based constraint scripts
+- ``vivado-block-design`` - Vivado block design files
+- ``vivado-init-tcl`` - TCL scripts to run at Vivado project init
+- ``vivado-bus-definition`` - Bus interface XML definitions (for IP packaging)
+- ``vivado-ip-customization-tcl`` - Post-packaging TCL scripts (for IP packaging)
+- ``quartus-sdc`` - Quartus timing constraints (SDC format)
+- ``quartus-pin-assignment`` - QSF pin assignment fragments
 
 Output Groups
 -------------
@@ -153,6 +196,37 @@ Top-level entity/module name:
      - name: synthesis
        topcell: top
 
+output[].partition
+~~~~~~~~~~~~~~~~~~
+
+When multiple root partitions are defined, selects which partition this
+output group builds from. Required when multiple partitions exist, optional
+when only one.
+
+.. code-block:: yaml
+
+   root:
+     - name: partition_a
+       sources:
+         - file_type: vhdl
+           files: [design_a.vhd]
+
+     - name: partition_b
+       sources:
+         - file_type: vhdl
+           files: [design_b.vhd]
+
+   output:
+     - name: build_a
+       topcell: design_a
+       partition: partition_a
+       # ...
+
+     - name: build_b
+       topcell: design_b
+       partition: partition_b
+       # ...
+
 output[].filter_vars
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -170,7 +244,8 @@ output[].target
 ~~~~~~~~~~~~~~~
 
 Target device configuration (optional). Device-specific settings used by
-synthesis backends:
+synthesis backends. The planner injects ``output_group.target`` into each
+backend's config automatically.
 
 .. code-block:: yaml
 
@@ -208,12 +283,16 @@ Backend-specific configuration:
        backend_config:
          gbs.builtin.ghdl:
            vhdl_standard: "2008"
-           ghdl_tool: ghdl:llvm
+           tool: ghdl:llvm
 
      - name: synthesis
+       target:
+         part: GW5AT-LV60PG484AC1/I0
        backend_config:
-         gbs.builtin.gowin:
-           part: GW5AT-LV60PG484AC1/I0
+         gbs.builtin.gowin: {}
+
+The ``tool:`` key inside each backend's config selects which tool
+variant to use (looked up in the GBS config's tool definitions).
 
 See backend documentation for available options:
 
@@ -283,16 +362,77 @@ Supported compression suffixes:
 
 - ``ghdl-simulator`` - Simulator executable
 - ``simulator`` - Generic simulator (GHDL will match)
+- ``waveform-vcd`` - VCD waveform dump
+- ``waveform-ghw`` - GHW waveform dump
+- ``waveform-fst`` - FST waveform dump
+- ``simulation-log`` - Simulation log output
+- ``simulation-success`` - Simulation success marker
+
+**NVC:**
+
+- ``nvc-simulator`` - NVC simulator executable
+
+**QuestaSim:**
+
+- ``questa-project`` - MPF project file for QuestaSim GUI
+- ``questa-gui-launcher`` - Shell script to launch QuestaSim GUI
 
 **Gowin:**
 
 - ``gowin-fs`` - FS bitstream file
 - ``gowin-bin`` - Binary bitstream for flash
+- ``gowin-netlist`` - Synthesized netlist
 
 **Xilinx ISE:**
 
 - ``ise-bitstream`` - BIT file
-- ``ise-timing`` - Timing report
+- ``ise-timing-report`` - Timing report
+- ``ise-netlist`` - Post-synthesis netlist
+
+**Xilinx Vivado:**
+
+- ``vivado-bitstream`` - Final bitstream file
+- ``vivado-routing-report`` - Route status report
+- ``vivado-timing-report`` - Timing summary report
+- ``vivado-power-report`` - Power estimation report
+- ``vivado-usage-report`` - Resource utilization report
+- ``vivado-netlist-edif`` - Post-implementation EDIF netlist
+- ``vivado-drc-report`` - Design Rule Check report
+
+**Vivado IP Packaging:**
+
+- ``vivado-ip-zip`` - Packaged IP as a zip archive
+- ``vivado-ip-dir`` - Packaged IP as a directory
+
+**Yosys + nextpnr (iCE40):**
+
+- ``ice40-netlist-json`` - Yosys JSON netlist for iCE40
+- ``ice40-asc`` - nextpnr ASCII bitstream
+- ``ice40-bin`` - icepack binary bitstream
+- ``ice40-bitstream`` - icepack bitstream (alias)
+
+**Yosys + nextpnr (ECP5):**
+
+- ``ecp5-netlist-json`` - Yosys JSON netlist for ECP5
+- ``ecp5-config`` - nextpnr configuration
+- ``ecp5-bit`` - ecppack bitstream
+- ``ecp5-bitstream`` - ecppack bitstream (alias)
+
+**Quartus:**
+
+- ``quartus-sof`` - SRAM Object File (bitstream)
+
+**Report output types:**
+
+All synthesis and place-and-route backends support report aggregation.
+These can be requested as output types:
+
+- ``gowin-synthesis-report``, ``gowin-pnr-report``
+- ``vivado-synthesis-report``, ``vivado-pnr-report``
+- ``ise-synthesis-report``, ``ise-pnr-report``
+- ``yosys-synthesis-report``
+- ``nextpnr-pnr-report``
+- ``quartus-synthesis-report``, ``quartus-pnr-report``
 
 Complete Examples
 -----------------
@@ -322,7 +462,7 @@ Simulation Project
        backend_config:
          gbs.builtin.ghdl:
            vhdl_standard: "1993"
-           ghdl_tool: ghdl:system
+           tool: ghdl:system
        outputs:
          - type: ghdl-simulator
            path: tb_uart
@@ -338,11 +478,6 @@ Gowin Synthesis Project
 .. code-block:: yaml
 
    name: blink
-
-   target:
-     part: GW5AT-LV60PG484AC1/I0
-     use_as_gpio:
-       - done
 
    root:
      name: top
@@ -360,12 +495,15 @@ Gowin Synthesis Project
    output:
      - name: synthesis
        topcell: boundary
+       target:
+         part: GW5AT-LV60PG484AC1/I0
+         use_as_gpio:
+           - done
        filter_vars:
          vendor: gowin
          target-usage: synthesis
        backend_config:
-         gbs.builtin.gowin:
-           part: GW5AT-LV60PG484AC1/I0
+         gbs.builtin.gowin: {}
        outputs:
          - type: gowin-fs
            path: blink.fs
@@ -397,10 +535,10 @@ Xilinx ISE Project
    output:
      - name: synthesis
        topcell: boundary
+       target:
+         part: xc6slx9-2tqg144
        backend_config:
-         gbs.builtin.ise:
-           target:
-             part: xc6slx9-2tqg144
+         gbs.builtin.ise: {}
        outputs:
          - type: ise-bitstream
            path: blink.bit
@@ -442,11 +580,12 @@ Multiple Output Groups
      # Gowin synthesis
      - name: gowin
        topcell: top
+       target:
+         part: GW5AT-LV60PG484AC1/I0
        filter_vars:
          vendor: gowin
        backend_config:
-         gbs.builtin.gowin:
-           part: GW5AT-LV60PG484AC1/I0
+         gbs.builtin.gowin: {}
        outputs:
          - type: gowin-fs
            path: release/gowin.fs
@@ -454,12 +593,12 @@ Multiple Output Groups
      # Xilinx ISE synthesis
      - name: ise
        topcell: top
+       target:
+         part: xc6slx9-2tqg144
        filter_vars:
          vendor: xilinx
        backend_config:
-         gbs.builtin.ise:
-           target:
-             part: xc6slx9-2tqg144
+         gbs.builtin.ise: {}
        outputs:
          - type: ise-bitstream
            path: release/ise.bit
@@ -472,3 +611,56 @@ This produces:
 - ``sim/tb_top`` - Simulator executable (copied from build)
 - ``release/gowin.fs`` - Gowin bitstream (copied from build)
 - ``release/ise.bit`` - ISE bitstream (copied from build)
+
+Multiple Root Partitions
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: yaml
+
+   name: multi_design
+
+   root:
+     - name: fpga_a
+       deps:
+         - mylib.core
+       sources:
+         - file_type: vhdl
+           files:
+             - fpga_a_top.vhd
+         - file_type: xilinx-xdc
+           files:
+             - fpga_a.xdc
+
+     - name: fpga_b
+       deps:
+         - mylib.core
+       sources:
+         - file_type: vhdl
+           files:
+             - fpga_b_top.vhd
+         - file_type: xilinx-xdc
+           files:
+             - fpga_b.xdc
+
+   output:
+     - name: build_a
+       topcell: fpga_a_top
+       partition: fpga_a
+       target:
+         part: xc7a35tcpg236-1
+       backend_config:
+         gbs.builtin.vivado: {}
+       outputs:
+         - type: vivado-bitstream
+           path: release/fpga_a.bit
+
+     - name: build_b
+       topcell: fpga_b_top
+       partition: fpga_b
+       target:
+         part: xc7a100tcsg324-1
+       backend_config:
+         gbs.builtin.vivado: {}
+       outputs:
+         - type: vivado-bitstream
+           path: release/fpga_b.bit

@@ -23,13 +23,13 @@ Backend configuration in project file:
 
    backend_config:
      gbs.builtin.gowin:
-       gowin_tool: gowin:V1.9.12
+       tool: gowin:V1.9.12
        output_base_name: design
 
 Configuration Options
 ~~~~~~~~~~~~~~~~~~~~~
 
-``gowin_tool``
+``tool``
     Tool identifier for Gowin EDA lookup in ``name:variant`` format.
 
     Default: ``"gowin"``
@@ -105,6 +105,12 @@ Output Types
 
 ``gowin-netlist``
     Synthesized netlist (intermediate format).
+
+``gowin-synthesis-report``
+    Synthesis report (resource usage, warnings).
+
+``gowin-pnr-report``
+    Place-and-route report (timing, routing statistics).
 
 Filter Variables
 ----------------
@@ -203,7 +209,7 @@ Example Project
          vendor: gowin
        backend_config:
          gbs.builtin.gowin:
-           gowin_tool: gowin:V1.9.12
+           tool: gowin:V1.9.12
        outputs:
          - type: gowin-fs
            path: blink.fs

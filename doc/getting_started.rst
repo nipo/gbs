@@ -95,7 +95,11 @@ Create a simple VHDL project with a testbench that prints "Hello World".
 
 .. code-block:: bash
 
-   gbs project build project.gbs.yaml
+   # Auto-discovers project.gbs.yaml in current directory
+   gbs project build
+
+   # Or specify the project file explicitly
+   gbs project -f project.gbs.yaml build
 
    # Run the simulation
    ./simulator.exe

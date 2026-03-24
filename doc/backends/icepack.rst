@@ -43,7 +43,7 @@ In project file (minimal configuration needed):
 
    backend_config:
      icepack:
-       icepack_tool: icepack  # Tool identifier for lookup (optional)
+       tool: icepack          # Tool identifier for lookup (optional)
 
 Example Project
 ---------------

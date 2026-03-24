@@ -28,7 +28,7 @@ Backend configuration in project file:
      gbs.builtin.ghdl:
        vhdl_standard: "2008"
        output_dir: build
-       ghdl_tool: ghdl:llvm
+       tool: ghdl:llvm
 
 Configuration Options
 ~~~~~~~~~~~~~~~~~~~~~
@@ -43,7 +43,7 @@ Configuration Options
 
     Default: ``"1993"``
 
-``ghdl_tool``
+``tool``
     Tool identifier for GHDL lookup in ``name:variant`` format.
 
     Default: ``"ghdl"``
@@ -164,7 +164,7 @@ Example Project
        backend_config:
          gbs.builtin.ghdl:
            vhdl_standard: "2008"
-           ghdl_tool: ghdl:llvm
+           tool: ghdl:llvm
        outputs:
          - type: ghdl-simulator
            path: tb_uart

@@ -45,7 +45,7 @@ In project file:
    backend_config:
      questa:
        vhdl_standard: "2008"  # VHDL standard: 1993, 2008, 2019
-       questa_tool: questa    # Tool identifier for lookup
+       tool: questa           # Tool identifier for lookup
 
 Example Project
 ---------------

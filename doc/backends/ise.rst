@@ -24,10 +24,21 @@ Backend configuration in project file:
 
    backend_config:
      gbs.builtin.ise:
-       target:
-         part: xc6slx9-2tqg144
        output_dir: ise-build
        tool: ise:14.7
+
+Target device is specified at the output group level:
+
+.. code-block:: yaml
+
+   output_groups:
+     - name: synthesis
+       topcell: boundary
+       target:
+         part: xc6slx9-2tqg144
+       outputs:
+         - type: ise-bitstream
+           path: blink.bit
 
 Configuration Options
 ~~~~~~~~~~~~~~~~~~~~~
@@ -90,6 +101,12 @@ Output Types
 
 ``ise-netlist``
     Synthesized netlist (NGC format)
+
+``ise-synthesis-report``
+    Synthesis report (resource usage, warnings).
+
+``ise-pnr-report``
+    Place-and-route report (timing, routing statistics).
 
 Filter Variables
 ----------------
@@ -187,10 +204,8 @@ Example Project
    output:
      - name: synthesis
        topcell: boundary
-       backend_config:
-         gbs.builtin.ise:
-           target:
-             part: xc6slx9-2tqg144
+       target:
+         part: xc6slx9-2tqg144
        outputs:
          - type: ise-bitstream
            path: blink.bit

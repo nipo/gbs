@@ -70,6 +70,48 @@ Usual pattern is:
 Dispatcher code must not create anything in the filesystem at the time
 Task objects are created from process().
 
+Tool Configuration
+==================
+
+Backends specify which tool to use via the standardized ``tool:`` key
+in their backend config section:
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       target:
+         part: GW1NR-9C
+         family: GW1NR
+       backend_config:
+         gbs.builtin.gowin:
+           tool: gowin:V1.9.12
+
+The ``target:`` dict is specified at the output group level. The planner
+injects it into the backend config so passes can access it as
+``self.config["target"]``.
+
+Passes read the tool identifier with ``self.config.get("tool", "<default>")``:
+
+.. code-block:: python
+
+   def dispatchers(self, context):
+       tool = self.config.get("tool", "mybackend")
+       target = self.config["target"]
+       return [MyDispatcher(context=context, tool_name=tool, target=target)]
+
+Dispatchers access individual tool options via ``get_tool_option()``:
+
+.. code-block:: python
+
+   # Required option -- raises MissingToolError with helpful message
+   path = self.get_tool_option("path")
+
+   # Optional with fallback
+   executable = self.get_tool_option("executable", "mytool")
+
+This replaces directly accessing the tool dict through the build context.
+
 Tasks
 =====
 
@@ -93,3 +135,26 @@ Tasks may use helpers:
   formatted messages on stdout/stderr.
 
 * for creating files and directories, pathlib may be used.
+
+Definition Dependencies
+=======================
+
+Setup tasks (project initialization, environment creation) should declare
+a dependency on build definition files so they re-run when the project
+file, configuration, or repository definitions change. Use
+``attach_definition_dependencies()`` on the dispatcher:
+
+.. code-block:: python
+
+   async def process(self):
+       if self._setup_task is None:
+           self._setup_task = MySetupTask(
+               dispatcher=self,
+               inputs=[],
+               outputs=[project_resource],
+           )
+           self.attach_definition_dependencies(self._setup_task)
+
+This attaches all ``DEFINITION``-typology resources (config files,
+project file, repository definitions, config fingerprint) as
+non-consuming inputs to the task.

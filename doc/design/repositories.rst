@@ -21,7 +21,8 @@ Data Model Hierarchy
 
 **Repository**
     Collection of libraries from a directory tree. Has a name, root path,
-    and dictionary of libraries.
+    dictionary of libraries, and a ``definition_files`` list tracking
+    which files were read during loading.
 
 **Library**
     Symbol scoping unit (like VHDL libraries). Contains partitions that
@@ -342,3 +343,25 @@ implement:
        ...
 
 See :doc:`plugins` for details on creating custom loaders.
+
+Definition File Tracking
+------------------------
+
+Each ``Repository`` instance has a ``definition_files`` attribute
+(``list[Path]``) that records every file the loader read while loading
+the repository. For the standard YAML loader, this includes all
+partition YAML files discovered in the repository tree.
+
+Repository loaders are responsible for populating this list. For example,
+the built-in YAML loader tracks files via an internal ``_files_read`` set
+and assigns it after loading:
+
+.. code-block:: python
+
+   repo = YAMLRepository(name=name, root=root, libraries=libraries)
+   repo.definition_files = list(self._files_read)
+
+At build time, these paths are registered as ``DEFINITION`` resources so
+that tasks depending on the build definition will re-run when any
+repository definition file changes. See :doc:`build_system` for details
+on the ``DEFINITION`` resource typology.

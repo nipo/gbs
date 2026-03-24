@@ -52,6 +52,10 @@ Build a project.
     Maximum number of parallel tasks. Overrides ``max_parallel`` from config files.
     Must be >= 1.
 
+``-t, --tool BACKEND=TOOL:VARIANT``
+    Override tool variant for a backend. BACKEND is a substring match against
+    backend names. Can be specified multiple times.
+
 **Examples:**
 
 .. code-block:: bash
@@ -67,6 +71,9 @@ Build a project.
 
    # Build with 8 parallel jobs
    gbs project build -j 8
+
+   # Override tool variant for quartus backends
+   gbs project build -t quartus=quartus-pro:24.2
 
    # Build project in another directory
    gbs -C /path/to/project project build
@@ -129,6 +136,28 @@ Shows:
    #     outputs: ise-bitstream -> blink.bit
    #     passes: ise-synthesize
 
+gbs project outputs
+~~~~~~~~~~~~~~~~~~~
+
+List output files, types, and required backends for each output group in
+machine-readable format.
+
+.. code-block:: bash
+
+   gbs project [-f FILE] outputs [OPTIONS]
+
+**Options:**
+
+``--format yaml|json``
+    Output format. Default: ``yaml``.
+
+**Example:**
+
+.. code-block:: bash
+
+   gbs project outputs
+   gbs project outputs --format json
+
 gbs project clean
 ~~~~~~~~~~~~~~~~~
 
@@ -152,6 +181,40 @@ Remove build artifacts.
 
    # Actually clean
    gbs project clean
+
+Configuration Commands
+---------------------
+
+gbs config dump
+~~~~~~~~~~~~~~~
+
+Display merged configuration from all sources with origin annotations showing
+which config file each entry came from.
+
+.. code-block:: bash
+
+   gbs config dump
+
+gbs config tool
+~~~~~~~~~~~~~~~
+
+List all tool variants matching NAME (substring search), in selection order.
+The first match is marked as default.
+
+.. code-block:: bash
+
+   gbs config tool NAME
+
+**Arguments:**
+
+``NAME``
+    Substring to match against tool variant names.
+
+**Example:**
+
+.. code-block:: bash
+
+   gbs config tool quartus
 
 Repository Commands
 -------------------

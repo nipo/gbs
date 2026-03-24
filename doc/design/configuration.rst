@@ -64,14 +64,14 @@ for shared settings across multiple projects in a directory tree:
            config:
              output_dir: build
              vhdl_std: "1993"
-             ghdl_tool: ghdl:system
+             tool: ghdl:system
        repositories: []
 
      synthesis-gowin:
        backends:
          - backend: gbs.builtin.gowin
            config:
-             gowin_tool: gowin:V1.9.12
+             tool: gowin:V1.9.12
 
    # Common repositories for all projects in this tree
    repositories:
@@ -103,7 +103,7 @@ Reference tools using ``name:variant`` format:
 
    backend_config:
      gbs.builtin.ghdl:
-       ghdl_tool: ghdl:llvm    # Uses GHDL LLVM variant
+       tool: ghdl:llvm    # Uses GHDL LLVM variant
 
 If variant is omitted, the first matching tool is used.
 
@@ -169,7 +169,7 @@ Profiles group related configuration for reuse across projects:
          - backend: gbs.builtin.ghdl
            config:
              vhdl_std: 2008
-             ghdl_tool: ghdl:llvm
+             tool: ghdl:llvm
 
        # Additional repositories for this profile
        repositories: []
@@ -218,6 +218,89 @@ or project). Later levels override earlier ones.
       max_log_count: 20   # Keep 20 most recent logs
       # or
       max_log_count: 0    # Keep all logs (disable cleanup)
+
+Loaded Files Tracking
+---------------------
+
+``GBSConfig`` maintains a ``loaded_files`` list that records the resolved
+paths of all configuration files that contributed to the merged config.
+As configs are loaded and merged, their file paths are concatenated:
+
+.. code-block:: python
+
+   config = GBSConfig.load_user_config()
+   # config.loaded_files == [Path("~/.config/gbs.yaml")]
+
+   tree_config = GBSConfig.load_tree_config(project_dir)
+   merged = GBSConfig.merge(config, tree_config)
+   # merged.loaded_files == [Path("~/.config/gbs.yaml"), Path("/project/.gbs.yaml")]
+
+This list is used at build time to register configuration files as
+``DEFINITION`` resources for incremental rebuild tracking.
+
+Tool Origin Tracking
+--------------------
+
+Each ``ToolConfig`` has an ``origin`` field (``Optional[Path]``) that
+records which configuration file the tool definition was loaded from.
+This is used by ``gbs config dump`` and ``gbs config tool`` to show
+provenance annotations, making it clear where each tool definition
+comes from when debugging configuration issues.
+
+Standardized ``tool:`` Config Key
+----------------------------------
+
+Backend configuration uses the standardized ``tool:`` key to specify
+which tool entry to use. This replaces the per-backend keys that
+existed previously (``ghdl_tool:``, ``gowin_tool:``, ``ise_tool:``, etc.).
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       backend_config:
+         gbs.builtin.quartus:
+           tool: quartus:prime-25.2
+
+All built-in backends read ``self.config.get("tool", "<default_name>")``
+in their ``dispatchers()`` method.
+
+``get_tool_option()`` on BaseDispatcher
+---------------------------------------
+
+Dispatchers access tool configuration through ``get_tool_option()``
+rather than directly looking up the tool dict. This method provides
+clear error messages when a tool is not configured:
+
+.. code-block:: python
+
+   # Required option -- raises MissingToolError with config hint if missing
+   path = self.get_tool_option("path")
+
+   # Optional with fallback
+   executable = self.get_tool_option("executable", "ghdl")
+
+When the tool identified by ``self.tool_name`` is not found in GBS config
+and no default is provided, ``get_tool_option()`` raises
+``MissingToolError`` with a message showing exactly what YAML to add.
+
+Target Configuration at Output Group Level
+-------------------------------------------
+
+Target device information (``target:``) is specified at the output group
+level in the project file. The planner injects it into the backend config
+dict as ``config["target"]``, making it available to passes via
+``self.config["target"]``:
+
+.. code-block:: yaml
+
+   output:
+     - name: synthesis
+       target:
+         part: 5CEBA4F23C7
+         family: cyclonev
+       backend_config:
+         gbs.builtin.quartus: {}
 
 Configuration Merging
 ---------------------

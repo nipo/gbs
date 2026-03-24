@@ -19,6 +19,7 @@ Supported Outputs
 -----------------
 
 - ``ice40-netlist-json``: JSON netlist for Lattice iCE40 FPGAs
+- ``yosys-synthesis-report``: Synthesis report (resource usage, warnings)
 
 FPGA Targets
 ------------
@@ -56,7 +57,7 @@ In project file:
    backend_config:
      yosys:
        vhdl_standard: "2008"  # VHDL standard: 1993, 2008, 2019
-       yosys_tool: yosys      # Tool identifier for lookup
+       tool: yosys            # Tool identifier for lookup
        steps: []              # Optional: intermediate transformation commands
 
 The ``steps`` option allows you to insert custom Yosys commands between reading the design and running synthesis. For example:
