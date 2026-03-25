@@ -112,6 +112,41 @@ Dispatchers access individual tool options via ``get_tool_option()``:
 
 This replaces directly accessing the tool dict through the build context.
 
+Environment Variables
+~~~~~~~~~~~~~~~~~~~~~
+
+The ``tool_env`` property on ``BaseDispatcher`` returns the ``env`` dict
+from the tool configuration. Backends should pass this to all subprocess
+and session constructors so that users can inject environment variables
+(e.g., license server paths) per tool:
+
+.. code-block:: python
+
+   # For interactive sessions
+   self._session = Session(
+       argv=[str(exe)],
+       cwd=self.context.output_path,
+       env=self.tool_env or None,
+   )
+
+   # For subprocesses in tasks
+   process = MySubprocess(
+       argv=cmd,
+       cwd=cwd,
+       env=self.dispatcher.tool_env or None,
+   )
+
+Users configure this in their GBS config:
+
+.. code-block:: yaml
+
+   tools:
+     - name: vivado
+       config:
+         path: /opt/Xilinx/Vivado/2022.2
+         env:
+           LM_LICENSE_FILE: 1700@license-server
+
 Tasks
 =====
 

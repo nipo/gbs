@@ -133,13 +133,7 @@ Tool Configuration Examples
      - name: gowin
        variant: V1.9.12
        config:
-         # Directory containing IDE/ and Programmer/
          path: /opt/Gowin/V1.9.12
-         # Optional: environment variables to set when running gw_sh
-         # Useful for workarounds like LD_PRELOAD on systems where
-         # Gowin's bundled libraries conflict with system libraries
-         env:
-           LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libfreetype.so.6
 
 **Xilinx ISE**:
 
@@ -150,6 +144,49 @@ Tool Configuration Examples
        variant: "14.7"
        config:
          path: /opt/Xilinx/14.7
+
+Per-Tool Environment Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Any tool can have an ``env`` key in its config that defines environment
+variables to inject when running the tool's subprocesses and interactive
+sessions. This is applied by all backends automatically.
+
+The primary use case is license server configuration, which varies per
+tool installation:
+
+.. code-block:: yaml
+
+   tools:
+     - name: vivado
+       variant: "2022.2"
+       config:
+         path: /opt/Xilinx/Vivado/2022.2
+         env:
+           LM_LICENSE_FILE: 1700@license-server
+           XILINXD_LICENSE_FILE: /path/to/license.lic
+
+     - name: quartus-prime
+       variant: "24.1"
+       config:
+         path: /opt/Altera/prime
+         env:
+           LM_LICENSE_FILE: 1700@license-server
+
+     - name: gowin
+       variant: V1.9.12
+       config:
+         path: /opt/Gowin/V1.9.12
+         env:
+           # Workaround for bundled library conflicts
+           LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libfreetype.so.6
+
+Environment variables are merged with the current process environment.
+Tool-specific variables take precedence over existing values.
+
+The ``tool_env`` property on ``BaseDispatcher`` provides these variables
+to backends. All 11 built-in backends pass them to their subprocess and
+session constructors automatically.
 
 Profile System
 --------------
