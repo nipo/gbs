@@ -98,7 +98,7 @@ class PlaceAndRoute(Task):
             cmd.append("--pcf-allow-unconstrained")
 
         # Run nextpnr
-        process = NextpnrInvocation(argv=cmd)
+        process = NextpnrInvocation(argv=cmd, env=self.dispatcher.tool_env or None)
 
         async for msg in process:
             await self.add_message_obj(msg)

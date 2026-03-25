@@ -330,6 +330,7 @@ class SerDesToCsr(Task):
         process = MessageSubprocess(
             argv = cmd,
             cwd = str(toml_file.parent),
+            env = self.dispatcher.tool_env or None,
             parent_reporter = self  # Task is the parent
         )
 

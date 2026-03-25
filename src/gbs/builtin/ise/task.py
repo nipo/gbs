@@ -16,12 +16,13 @@ class IseSubprocess(MessageSubprocess):
     def __init__(self,
                  settings_sh: Path,
                  argv: list[str],
-                 cwd: Path = Path(".")):
+                 cwd: Path = Path("."),
+                 env: dict[str, str] | None = None):
         import shlex
         prepare = shlex.join([".", str(settings_sh)])
         to_run = shlex.join(argv)
         cmd = ["bash", "-c", f"{prepare} > /dev/null ; {to_run}"]
-        super().__init__(cmd, cwd)
+        super().__init__(cmd, cwd, env=env)
 
     message_format = re.compile(r'^(?P<level>INFO|ERROR|WARNING):(?P<tool>[^:]+):(?P<code>[0-9]+) - (?P<message>.*)$')
 
@@ -81,6 +82,7 @@ class IseTask(Task):
             settings_sh = settings.path,
             argv = cmd,
             cwd = cwd,
+            env = self.dispatcher.tool_env or None,
         )
 
         async for msg in process:

@@ -21,12 +21,15 @@ class Session(shell.Session):
 
     prompt = "yosys> "
 
-    def __init__(self, yosys_executable: str, work_dir: Path):
+    def __init__(self, yosys_executable: str, work_dir: Path, extra_env: dict[str, str] = None):
         bin_path = Path(yosys_executable).parent
         ghdl_lib_dir = bin_path / ".." / "lib" / "ghdl"
+        env = {"GHDL_PREFIX": str(ghdl_lib_dir)}
+        if extra_env:
+            env.update(extra_env)
         super().__init__(argv = [yosys_executable],
                          cwd = work_dir,
-                         env = {"GHDL_PREFIX":str(ghdl_lib_dir)})
+                         env = env)
 
     async def session_init(self):
         await super().session_init()

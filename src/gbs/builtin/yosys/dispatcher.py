@@ -45,7 +45,8 @@ class YosysDispatcher(BaseDispatcher):
         self.synthesize_stamp = None
         self.write_netlist = None
         
-        self._session = Session(str(self._get_yosys_executable()), self.context.output_path)
+        self._session = Session(str(self._get_yosys_executable()), self.context.output_path,
+                                extra_env=self.tool_env or None)
 
     def _get_yosys_executable(self) -> str:
         """Get yosys executable path (cached)

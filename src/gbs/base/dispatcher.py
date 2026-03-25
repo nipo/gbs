@@ -92,6 +92,27 @@ class BaseDispatcher(UIReporter, ABC):
         """Raw tool configuration dict, or None. Prefer get_tool_option()."""
         return self.context.get_tool(self.tool_name, required=False)
 
+    @property
+    def tool_env(self) -> dict[str, str]:
+        """Environment variables from tool configuration.
+
+        Returns the 'env' dict from the tool config, or empty dict
+        if not configured. Backends should merge this into the
+        environment passed to subprocesses and interactive sessions.
+
+        Example GBS config::
+
+            tools:
+              - name: vivado
+                variant: 2022.2
+                config:
+                  path: /opt/Xilinx/Vivado/2022.2
+                  env:
+                    LM_LICENSE_FILE: 1700@license-server
+                    XILINXD_LICENSE_FILE: /path/to/license.lic
+        """
+        return self.get_tool_option("env", {})
+
     def attach_definition_dependencies(self, task: 'Task') -> None:
         """Attach all DEFINITION resources as non-consuming inputs to a task.
 

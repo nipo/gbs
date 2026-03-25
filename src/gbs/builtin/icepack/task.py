@@ -71,7 +71,7 @@ class Pack(Task):
         self.info(f"Generating binary bitstream: {output_path.name}")
 
         # Run icepack
-        process = IcepackInvocation(argv=[
+        process = IcepackInvocation(env=self.dispatcher.tool_env or None, argv=[
             self.dispatcher._get_icepack_executable(),
             str(asc_path),
             str(output_path),

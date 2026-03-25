@@ -89,6 +89,7 @@ class VivadoDispatcher(BaseDispatcher):
                     "-nolog",
                 ],
                 cwd=self.context.output_path,
+                env=self.tool_env or None,
                 use_pty=True,  # Vivado requires a tty for proper interactive behavior
             )
 

@@ -85,7 +85,7 @@ class Import(Task):
         workdir.mkdir(parents=True, exist_ok=True)
 
         for cmd in ["-i", "-a"]:
-            import_process = GhdlInvocation(argv = [
+            import_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
                 ghdl_executable, cmd,
                 f"--workdir={workdir.resolve()}",
                 f"--std={self.dispatcher.ghdl_vhdl_version}",
@@ -132,7 +132,7 @@ class VHPIDirectCompile(Task):
         # Compile C source to object file using GHDL's wrapper
         obj_path = so.path.with_suffix('.o')
 
-        compile_process = GhdlInvocation(argv=[
+        compile_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
             ghdl_executable, "--vpi-compile",
             self.compiler, "-c",
             "-fPIC",  # Position-independent code for shared library
@@ -147,7 +147,7 @@ class VHPIDirectCompile(Task):
             raise BuildError(f"C compilation failed for {c.path.name}: {compile_process.returncode}")
 
         # Link to shared library using GHDL's wrapper
-        link_process = GhdlInvocation(argv=[
+        link_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
             ghdl_executable, "--vpi-link",
             self.compiler, "-shared",
             str(obj_path),
@@ -207,7 +207,7 @@ class CompileLink(Task):
             lib_path = lib_res.path.resolve()
             flags.append(f"-Wl,{lib_path}")
 
-        process = GhdlInvocation(argv = [
+        process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-c", "-O2",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + flags + [
@@ -258,7 +258,7 @@ class MakeElab(Task):
             if res.file_type == "ghdl-cf":
                 p_flags.append(f"-P{res.path.parent.resolve()}")
 
-        process = GhdlInvocation(argv = [
+        process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-m",
             f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
@@ -273,7 +273,7 @@ class MakeElab(Task):
         if process.returncode != 0:
             raise BuildError(f"ghdl -m failed: {process.returncode}")
 
-        process = GhdlInvocation(argv = [
+        process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-e",
             f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
@@ -398,7 +398,7 @@ class RunSimulation(Task):
         
         with open(log_path, "w") as log:
             # Run simulator
-            process = SimulatorInvocation(argv=argv)
+            process = SimulatorInvocation(argv=argv, env=self.dispatcher.tool_env or None)
 
             async for msg in process:
                 # Add message to task

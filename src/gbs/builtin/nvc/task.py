@@ -118,7 +118,7 @@ class Analyze(Task):
         # nvc [GLOBAL_OPTIONS] -a [ANALYSIS_OPTIONS] FILE...
         # --std and --work are global options and must come before -a
         # --relaxed disables certain pedantic rule checks
-        analyze_process = NvcInvocation(argv=[
+        analyze_process = NvcInvocation(env=self.dispatcher.tool_env or None, argv=[
             nvc_executable,
             f"--std={self.dispatcher.vhdl_std}",
             f"--work={self.library_name}",
@@ -195,7 +195,7 @@ class Elaborate(Task):
         # Elaborate command
         # nvc [GLOBAL_OPTIONS] -e [ELAB_OPTIONS] topcell
         # --std and --work are global options
-        elab_process = NvcInvocation(argv=[
+        elab_process = NvcInvocation(env=self.dispatcher.tool_env or None, argv=[
             nvc_executable,
             f"--std={self.dispatcher.vhdl_std}",
             f"--work={self.root_library}",

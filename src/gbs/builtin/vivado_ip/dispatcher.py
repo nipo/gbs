@@ -69,6 +69,7 @@ class VivadoIpDispatcher(BaseDispatcher):
                     "-nolog",
                 ],
                 cwd=self.context.output_path,
+                env=self.tool_env or None,
                 use_pty=True,
             )
 

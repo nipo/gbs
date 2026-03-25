@@ -88,6 +88,7 @@ class QuartusTask(Task):
         process = QuartusSubprocess(
             argv=cmd,
             cwd=self.dispatcher.context.output_path,
+            env=self.dispatcher.tool_env or None,
         )
 
         async for msg in process:

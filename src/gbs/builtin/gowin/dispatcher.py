@@ -78,8 +78,7 @@ class GowinDispatcher(BaseDispatcher):
             env["DISPLAY"] = ""
 
         # Inject user-specified environment variables from tool config
-        user_env = self.get_tool_option("env", {})
-        env.update(user_env)
+        env.update(self.tool_env)
 
         self._session = Session(
             argv=[str(gw_sh)],

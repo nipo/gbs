@@ -73,7 +73,7 @@ class Pack(Task):
         self.info(f"Generating binary bitstream: {output_path.name}")
 
         # Run ecppack
-        process = EcppackInvocation(argv=[
+        process = EcppackInvocation(env=self.dispatcher.tool_env or None, argv=[
             self.dispatcher._get_ecppack_executable(),
             "--input", str(config_path),
             "--bit", str(output_path),
