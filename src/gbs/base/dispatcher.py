@@ -133,6 +133,15 @@ class BaseDispatcher(UIReporter, ABC):
         """
         ...
 
+    async def close(self) -> None:
+        """Clean up resources (sessions, subprocesses).
+
+        Called by the build context after build completion. Override
+        to close interactive sessions and kill any spawned processes.
+        Default implementation does nothing.
+        """
+        pass
+
     def get_clean_paths(self) -> set:
         """Return paths that should be cleaned by this dispatcher
 

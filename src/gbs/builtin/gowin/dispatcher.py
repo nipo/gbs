@@ -120,6 +120,11 @@ class GowinDispatcher(BaseDispatcher):
             # Subsequent calls - add new constraint files to existing tasks
             await self._update_constraint_inputs()
 
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
     async def _create_all_tasks(
         self,
         output_base_name: str

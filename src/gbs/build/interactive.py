@@ -132,7 +132,11 @@ class Session(ABC, Generic[CommandT]):
         """Read stream and yield lines, detecting prompt for command completion"""
         buffer = ""
         while True:
-            chunk = await stream.read(1024)
+            try:
+                chunk = await stream.read(1024)
+            except (OSError, IOError):
+                # PTY raises EIO when the slave side closes (process exited)
+                break
             if not chunk:
                 break
 
@@ -167,6 +171,7 @@ class Session(ABC, Generic[CommandT]):
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self.cwd),
             env=process_env,
+            start_new_session=True,  # New process group for clean kill
         )
 
         self._stdout_stream = self._process.stdout
@@ -192,6 +197,7 @@ class Session(ABC, Generic[CommandT]):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.cwd),
                 env=process_env,
+                start_new_session=True,  # New process group for clean kill
             )
         finally:
             # Close slave fd in parent - child has its own copy
@@ -316,7 +322,7 @@ class Session(ABC, Generic[CommandT]):
             await self._cmd_send(cmd)
             while True:
                 msg = await self._queue.get()
-                if msg is _eoc_marker:
+                if msg is _eoc_marker or msg is None:
                     break
                 yield msg
 
@@ -329,17 +335,59 @@ class Session(ABC, Generic[CommandT]):
         async for msg in self.interact(cmd):
             pass
 
+    def _kill_process_group(self):
+        """Kill the process and its entire process group.
+
+        Uses SIGTERM first for graceful shutdown, then SIGKILL.
+        Operates on the process group (all children) since we
+        launched with start_new_session=True.
+        """
+        import signal
+
+        if self._process is None or self._process.returncode is not None:
+            return
+
+        pid = self._process.pid
+        try:
+            # Kill the entire process group
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
     async def close(self):
-        """Shutdown interpreter cleanly"""
+        """Shutdown interpreter cleanly.
+
+        Sends exit command, waits briefly, then kills the process
+        group if still running. Ensures no orphaned children.
+        """
+        import signal
+
         if self._process is None:
             return
-        await self.session_close()
+
+        # Try graceful exit first
+        try:
+            await self.session_close()
+        except Exception:
+            pass
+
         async with self._lock:
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except asyncio.TimeoutError:
-                self._process.kill()
-                await self._process.wait()
+                # Graceful exit didn't work — kill the process group
+                self._logger.debug("Session did not exit gracefully, killing process group")
+                self._kill_process_group()
+                try:
+                    await asyncio.wait_for(self._process.wait(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    # SIGTERM didn't work — SIGKILL the group
+                    self._logger.debug("SIGTERM did not work, sending SIGKILL")
+                    try:
+                        os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    await self._process.wait()
             finally:
                 self._process = None
 
@@ -351,6 +399,10 @@ class Session(ABC, Generic[CommandT]):
                 # which closes the fd, so we don't close _pty_master_fd separately
                 self._pty_master_file = None
                 self._pty_master_fd = None
+
+    def __del__(self):
+        """Safety net: kill process group on garbage collection."""
+        self._kill_process_group()
 
 
 class CommandTask(Task, Generic[CommandT]):

@@ -82,6 +82,11 @@ class VivadoIpDispatcher(BaseDispatcher):
 
         await self._attach_pending_inputs()
 
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
     async def _create_package_task(self) -> None:
         """Create the IP packaging task with output resources"""
         session = self._get_session()

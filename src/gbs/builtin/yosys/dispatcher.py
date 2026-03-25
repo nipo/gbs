@@ -149,7 +149,7 @@ class YosysDispatcher(BaseDispatcher):
                 self.intermediate.append(output)
                 prev = self.intermediate[-1]
         self.write_netlist.add_input(self.intermediate[-1])
-        
+
         # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
             if library_name is None:
@@ -160,3 +160,8 @@ class YosysDispatcher(BaseDispatcher):
                     continue
 
                 self.vhdl_ingress.add_input(resource)
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None

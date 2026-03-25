@@ -455,6 +455,13 @@ class BuildContext(UIReporter):
             if not p.done():
                 p.cancel()
 
+        # Close all dispatcher sessions (kills process groups)
+        for dispatcher in self._dispatchers:
+            try:
+                await dispatcher.close()
+            except Exception as e:
+                self.debug(f"Error closing dispatcher {dispatcher.name}: {e}")
+
         if failed_steps:
             self._print_failure_summary(failed_steps)
 
