@@ -11,7 +11,7 @@ from pathlib import Path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
-from ...utils import expand_path
+from ...utils import expand_path, resolve_tool_exe
 from .task import NonProjectBuild, AggregateSynthesisReport, AggregatePnrReport
 from .vivado_tcl import Session
 
@@ -72,12 +72,10 @@ class VivadoDispatcher(BaseDispatcher):
         if self._session is None:
             vivado_path = expand_path(self.get_tool_option("path"))
 
-            # Vivado executable — try .bat first on Windows
-            vivado_exe = vivado_path / "bin" / "vivado.bat"
-            if not vivado_exe.exists():
-                vivado_exe = vivado_path / "bin" / "vivado"
-
-            if not vivado_exe.exists():
+            # Vivado executable
+            try:
+                vivado_exe = resolve_tool_exe(vivado_path / "bin" / "vivado")
+            except FileNotFoundError:
                 raise RuntimeError(f"Vivado not found at {vivado_path}")
 
             self._session = Session(

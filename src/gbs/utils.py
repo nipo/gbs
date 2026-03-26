@@ -1,6 +1,7 @@
 """Utility functions for GBS"""
 
 import os
+import sys
 import shutil
 from pathlib import Path
 
@@ -79,4 +80,32 @@ def clean_paths(paths: set[Path], dry_run: bool = False, echo_func=None) -> set[
 
     return cleaned
 
-__all__ = ['expand_path', 'clean_paths']
+def resolve_tool_exe(path: Path) -> Path:
+    """Resolve a tool executable path for the current platform.
+
+    On Windows, tries .exe/.bat/.cmd extensions first since the
+    extensionless file (if it exists) is typically a Unix shell script.
+    On Unix, returns the path as-is.
+
+    Args:
+        path: Path to the tool executable (without extension)
+
+    Returns:
+        Path to the resolved executable
+
+    Raises:
+        FileNotFoundError: If no matching executable is found
+    """
+    if sys.platform == "win32":
+        for ext in ('.exe', '.bat', '.cmd'):
+            candidate = path.with_suffix(ext)
+            if candidate.exists():
+                return candidate
+
+    if path.exists():
+        return path
+
+    raise FileNotFoundError(f"Tool executable not found: {path}")
+
+
+__all__ = ['expand_path', 'clean_paths', 'resolve_tool_exe']

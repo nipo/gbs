@@ -77,8 +77,10 @@ class QuartusTask(Task):
         self.extra_args = extra_args or []
 
     async def work(self) -> None:
+        from ...utils import resolve_tool_exe
+
         cmd = [
-            str(self.quartus_bin / self.executable),
+            str(resolve_tool_exe(self.quartus_bin / self.executable)),
             *self.extra_args,
             self.project_name,
         ]

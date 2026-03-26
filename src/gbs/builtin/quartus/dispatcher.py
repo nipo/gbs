@@ -73,8 +73,9 @@ class QuartusDispatcher(BaseDispatcher):
         if not hasattr(self, '_is_pro'):
             import subprocess
             try:
+                from ...utils import resolve_tool_exe
                 result = subprocess.run(
-                    [str(self._get_quartus_bin() / "quartus_sh"), "--version"],
+                    [str(resolve_tool_exe(self._get_quartus_bin() / "quartus_sh")), "--version"],
                     capture_output=True, text=True, timeout=10,
                 )
                 self._is_pro = "Pro Edition" in result.stdout

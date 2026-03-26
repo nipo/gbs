@@ -58,10 +58,12 @@ class GowinDispatcher(BaseDispatcher):
         if self._session is not None:
             return self._session
 
-        gw_sh = self.gowin_path / "IDE" / "bin" / "gw_sh"
+        from ...utils import resolve_tool_exe
 
-        if not gw_sh.exists():
-            raise RuntimeError(f"gw_sh not found at {gw_sh}")
+        try:
+            gw_sh = resolve_tool_exe(self.gowin_path / "IDE" / "bin" / "gw_sh")
+        except FileNotFoundError:
+            raise RuntimeError(f"gw_sh not found at {self.gowin_path / 'IDE' / 'bin' / 'gw_sh'}")
 
         gw_lib = self.gowin_path / "IDE" / "lib"
 
