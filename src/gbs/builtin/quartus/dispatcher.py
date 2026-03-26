@@ -136,10 +136,10 @@ class QuartusDispatcher(BaseDispatcher):
         # Primary build artifacts and report side-products
         pn = self.project_name
 
-        # Pro edition uses .syn.rpt instead of .map.rpt
-        syn_rpt_name = f"{pn}.syn.rpt" if self.is_pro else f"{pn}.map.rpt"
-        map_report = intermediate(output_files / syn_rpt_name, "quartus-map-report")
-        map_summary = intermediate(output_files / f"{pn}.map.summary", "quartus-map-summary")
+        # Pro edition uses .syn.rpt/.syn.summary instead of .map.rpt/.map.summary
+        syn_prefix = "syn" if self.is_pro else "map"
+        map_report = intermediate(output_files / f"{pn}.{syn_prefix}.rpt", "quartus-map-report")
+        map_summary = intermediate(output_files / f"{pn}.{syn_prefix}.summary", "quartus-map-summary")
         fit_report = intermediate(output_files / f"{pn}.fit.rpt", "quartus-fit-report")
         fit_summary = intermediate(output_files / f"{pn}.fit.summary", "quartus-fit-summary")
         pin_report = intermediate(output_files / f"{pn}.pin", "quartus-pin-report")
