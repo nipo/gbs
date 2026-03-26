@@ -24,6 +24,8 @@ output:
     outputs:
       - type: quartus-sof
         path: design.sof
+      - type: quartus-jam
+        path: design.jam
       - type: quartus-synthesis-report
         path: synthesis-report.html
       - type: quartus-pnr-report

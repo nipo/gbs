@@ -34,6 +34,10 @@ class QuartusDispatcher(BaseDispatcher):
     5. QuartusAsm (Assembler):
        - Runs quartus_asm
        - Produces .sof bitstream
+
+    6. QuartusPfg (Programming file generator):
+       - Runs quartus_pfg
+       - Produces .jam STAPL
     """
 
     def __init__(
@@ -216,4 +220,14 @@ class QuartusDispatcher(BaseDispatcher):
                 title="Quartus PnR Report",
                 inputs=[fit_report, fit_summary, pin_report, sta_report, sta_summary, flow_report],
                 outputs=[dest],
+            )
+
+        for dest in self.context.filter_pending(file_type="quartus-jam"):
+            jam_resource = intermediate(output_files / f"{pn}.jam", "quartus-jam")
+            task.SofJamConvert(
+                dispatcher=self,
+                name="quartus_sof_jam",
+                title="Generate JAM STAPL",
+                inputs=[sof_resource],
+                outputs=[jam_resource],
             )

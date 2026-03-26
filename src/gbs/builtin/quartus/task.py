@@ -259,6 +259,57 @@ class QuartusAsm(QuartusTask):
             description="Quartus Assembler",
         )
 
+class SofJamConvert(Task):
+    """Run quartus_pfg (Programming file generator)"""
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        name: str,
+        title: str,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name=name,
+            inputs=inputs,
+            outputs=outputs,
+            description="Jam convert",
+        )
+        self.quartus_bin = dispatcher._get_quartus_bin()
+        self.executable = "quartus_pfg" if dispatcher.is_pro else "quartus_cpf"
+
+    async def work(self) -> None:
+        sof_input, = [r for r in self.inputs
+                      if isinstance(r, Resource) and r.file_type in ('quartus-sof')]
+        jam_output, = [r for r in self.outputs
+                       if isinstance(r, Resource) and r.file_type == 'quartus-jam']
+
+        jam_output.path.parent.mkdir(parents=True, exist_ok=True)
+        
+        cmd = [
+            str(self.quartus_bin / self.executable),
+            "-c", str(sof_input.path), str(jam_output.path)
+        ]
+
+        self.info(f"Running {self.executable}")
+
+        process = QuartusSubprocess(
+            argv=cmd,
+            cwd=self.dispatcher.context.output_path,
+            env=self.dispatcher.tool_env or None,
+        )
+
+        async for msg in process:
+            await self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"{self.executable} failed with return code {process.returncode}"
+            )
+
+        self.info(f"{self.executable} complete")
 
 class AggregateReport(Task):
     """Aggregate Quartus report files into a single tabbed HTML file."""
