@@ -7,7 +7,6 @@ that maintain state between commands (TCL interpreters, shells, etc.).
 from __future__ import annotations
 import asyncio
 import os
-import pty
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Generic, TypeVar
 from pathlib import Path
@@ -15,6 +14,7 @@ from pathlib import Path
 from .. import logging
 from .task import Task, BuildError
 from ..ui.messages import MessageSeverity, ToolMessage
+from .platform import PtyProvider, ProcessControl, wrap_bat_argv
 
 __all__ = ["Session", "CommandTask"]
 
@@ -64,10 +64,12 @@ class Session(ABC, Generic[CommandT]):
         self._logger = logging.get_logger(self.__class__.__name__)
         self._lock = asyncio.Lock()
 
-        # PTY-specific state
+        # PTY-specific state (Unix)
         self._pty_master_fd: int | None = None
         self._pty_master_file = None
         self._pty_transport = None
+        # ConPTY-specific state (Windows)
+        self._conpty_session = None
 
         # Abstracted I/O (set in _launch)
         self._stdout_stream = None
@@ -165,13 +167,13 @@ class Session(ABC, Generic[CommandT]):
     async def _launch_with_pipes(self, process_env):
         """Launch process with pipe-based I/O"""
         self._process = await asyncio.create_subprocess_exec(
-            *self.argv,
+            *wrap_bat_argv(self.argv),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self.cwd),
             env=process_env,
-            start_new_session=True,  # New process group for clean kill
+            **ProcessControl.subprocess_extra_kwargs(),
         )
 
         self._stdout_stream = self._process.stdout
@@ -185,7 +187,7 @@ class Session(ABC, Generic[CommandT]):
     async def _launch_with_pty(self, process_env):
         """Launch process with pseudo-tty for stdin/stdout"""
         # Create pty pair
-        master_fd, slave_fd = pty.openpty()
+        master_fd, slave_fd = PtyProvider.openpty()
         self._pty_master_fd = master_fd
 
         try:
@@ -197,7 +199,7 @@ class Session(ABC, Generic[CommandT]):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.cwd),
                 env=process_env,
-                start_new_session=True,  # New process group for clean kill
+                **ProcessControl.subprocess_extra_kwargs(),
             )
         finally:
             # Close slave fd in parent - child has its own copy
@@ -205,14 +207,8 @@ class Session(ABC, Generic[CommandT]):
 
         # Wrap master fd in async stream reader
         loop = asyncio.get_event_loop()
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-
-        # Open master fd as file object for read pipe
-        self._pty_master_file = os.fdopen(master_fd, 'rb', buffering=0)
-        self._pty_transport, _ = await loop.connect_read_pipe(
-            lambda: protocol, self._pty_master_file
-        )
+        self._pty_transport, reader, self._pty_master_file = \
+            await PtyProvider.connect_reader(loop, master_fd)
 
         self._stdout_stream = reader
 
@@ -236,6 +232,52 @@ class Session(ABC, Generic[CommandT]):
         self.stderr_task = asyncio.create_task(
             self._stream_handler(self._process.stderr, self.stderr_transform))
 
+    async def _launch_with_conpty(self, process_env):
+        """Launch process with Windows ConPTY for stdin/stdout.
+
+        Uses pywinpty to create a pseudo-console. The ConPTY session
+        manages the process; we create a lightweight wrapper so
+        self._process provides .pid and .returncode.
+        """
+        self._conpty_session = PtyProvider.spawn(
+            self.argv,
+            cwd=str(self.cwd),
+            env=process_env,
+        )
+
+        # Create a minimal process-like object for the rest of Session
+        conpty = self._conpty_session
+
+        class _ConPtyProcess:
+            """Minimal wrapper giving ConPTY a .pid/.returncode/.wait() interface."""
+            def __init__(self, session):
+                self._session = session
+                self.pid = session.pid
+            @property
+            def returncode(self):
+                if self._session._pty.isalive():
+                    return None
+                try:
+                    return self._session._pty.exitstatus()
+                except Exception:
+                    return -1
+            async def wait(self):
+                loop = asyncio.get_event_loop()
+                while self._session._pty.isalive():
+                    await asyncio.sleep(0.1)
+                return self.returncode
+
+        self._process = _ConPtyProcess(conpty)
+
+        self._stdout_stream = conpty.setup_async_reader()
+        self._stdin_writer = conpty.stdin_writer
+
+        # Start stream handler — ConPTY merges stdout/stderr,
+        # so only one handler for stdout; no separate stderr
+        self.stdout_task = asyncio.create_task(
+            self._stream_handler(self._stdout_stream, self.stdout_transform))
+        self.stderr_task = None
+
     async def _launch(self):
         """Launch the interpreter process"""
         async with self._lock:
@@ -255,7 +297,15 @@ class Session(ABC, Generic[CommandT]):
                 self._logger.debug(f"Injecting environment variables: {list(self.env.keys())}")
 
             if self.use_pty:
-                await self._launch_with_pty(process_env)
+                if not PtyProvider.available:
+                    raise RuntimeError(
+                        "PTY requested but not available on this platform. "
+                        "On Windows, install pywinpty: pip install pywinpty"
+                    )
+                if PtyProvider.use_conpty:
+                    await self._launch_with_conpty(process_env)
+                else:
+                    await self._launch_with_pty(process_env)
             else:
                 await self._launch_with_pipes(process_env)
 
@@ -335,33 +385,27 @@ class Session(ABC, Generic[CommandT]):
         async for msg in self.interact(cmd):
             pass
 
-    def _kill_process_group(self):
-        """Kill the process and its entire process group.
+    def _kill_process_tree(self, force: bool = False):
+        """Kill the process and its entire process tree.
 
-        Uses SIGTERM first for graceful shutdown, then SIGKILL.
-        Operates on the process group (all children) since we
-        launched with start_new_session=True.
+        Uses graceful shutdown first, then forceful kill.
+        Operates on the process group/tree since we launched
+        with process isolation.
+
+        Args:
+            force: If True, use forceful kill immediately
         """
-        import signal
-
         if self._process is None or self._process.returncode is not None:
             return
 
-        pid = self._process.pid
-        try:
-            # Kill the entire process group
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
+        ProcessControl.kill_process_tree(self._process.pid, force=force)
 
     async def close(self):
         """Shutdown interpreter cleanly.
 
         Sends exit command, waits briefly, then kills the process
-        group if still running. Ensures no orphaned children.
+        tree if still running. Ensures no orphaned children.
         """
-        import signal
-
         if self._process is None:
             return
 
@@ -375,23 +419,20 @@ class Session(ABC, Generic[CommandT]):
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except asyncio.TimeoutError:
-                # Graceful exit didn't work — kill the process group
-                self._logger.debug("Session did not exit gracefully, killing process group")
-                self._kill_process_group()
+                # Graceful exit didn't work — kill the process tree
+                self._logger.debug("Session did not exit gracefully, killing process tree")
+                self._kill_process_tree()
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=3.0)
                 except asyncio.TimeoutError:
-                    # SIGTERM didn't work — SIGKILL the group
-                    self._logger.debug("SIGTERM did not work, sending SIGKILL")
-                    try:
-                        os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError):
-                        pass
+                    # Graceful kill didn't work — force kill
+                    self._logger.debug("Graceful kill did not work, forcing")
+                    self._kill_process_tree(force=True)
                     await self._process.wait()
             finally:
                 self._process = None
 
-                # Clean up PTY resources
+                # Clean up PTY resources (Unix)
                 if self._pty_transport:
                     self._pty_transport.close()
                     self._pty_transport = None
@@ -400,9 +441,14 @@ class Session(ABC, Generic[CommandT]):
                 self._pty_master_file = None
                 self._pty_master_fd = None
 
+                # Clean up ConPTY resources (Windows)
+                if self._conpty_session:
+                    self._conpty_session.close()
+                    self._conpty_session = None
+
     def __del__(self):
-        """Safety net: kill process group on garbage collection."""
-        self._kill_process_group()
+        """Safety net: kill process tree on garbage collection."""
+        self._kill_process_tree(force=True)
 
 
 class CommandTask(Task, Generic[CommandT]):

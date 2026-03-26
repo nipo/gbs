@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import os
 import random
 import re
 from pathlib import Path
@@ -21,7 +22,7 @@ class IseSubprocess(MessageSubprocess):
         import shlex
         prepare = shlex.join([".", str(settings_sh)])
         to_run = shlex.join(argv)
-        cmd = ["bash", "-c", f"{prepare} > /dev/null ; {to_run}"]
+        cmd = ["bash", "-c", f"{prepare} > {os.devnull} ; {to_run}"]
         super().__init__(cmd, cwd, env=env)
 
     message_format = re.compile(r'^(?P<level>INFO|ERROR|WARNING):(?P<tool>[^:]+):(?P<code>[0-9]+) - (?P<message>.*)$')

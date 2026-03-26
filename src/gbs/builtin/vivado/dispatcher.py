@@ -72,11 +72,10 @@ class VivadoDispatcher(BaseDispatcher):
         if self._session is None:
             vivado_path = expand_path(self.get_tool_option("path"))
 
-            # Vivado executable
-            vivado_exe = vivado_path / "bin" / "vivado"
+            # Vivado executable — try .bat first on Windows
+            vivado_exe = vivado_path / "bin" / "vivado.bat"
             if not vivado_exe.exists():
-                # Try Windows path
-                vivado_exe = vivado_path / "bin" / "vivado.bat"
+                vivado_exe = vivado_path / "bin" / "vivado"
 
             if not vivado_exe.exists():
                 raise RuntimeError(f"Vivado not found at {vivado_path}")

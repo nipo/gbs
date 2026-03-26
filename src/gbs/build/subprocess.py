@@ -8,6 +8,7 @@ import asyncio
 import os
 from ..ui.messages import MessageSeverity, ToolMessage
 from ..ui.reporter import UIReporter
+from .platform import wrap_bat_argv
 
 __all__ = ["MessageSubprocess"]
 
@@ -136,7 +137,7 @@ class MessageSubprocess(UIReporter):
             self.debug(f"Injecting environment variables: {list(self.env.keys())}")
 
         self.process = await asyncio.create_subprocess_exec(
-            *self.argv,
+            *wrap_bat_argv(self.argv),
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

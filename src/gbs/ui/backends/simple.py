@@ -9,6 +9,7 @@ Suitable for:
 """
 
 from __future__ import annotations
+import io
 import sys
 from typing import TextIO, Optional
 
@@ -45,8 +46,8 @@ class SimpleBackend(FeedbackBackend):
             min_severity: Minimum severity for ToolMessages to display
             min_log_level: Minimum level for LogMessages to display
         """
-        self.output = output or sys.stdout
-        self.error = error or sys.stderr
+        self.output = output or self._safe_stream(sys.stdout)
+        self.error = error or self._safe_stream(sys.stderr)
         self.show_progress = show_progress
         self.min_severity = min_severity
         self.min_log_level = min_log_level
@@ -54,6 +55,25 @@ class SimpleBackend(FeedbackBackend):
         # Track active progress tasks for indentation
         self._progress_stack: list[str] = []  # Stack of task IDs
         self._progress_indent: dict[str, int] = {}  # task_id -> indent level
+
+    @staticmethod
+    def _safe_stream(stream: TextIO) -> TextIO:
+        """Wrap a stream to handle encoding errors gracefully.
+
+        On Windows, sys.stdout may use a legacy encoding (e.g., CP1252)
+        that cannot represent all Unicode characters. This wraps the
+        stream to replace unencodable characters instead of raising.
+        """
+        if hasattr(stream, 'buffer'):
+            encoding = getattr(stream, 'encoding', 'utf-8') or 'utf-8'
+            try:
+                return io.TextIOWrapper(
+                    stream.buffer, encoding=encoding, errors='replace',
+                    line_buffering=stream.line_buffering,
+                )
+            except Exception:
+                pass
+        return stream
 
     async def start(self):
         """Initialize backend"""
