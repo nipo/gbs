@@ -11,3 +11,7 @@ _mgmt
 gbs-build
 *.svg
 *-report.html
+.Xilinx
+dfx_runtime.txt
+*.dmp
+*.jou
