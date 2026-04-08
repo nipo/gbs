@@ -141,6 +141,9 @@ class NonProjectBuild(VivadoCommand):
             ip_repo_paths.append(str(ip_unzip_dir))
             self.info(f"Extracted IP: {resource.path.name} -> {ip_unzip_dir}")
 
+        for resource in inputs_by_type.get('vivado-ip-repository', []):
+            ip_repo_paths.append(str(resource))
+
         bus_defs = inputs_by_type.get('vivado-bus-definition', [])
         if bus_defs:
             bus_repo_dir = output_dir / "bus_repo"

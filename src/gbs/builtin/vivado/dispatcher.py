@@ -27,6 +27,7 @@ ACCEPTED_INPUT_TYPES = {
     "vivado-init-tcl",
     "vivado-ip-zip",
     "vivado-bus-definition",
+    "vivado-ip-repository",
 }
 
 # Output file types and their default filenames

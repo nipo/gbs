@@ -47,6 +47,36 @@ class VivadoIpPackageTask(VivadoCommand):
         self.part = part
         self.ip_config = ip_config
 
+    async def _setup_ip_repos(self, output_dir):
+        """Set up IP repository paths"""
+        ip_repo_paths = []
+
+        for resource in self.inputs_of_type('vivado-ip-repository'):
+            ip_repo_paths.append(str(resource))
+
+        if bus_defs := self.inputs_of_type('vivado-bus-definition'):
+            bus_repo_dir = output_dir / "bus_repo"
+            bus_repo_dir.mkdir(parents=True, exist_ok=True)
+            for bus_rsrc in bus_defs:
+                shutil.copy2(bus_rsrc.path, bus_repo_dir / bus_rsrc.path.name)
+            ip_repo_paths.append(str(bus_repo_dir))
+
+        if ip_repo_paths:
+            self.info(f"Adding repo paths {ip_repo_paths}")
+            await self.command_run(tcl.Command([
+                "set_property", "ip_repo_paths",
+                tcl.Expansion([
+                    "concat",
+                    tcl.Expansion(["get_property", "ip_repo_paths",
+                                   tcl.Expansion(["current_project"])]),
+                    tcl.Expansion(["list"] + [tcl.String(p) for p in ip_repo_paths]),
+                ]),
+                tcl.Expansion(["current_project"]),
+            ]))
+            await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
+        else:
+            self.info(f"No repo paths to add")
+
     async def work(self) -> None:
         topcell = self.dispatcher.context.get_topcell()
         output_dir = self.dispatcher.context.output_path.resolve()
@@ -82,20 +112,14 @@ class VivadoIpPackageTask(VivadoCommand):
             tcl.Expansion(["current_project"]),
         ]))
 
-        # Step 2: Copy bus definitions to local repository
-        bus_defs = self.inputs_of_type("vivado-bus-definition")
-        if bus_defs:
-            bus_repo_dir = output_dir / "bus_repo"
-            bus_repo_dir.mkdir(parents=True, exist_ok=True)
-            for bus_rsrc in bus_defs:
-                shutil.copy2(bus_rsrc.path, bus_repo_dir / bus_rsrc.path.name)
-            await self.command_run(tcl.Command([
-                "set_property", "ip_repo_paths",
-                tcl.String(str(bus_repo_dir)),
-                tcl.Expansion(["current_project"]),
-            ]))
+        await self.command_run(tcl.Command([
+            "set_property", "source_mgmt_mode",
+            "DisplayOnly",
+            tcl.Expansion(["current_project"]),
+        ]))
 
-        await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
+        # Step 2: Copy bus definitions to local repository
+        await self._setup_ip_repos(output_dir)
 
         await self.update_progress(0.1, "Adding sources")
 
@@ -115,13 +139,9 @@ class VivadoIpPackageTask(VivadoCommand):
 
         total = len(hdl_inputs) + len(xdc_inputs)
         for i, resource in enumerate(hdl_inputs):
-            file_type = resource.file_type
-            lib_name = resource.library or "work"
-            file_path = str(resource.path)
-
             await self.command_run(tcl.Command([
                 "set", tcl.BareWord("fname"),
-                tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
+                tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
             ]))
             await self.command_run(tcl.Command([
                 "add_files", "-norecurse", "-fileset", tcl.BareWord("$srcset_obj"),
@@ -133,11 +153,12 @@ class VivadoIpPackageTask(VivadoCommand):
                               tcl.Expansion(["list", tcl.String(f"*{resource.path.name}")])]),
             ]))
             await self.command_run(tcl.Command([
-                "set_property", "file_type", file_type, tcl.BareWord("$fobj"),
+                "set_property", "file_type", resource.file_type, tcl.BareWord("$fobj"),
             ]))
-            await self.command_run(tcl.Command([
-                "set_property", "library", lib_name, tcl.BareWord("$fobj"),
-            ]))
+            if resource.library:
+                await self.command_run(tcl.Command([
+                    "set_property", "library", resource.library, tcl.BareWord("$fobj"),
+                ]))
 
             if total > 0:
                 await self.update_progress(0.1 + 0.2 * i / total)

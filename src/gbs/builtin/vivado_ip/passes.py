@@ -32,6 +32,7 @@ class VivadoIpPackagePass(BasePass):
         "vhdl",
         "verilog",
         "vivado-bus-definition",
+        "vivado-ip-repository",
         "vivado-ip-customization-tcl",
         "xilinx-xdc",
     }

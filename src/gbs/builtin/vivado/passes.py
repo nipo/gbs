@@ -46,6 +46,7 @@ class VivadoSynthesizePass(BasePass):
         "vivado-block-design",
         "vivado-init-tcl",
         "vivado-ip-zip",
+        "vivado-ip-repository",
         "vivado-bus-definition",
     }
     output_types = {
