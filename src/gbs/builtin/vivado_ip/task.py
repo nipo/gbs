@@ -87,12 +87,12 @@ class VivadoIpPackageTask(VivadoCommand):
         proj_dir.mkdir(parents=True, exist_ok=True)
 
         # IP metadata from backend config
-        vendor = self.ip_config.get("vendor", "user")
-        library = self.ip_config.get("library", "ip")
-        ip_name = self.ip_config.get("name", topcell)
+        vendor = self.ip_config.get("vendor")
+        library = self.ip_config.get("library")
+        ip_name = self.ip_config.get("name")
         version = self.ip_config.get("version", "1.0")
-        taxonomy = self.ip_config.get("taxonomy", "/UserIP")
-        display_name = self.ip_config.get("display_name", ip_name)
+        taxonomy = self.ip_config.get("taxonomy")
+        display_name = self.ip_config.get("display_name")
         description = self.ip_config.get("description", "")
         vendor_display_name = self.ip_config.get("vendor_display_name", vendor)
         company_url = self.ip_config.get("company_url", "")
@@ -190,6 +190,7 @@ class VivadoIpPackageTask(VivadoCommand):
             "-root_dir", str(ip_dir),
             "-vendor", vendor,
             "-library", library,
+            "-name", ip_name,
             "-taxonomy", taxonomy,
             "-import_files",
             "-set_current", "true",
