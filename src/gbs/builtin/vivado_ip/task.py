@@ -47,6 +47,29 @@ class VivadoIpPackageTask(VivadoCommand):
         self.part = part
         self.ip_config = ip_config
 
+    async def _get_vivado_version(self) -> tuple[int, int]:
+        """Query Vivado version via 'version -short'.
+
+        Returns (year, release) tuple, e.g. (2022, 2).
+        """
+        lines = []
+        cmd = tcl.Command(["version", tcl.BareWord("-short")])
+        async for msg in self.session.interact(cmd):
+            if hasattr(msg, 'message'):
+                lines.append(msg.message)
+
+        for line in lines:
+            line = line.strip()
+            if '.' in line and line[0].isdigit():
+                parts = line.split('.')
+                try:
+                    return (int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    pass
+
+        self.warning("Could not determine Vivado version, assuming latest")
+        return (9999, 0)
+
     async def _setup_ip_repos(self, output_dir):
         """Set up IP repository paths"""
         ip_repo_paths = []
@@ -184,17 +207,25 @@ class VivadoIpPackageTask(VivadoCommand):
         await self.update_progress(0.3, "Packaging IP")
 
         # Step 4: Package project
-        self.info("Running ipx::package_project")
-        await self.command_run(tcl.Command([
+        vivado_version = await self._get_vivado_version()
+        self.info(f"Vivado version: {vivado_version[0]}.{vivado_version[1]}")
+
+        package_cmd = [
             "ipx::package_project", "-force",
             "-root_dir", str(ip_dir),
             "-vendor", vendor,
             "-library", library,
-            "-name", ip_name,
+        ]
+        if vivado_version >= (2022, 1):
+            package_cmd.extend(["-name", ip_name])
+        package_cmd.extend([
             "-taxonomy", taxonomy,
             "-import_files",
             "-set_current", "true",
-        ]))
+        ])
+
+        self.info("Running ipx::package_project")
+        await self.command_run(tcl.Command(package_cmd))
 
         # Unload and re-open for editing
         await self.command_run(tcl.Command([
@@ -221,7 +252,7 @@ class VivadoIpPackageTask(VivadoCommand):
             "set_property", "name", tcl.String(ip_name), core,
         ]))
         await self.command_run(tcl.Command([
-            "set_property", "core_revision", tcl.String(revision), core,
+            "set_property", "core_revision", tcl.String(str(revision)), core,
         ]))
         if description:
             await self.command_run(tcl.Command([
