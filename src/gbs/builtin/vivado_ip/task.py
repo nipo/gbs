@@ -168,13 +168,9 @@ class VivadoIpPackageTask(VivadoCommand):
                 tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
             ]))
             await self.command_run(tcl.Command([
-                "add_files", "-norecurse", "-fileset", tcl.BareWord("$srcset_obj"),
-                tcl.Expansion(["list", tcl.BareWord("$fname")]),
-            ]))
-            await self.command_run(tcl.Command([
                 "set", tcl.BareWord("fobj"),
-                tcl.Expansion(["get_files", "-of_object", tcl.BareWord("$srcset_obj"),
-                              tcl.Expansion(["list", tcl.String(f"*{resource.path.name}")])]),
+                tcl.Expansion(["add_files", "-norecurse", "-fileset", tcl.BareWord("$srcset_obj"),
+                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
             ]))
             await self.command_run(tcl.Command([
                 "set_property", "file_type", resource.file_type, tcl.BareWord("$fobj"),
