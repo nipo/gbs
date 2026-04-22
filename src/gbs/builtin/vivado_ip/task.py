@@ -161,6 +161,7 @@ class VivadoIpPackageTask(VivadoCommand):
         xdc_inputs = self.inputs_of_type("xilinx-xdc")
 
         total = len(hdl_inputs) + len(xdc_inputs)
+        last_source_set = False
         for i, resource in enumerate(hdl_inputs):
             await self.command_run(tcl.Command([
                 "set", tcl.BareWord("fname"),
@@ -182,6 +183,17 @@ class VivadoIpPackageTask(VivadoCommand):
                 await self.command_run(tcl.Command([
                     "set_property", "library", resource.library, tcl.BareWord("$fobj"),
                 ]))
+
+            if last_source_set:
+                await self.command_run(tcl.Command([
+                    "reorder_files", "-after",
+                    tcl.Expansion(["get_property", "name", tcl.BareWord("$last_source")]),
+                    tcl.Expansion(["get_property", "name", tcl.BareWord("$fobj")]),
+                ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("last_source"), tcl.BareWord("$fobj"),
+            ]))
+            last_source_set = True
 
             if total > 0:
                 await self.update_progress(0.1 + 0.2 * i / total)

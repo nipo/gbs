@@ -150,6 +150,42 @@ class DependencyResolver:
         logger.error(f"Partition '{partition_name}' not found in any repository")
         return None
 
+    def _compute_library_compile_rank(self) -> dict[str, int]:
+        """Assign each library a rank equal to its longest dependency chain depth.
+
+        Rank 0 = no library-level dependencies. Rank N = depends on at least
+        one rank-(N-1) library. Used as the primary sort key in the topological
+        sort so that all files of a library appear before any files from a
+        library that depends on it, matching the library-level ordering that
+        Vivado synthesis expects for correct VHDL compile order.
+        """
+        lib_to_deps: dict[str, set[str]] = {}
+        for partition_name, partition in self._resolved.items():
+            lib = partition_name.split('.', 1)[0]
+            if lib not in lib_to_deps:
+                lib_to_deps[lib] = set()
+            for dep in partition.deps:
+                dep_lib = dep.split('.', 1)[0]
+                if dep_lib != lib:
+                    lib_to_deps[lib].add(dep_lib)
+
+        # Keep only cross-library deps that reference known libraries
+        for lib in lib_to_deps:
+            lib_to_deps[lib] &= lib_to_deps.keys()
+
+        # Iteratively assign rank = max(dep ranks) + 1 until stable
+        rank: dict[str, int] = {lib: 0 for lib in lib_to_deps}
+        changed = True
+        while changed:
+            changed = False
+            for lib, deps in lib_to_deps.items():
+                new_rank = (max(rank[d] for d in deps) + 1) if deps else 0
+                if new_rank > rank[lib]:
+                    rank[lib] = new_rank
+                    changed = True
+
+        return rank
+
     def _topological_sort(self) -> list[Partition]:
         """Topologically sort resolved partitions
 
@@ -167,13 +203,21 @@ class DependencyResolver:
                 if dep in in_degree:  # Only count deps we've resolved
                     in_degree[partition.name] += 1
 
+        # Compute library rank so the sort keeps all files of a library
+        # together before files of any library that depends on it.
+        lib_rank = self._compute_library_compile_rank()
+
+        def sort_key(name: str) -> tuple:
+            lib = name.split('.', 1)[0]
+            return (lib_rank.get(lib, 0), name)
+
         # Kahn's algorithm
         queue = deque([name for name, degree in in_degree.items() if degree == 0])
         result = []
 
         while queue:
-            # Sort queue for deterministic order
-            queue = deque(sorted(queue))
+            # Sort by library rank first, then by name for determinism
+            queue = deque(sorted(queue, key=sort_key))
             name = queue.popleft()
             partition = self._resolved[name]
             result.append(partition)
