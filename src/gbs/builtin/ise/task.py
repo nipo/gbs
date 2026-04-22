@@ -126,7 +126,7 @@ class Xst(IseTask):
             library = resource.library or 'work'
             file_path = resource.path
 
-            if file_type == "ise-settings-sh":
+            if file_type in ["ise-settings-sh", "build-definition"]:
                 continue
             
             # XST expects file_type names in lowercase
