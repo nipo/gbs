@@ -5,7 +5,9 @@ Copies a file from source to destination.
 
 from __future__ import annotations
 import asyncio
+import os
 import shutil
+import stat
 from pathlib import Path
 
 from ...build.task import Task, Resource
@@ -20,8 +22,14 @@ def _copy_file(source_path: Path, dest_path: Path) -> None:
         dest_path: Destination file path
     """
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    dest_path.unlink(missing_ok=True)
+    if dest_path.exists():
+        os.chmod(dest_path, stat.S_IWRITE | stat.S_IREAD)
+        dest_path.unlink()
     shutil.copy2(source_path, dest_path)
+    # copy2 preserves source mode. A read-only source (e.g. a Gowin
+    # bitstream) would leave a read-only destination that can't be
+    # replaced on the next run, especially on Windows.
+    os.chmod(dest_path, stat.S_IWRITE | stat.S_IREAD)
 
 
 class CopyTask(Task):
