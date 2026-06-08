@@ -38,6 +38,8 @@ class Session(shell.Session):
     # Regex patterns for parsing yosys output
     # Yosys format: "level: message" or just plain output
     msg_pattern = re.compile(r'^(?P<level>Info|Warning|Error|Fatal):\s+(?P<message>.*)$', re.IGNORECASE)
+    # Yosys/GHDL format: "path:line:column:level: message"
+    msg_pattern_ghdl = re.compile(r'^(?P<path>.*):(?P<line>[0-9]+):(?P<column>[0-9]+):(?P<level>info|warning|error|fatal):\s+(?P<message>.*)$', re.IGNORECASE)
 
     # Map yosys levels to MessageSeverity
     severity_map = {
@@ -55,23 +57,46 @@ class Session(shell.Session):
 
             # Try to match yosys message format
             match = self.msg_pattern.match(line)
-            if not match:
-                # Unstructured output - create DEBUG message
+            if match:
+                level_str = match.group('level').lower()
+                message = match.group('message')
+
+                # Get message severity
+                severity = self.severity_map.get(level_str, MessageSeverity.DEBUG)
+
                 yield ToolMessage(
-                    severity=MessageSeverity.DEBUG,
-                    message=line,
+                    severity=severity,
+                    message=message,
                 )
                 continue
 
-            level_str = match.group('level').lower()
-            message = match.group('message')
+            # Try to match yosys/GHDL message format
+            match = self.msg_pattern_ghdl.match(line)
+            if match:
+                level_str = match.group('level').lower()
+                message = match.group('message')
+                path = match.group('path')
+                line = int(match.group('line'))
+                column = int(match.group('column'))
 
-            # Get message severity
-            severity = self.severity_map.get(level_str, MessageSeverity.DEBUG)
+                # Get message severity
+                severity = self.severity_map.get(level_str, MessageSeverity.DEBUG)
 
+                yield ToolMessage(
+                    severity=severity,
+                    message=message,
+                    file_path=Path(path),
+                    line=line,
+                    column=column,
+                )
+                continue
+
+            # Unstructured output - create DEBUG message
             yield ToolMessage(
-                severity=severity,
-                message=message,
+                severity=MessageSeverity.DEBUG,
+                message=line,
             )
+            continue
+
 
     stderr_transform = stdout_transform
