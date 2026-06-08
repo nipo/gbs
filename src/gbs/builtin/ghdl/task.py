@@ -5,6 +5,9 @@ from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
 import re
 import asyncio
+import shlex
+import subprocess
+import sys
 
 class GhdlInvocation(MessageSubprocess):
     error_line = re.compile(r'(?P<file>[^:]+):(?P<line>[0-9]+):(?P<column>[0-9]+):(?P<level>[a-z]+):(?P<message>.+)$')
@@ -293,7 +296,6 @@ class MakeElab(Task):
         for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
             load_flags.append(f"--load={lib_res.path.resolve()}")
 
-        # Create run script
         run_cmd = [
             ghdl_executable, "-r",
             f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
@@ -301,16 +303,18 @@ class MakeElab(Task):
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell,
-        ] + load_flags + [
-            '"$@"'
-        ]
+        ] + load_flags
 
-        script_content = f"""#!/bin/sh
-
-exec {' '.join(run_cmd)}
-"""
-        out_path.write_text(script_content)
-        out_path.chmod(0o755)
+        if sys.platform == "win32":
+            # %% escapes a literal % in batch files; %* forwards all caller args.
+            cmd_str = subprocess.list2cmdline(run_cmd).replace("%", "%%")
+            script_content = f"@echo off\r\n{cmd_str} %*\r\n"
+            out_path.write_text(script_content)
+        else:
+            cmd_str = " ".join(shlex.quote(arg) for arg in run_cmd)
+            script_content = f'#!/bin/sh\n\nexec {cmd_str} "$@"\n'
+            out_path.write_text(script_content)
+            out_path.chmod(0o755)
 
 
 class SimulatorInvocation(MessageSubprocess):

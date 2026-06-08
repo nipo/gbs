@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import subprocess
+import sys
 from pathlib import Path
 
 from ...utils import expand_path
@@ -339,10 +340,12 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
 
         if backend_type in ["gcc", "llvm"]:
             final_task_class = task.CompileLink
+            executable_name = "simulator.exe"
         else:
             final_task_class = task.MakeElab
+            executable_name = "simulator.bat" if sys.platform == "win32" else "simulator.exe"
 
-        executable_path = self.context.output_path / "simulator.exe"
+        executable_path = self.context.output_path / executable_name
         executable_resource = self.context.get_resource(
             executable_path,
             file_type="ghdl-simulator",
