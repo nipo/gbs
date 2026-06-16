@@ -41,7 +41,7 @@ class GowinBackend(BaseBackend):
         """
         passes = []
 
-        if any(t in output_types for t in ["gowin-fs"]):
+        if any(t in output_types for t in ["gowin-fs", "gowin-bin"]):
             passes.append(GowinSynthesizePass(config, project_config, gbs_config))
 
         return passes

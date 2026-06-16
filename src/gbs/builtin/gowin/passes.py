@@ -20,7 +20,7 @@ class GowinSynthesizePass(BasePass):
     - Generate bitstream
 
     Input types: vhdl (verilog and gowin-cst are optional, handled by dispatcher)
-    Output types: gowin-fs (bitstream), gowin-netlist
+    Output types: gowin-fs (bitstream), gowin-bin (binary bitstream), gowin-netlist
 
     Note: This pass lists only vhdl as input type for planning purposes.
     The dispatcher can also handle verilog sources and gowin-cst constraints,
@@ -28,7 +28,7 @@ class GowinSynthesizePass(BasePass):
     """
     name = "gowin-synthesize"
     input_types = {"vhdl", "verilog", "gowin-cst", "gowin-sdc", "gowin-serdes-config"}
-    output_types = {"gowin-fs", "gowin-netlist", "gowin-synthesis-report", "gowin-pnr-report"}
+    output_types = {"gowin-fs", "gowin-bin", "gowin-netlist", "gowin-synthesis-report", "gowin-pnr-report"}
 
     def __init__(self,
                  config: dict[str, Any],
