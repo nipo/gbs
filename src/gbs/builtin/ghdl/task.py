@@ -73,10 +73,11 @@ class Import(Task):
         sources = []
         p_flags = []
         ghdl_executable = self.dispatcher._get_ghdl_executable()
+        analyze_args = list(self.dispatcher.get_tool_option("analyze_args", []))
 
         cf_out, = self.outputs_of_type("ghdl-cf")
         workdir = cf_out.path.parent
-        
+
         for i in self.inputs:
             if i.file_type == "vhdl":
                 sources.append(i.path.resolve())
@@ -93,8 +94,7 @@ class Import(Task):
                 f"--workdir={workdir.resolve()}",
                 f"--std={self.dispatcher.ghdl_vhdl_version}",
                 f"--work={self.library_name}",
-                "-Wno-hide"
-            ] + p_flags + sources)
+            ] + analyze_args + p_flags + sources)
 
             async for msg in import_process:
                 await self.add_message_obj(msg)
@@ -191,6 +191,7 @@ class CompileLink(Task):
         """Execute GHDL compile and link"""
         assert len(list(self.outputs)) == 1
         ghdl_executable, _ = self.dispatcher._get_ghdl_config()
+        elaborate_args = list(self.dispatcher.get_tool_option("elaborate_args", []))
 
         output, = self.outputs
         out_path = output.path
@@ -213,7 +214,7 @@ class CompileLink(Task):
         process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-c", "-O2",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
-        ] + flags + [
+        ] + elaborate_args + flags + [
             f"--work={self.root_library}",
             "-o", str(out_path),
             "-e", self.topcell
@@ -249,6 +250,8 @@ class MakeElab(Task):
     async def work(self) -> None:
         """Execute GHDL compile and link"""
         ghdl_executable, _ = self.dispatcher._get_ghdl_config()
+        elaborate_args = list(self.dispatcher.get_tool_option("elaborate_args", []))
+        run_args = list(self.dispatcher.get_tool_option("run_args", []))
 
         assert len(list(self.outputs)) == 1
         output, = self.outputs
@@ -265,7 +268,7 @@ class MakeElab(Task):
             ghdl_executable, "-m",
             f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
-        ] + p_flags + [
+        ] + elaborate_args + p_flags + [
             f"--work={self.root_library}",
             self.topcell
         ])
@@ -280,7 +283,7 @@ class MakeElab(Task):
             ghdl_executable, "-e",
             f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
-        ] + p_flags + [
+        ] + elaborate_args + p_flags + [
             f"--work={self.root_library}",
             self.topcell
         ], cwd = out_path.parent)
@@ -303,7 +306,7 @@ class MakeElab(Task):
         ] + p_flags + [
             f"--work={self.root_library}",
             self.topcell,
-        ] + load_flags
+        ] + load_flags + run_args
 
         if sys.platform == "win32":
             # %% escapes a literal % in batch files; %* forwards all caller args.
@@ -372,6 +375,7 @@ class RunSimulation(Task):
         max_simulation_time = self.dispatcher.config.get("max_simulation_time")
         success_regex = self.dispatcher.config.get("success_regex")
         success_pattern = re.compile(success_regex) if success_regex else None
+        run_args = list(self.dispatcher.get_tool_option("run_args", []))
 
         # Build command line arguments
         argv = [str(simulator.path.resolve())]
@@ -379,6 +383,8 @@ class RunSimulation(Task):
         # Add stop-time if specified
         if max_simulation_time:
             argv.append(f"--stop-time={max_simulation_time}")
+
+        argv += run_args
 
         for output in self.outputs:
             output.path.parent.mkdir(parents=True, exist_ok=True)
