@@ -99,12 +99,15 @@ class MessageSubprocess(UIReporter):
 
     async def __stream_liner(self, stream) -> AsyncIterator[str]:
         """Internal tool that takes a stream and yeilds it line by
-        line
+        line. The final un-terminated chunk, if any, is yielded as a
+        line as well so callers never lose the tail of the output.
         """
         buffer = ""
         while True:
             chunk = await stream.read(1024)
             if not chunk:
+                if buffer:
+                    yield buffer
                 break
 
             buffer += chunk.decode('utf-8', errors='replace')
@@ -117,11 +120,17 @@ class MessageSubprocess(UIReporter):
                 yield line
 
     async def __stream_handler(self, stream, transformer):
-        """Internal tool that takes a stream and puts it to queue
+        """Internal tool that takes a stream and puts it to queue.
+
+        The completion sentinel is posted in a finally block so a
+        crashing transformer cannot deadlock the consumer iterating
+        __aiter__ on this subprocess.
         """
-        async for msg in transformer(self.__stream_liner(stream)):
-            await self.__queue.put(msg)
-        await self.__queue.put(None)
+        try:
+            async for msg in transformer(self.__stream_liner(stream)):
+                await self.__queue.put(msg)
+        finally:
+            await self.__queue.put(None)
 
     async def __launch(self):
         if self.process:

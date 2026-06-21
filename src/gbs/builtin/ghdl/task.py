@@ -320,7 +320,7 @@ class MakeElab(Task):
 class SimulatorInvocation(MessageSubprocess):
     ghdl_assert_re = re.compile(r"^(?P<path>.*):(?P<line>[0-9]+):(?P<col>[0-9]+):@(?P<time>[0-9]+.s):\(assertion (?P<level>[^\)]+)\): (?P<msg>.*)$")
 
-    name_map = dict(FAILURE = "ERROR")
+    name_map = dict(NOTE = "NOTICE", FAILURE = "ERROR")
     
     def line_transform(self, line, default_severity):
         m = self.ghdl_assert_re.match(line)
