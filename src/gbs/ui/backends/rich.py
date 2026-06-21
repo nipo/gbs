@@ -311,53 +311,32 @@ class RichBackend(FeedbackBackend):
         if not self.show_progress or msg.task_id not in self._progress_tasks:
             return
 
-        rich_task_id = self._progress_tasks[msg.task_id]
-        is_transient = self._progress_transient.get(msg.task_id, False)
+        rich_task_id = self._progress_tasks.pop(msg.task_id)
+        is_transient = self._progress_transient.pop(msg.task_id, False)
 
-        # Get task info before marking complete
-        try:
-            task = self.progress.tasks[rich_task_id]
-            task_description = task.description
-        except (IndexError, KeyError):
-            # Task may have been removed already, clean up tracking and return
-            if msg.task_id in self._progress_tasks:
-                del self._progress_tasks[msg.task_id]
-            if msg.task_id in self._progress_transient:
-                del self._progress_transient[msg.task_id]
-            return
+        # Look up the underlying Task via the keyed dict.
+        # progress.tasks is a list indexed by position, not by TaskID, so
+        # indexing it with rich_task_id is incorrect once any task has been
+        # removed.
+        task = self.progress._tasks.get(rich_task_id)
+        task_description = task.description if task is not None else ""
 
-        # Mark as complete
-        try:
-            if task.total:
+        if task is not None and task.total:
+            try:
                 self.progress.update(rich_task_id, completed=task.total)
-        except (IndexError, KeyError):
-            pass  # Task removed during update
+            except (IndexError, KeyError):
+                pass
 
-        # For transient tasks, remove them and print completion message
         if is_transient:
-            # Remove the progress bar
             try:
                 self.progress.remove_task(rich_task_id)
             except (IndexError, KeyError):
-                # Task may have already been removed
                 pass
 
-            # Print completion message to console (only for failures or if message provided)
             if not msg.success and msg.message:
                 self.console.print(f"[red][FAILED] {task_description}: {msg.message}[/red]")
             elif not msg.success:
                 self.console.print(f"[red][FAILED] {task_description}[/red]")
-            # Don't print success message for transient tasks - they just disappear
-        else:
-            # For non-transient tasks, keep the bar visible
-            # (task already updates description with "complete" or "failed" status)
-            pass
-
-        # Remove from tracking
-        if msg.task_id in self._progress_tasks:
-            del self._progress_tasks[msg.task_id]
-        if msg.task_id in self._progress_transient:
-            del self._progress_transient[msg.task_id]
 
     async def _render_build_status(self, msg: BuildStatus):
         """Render build status with colors"""

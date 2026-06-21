@@ -418,7 +418,7 @@ class BuildContext(UIReporter):
         self.start_progress(
             description=f"Building {self._output_group.name if self._output_group else 'project'}",
             total=self._total_steps,
-            transient=False  # BuildContext progress is not transient
+            transient=True
         )
 
         for s in self.steps:
@@ -466,6 +466,8 @@ class BuildContext(UIReporter):
             self._print_failure_summary(failed_steps)
 
         self.build_failed = bool(failed_steps)
+
+        self.end_progress(success=not self.build_failed)
 
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
