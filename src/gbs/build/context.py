@@ -30,6 +30,7 @@ class BuildContext(UIReporter):
         base_output_path: Optional[Path] = None,
         parent_reporter: Optional['UIReporter'] = None,
         resource_registry: Optional[Any] = None,
+        shared_cache_root: Optional[Path] = None,
     ):
         """Initialize build context
 
@@ -45,6 +46,10 @@ class BuildContext(UIReporter):
             resource_registry: Optional shared ResourceRegistry for cross-output-group
                              dependency tracking. When provided, Resources are singletons
                              across all BuildContexts sharing the same registry.
+            shared_cache_root: Optional root directory for content-addressed intermediate
+                             artifacts shared across BuildContexts that hold the same
+                             resource_registry. Typically points at gbs-build/suite/cache/
+                             when running under SuiteExecutor.
         """
         # Initialize UIReporter with parent (typically BuildPlan)
         UIReporter.__init__(self,
@@ -65,6 +70,13 @@ class BuildContext(UIReporter):
 
         # Base output path (for suite scoping)
         self._base_output_path = base_output_path or Path("gbs-build")
+
+        # Root for content-addressed artifacts shared via resource_registry.
+        # When a registry spans multiple projects (suite build), the cache root
+        # is suite-scoped and external to per-project base_output_path. For
+        # single-project use, default to a cache directory inside the project's
+        # build tree so the same code path serves both scenarios.
+        self._shared_cache_root = shared_cache_root or (self._base_output_path / "cache")
 
         # Output group context (set when building a specific output group)
         self._topcell: Optional[str] = None
@@ -141,6 +153,11 @@ class BuildContext(UIReporter):
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self._max_parallel)
         return self._semaphore
+
+    @property
+    def shared_cache_root(self) -> Path:
+        """Root for content-addressed artifacts shared via the resource registry."""
+        return self._shared_cache_root
 
     def get_resource(
         self,

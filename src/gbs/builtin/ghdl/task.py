@@ -197,13 +197,30 @@ class CompileLink(Task):
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Build -P flags for all libraries
+        # The cf input for the root library lives in the shared content
+        # cache. Materialize a per-project elaboration workdir hardlinked
+        # from it so this project's elaboration writes don't collide with
+        # another project sharing the same cached analysis.
+        root_cf = next(
+            (r for r in self.inputs_of_type("ghdl-cf") if r.library == self.root_library),
+            None,
+        )
+        if root_cf is None:
+            raise BuildError(f"No cf input for root library {self.root_library}")
+        elab_workdir = self.dispatcher.library_elaboration_workdir(self.root_library)
+        self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
+
+        # -P for every non-root library points at its shared cache workdir;
+        # --workdir for the root library points at the per-project copy.
         flags = []
         for res in self.inputs:
-            if res.file_type == "ghdl-cf":
+            if res.file_type != "ghdl-cf":
+                continue
+            if res.library == self.root_library:
+                flags.append(f"--workdir={elab_workdir.resolve()}")
+                flags.append(f"-P{elab_workdir.resolve()}")
+            else:
                 flags.append(f"-P{res.path.parent.resolve()}")
-                if res.library == self.root_library:
-                    flags.append(f"--workdir={res.path.parent.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
         for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
@@ -258,15 +275,33 @@ class MakeElab(Task):
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Build -P flags for all libraries
+        # Per-project elaboration workdir for the root library, materialized
+        # from the shared cache so that ghdl -m / -e / -r write here without
+        # interfering with another project sharing the same cached analysis.
+        root_cf = next(
+            (r for r in self.inputs_of_type("ghdl-cf") if r.library == self.root_library),
+            None,
+        )
+        if root_cf is None:
+            raise BuildError(f"No cf input for root library {self.root_library}")
+        elab_workdir = self.dispatcher.library_elaboration_workdir(self.root_library)
+        self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
+        elab_workdir_str = str(elab_workdir.resolve())
+
+        # -P points to shared cache for non-root libs; --workdir + an extra -P
+        # gives ghdl access to the root library at its per-project location.
         p_flags = []
         for res in self.inputs:
-            if res.file_type == "ghdl-cf":
+            if res.file_type != "ghdl-cf":
+                continue
+            if res.library == self.root_library:
+                p_flags.append(f"-P{elab_workdir_str}")
+            else:
                 p_flags.append(f"-P{res.path.parent.resolve()}")
 
         process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-m",
-            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
+            f"--workdir={elab_workdir_str}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + elaborate_args + p_flags + [
             f"--work={self.root_library}",
@@ -281,7 +316,7 @@ class MakeElab(Task):
 
         process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-e",
-            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
+            f"--workdir={elab_workdir_str}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + elaborate_args + p_flags + [
             f"--work={self.root_library}",
@@ -301,7 +336,7 @@ class MakeElab(Task):
 
         run_cmd = [
             ghdl_executable, "-r",
-            f"--workdir={self.dispatcher.library_workdir(self.root_library).resolve()}",
+            f"--workdir={elab_workdir_str}",
             f"--std={self.dispatcher.ghdl_vhdl_version}",
         ] + p_flags + [
             f"--work={self.root_library}",

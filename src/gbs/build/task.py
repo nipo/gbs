@@ -564,22 +564,24 @@ class Task(BuildStep):
             # Auto-detect based on typology
             consume = resource.typology == ResourceTypology.SOURCE
 
-        # For Resources with paths, optionally remove from pending and get dependents
+        # Consume from pending and collect dependents regardless of whether we
+        # have already wired the resource as an input: a Task adopted by a
+        # peer dispatcher (cross-project sharing via the ResourceRegistry)
+        # still needs to drain its sources from this caller's pending queue.
         if isinstance(resource, Resource) and resource.path and consume:
             dependents = self.dispatcher.context.remove_pending(resource.path)
-
-            # Add the resource as dependency
-            self.dependency_add(resource)
-
-            # Add all dependents as dependencies (tasks that depended on this resource)
-            for dep in dependents:
-                self.dependency_add(dep)
         else:
-            # For virtual resources or other build steps, just add as dependency
-            self.dependency_add(resource)
+            dependents = set()
 
-        # Add to inputs list
-        self.__inputs.append(resource)
+        # Dependency edges are sets, so wiring them twice is a no-op.
+        self.dependency_add(resource)
+        for dep in dependents:
+            self.dependency_add(dep)
+
+        # The inputs list, however, is not a set; dedupe so work() doesn't see
+        # the same resource twice.
+        if resource not in self.__inputs:
+            self.__inputs.append(resource)
 
     def add_output(self, resource: BuildStep) -> None:
         """Add an output resource to this task

@@ -63,7 +63,9 @@ class Project(UIReporter):
                  path: Optional[Path],
                  gbs_config: Optional[any],
                  max_parallel: Optional[int] = None,
-                 parent_reporter: Optional[UIReporter] = None):
+                 parent_reporter: Optional[UIReporter] = None,
+                 resource_registry: Optional[any] = None,
+                 shared_cache_root: Optional[Path] = None):
         # Initialize UIReporter (parent is Suite if building within a suite)
         UIReporter.__init__(self,
             reporter_name=f"Project({model.name})" if model.name else "Project",
@@ -75,11 +77,16 @@ class Project(UIReporter):
         self.path = path
         self.gbs_config = gbs_config
         self.base_output_path = None  # Can be set for suite builds to scope output directories
+        self.shared_cache_root = shared_cache_root  # Suite-shared cache root, None for single-project
         self.__realizations = None
 
-        # Shared resource registry for cross-output-group dependencies
-        from ..build.registry import ResourceRegistry
-        self._resource_registry = ResourceRegistry()
+        # Shared resource registry for cross-output-group dependencies.
+        # When a suite passes one in, it spans the whole suite so identical
+        # content-addressed intermediates are deduplicated across projects.
+        if resource_registry is None:
+            from ..build.registry import ResourceRegistry
+            resource_registry = ResourceRegistry()
+        self._resource_registry = resource_registry
 
         # Determine max_parallel using precedence chain:
         # 1. Explicitly provided parameter (command line will use this)
@@ -128,8 +135,23 @@ class Project(UIReporter):
         """
         self.base_output_path = base_output_path
 
+    def set_shared_cache_root(self, shared_cache_root: Path):
+        """Set the root for content-addressed intermediates shared across projects.
+
+        Used by SuiteExecutor to point all projects at the same cache root so
+        identical intermediates produced from identical inputs are deduplicated
+        through the shared ResourceRegistry.
+
+        Args:
+            shared_cache_root: Suite-scoped cache root path
+        """
+        self.shared_cache_root = shared_cache_root
+
     @classmethod
-    def load_from_file(cls, path: Path, gbs_config=None, parent_reporter: Optional[UIReporter] = None) -> 'Project':
+    def load_from_file(cls, path: Path, gbs_config=None,
+                       parent_reporter: Optional[UIReporter] = None,
+                       resource_registry: Optional[any] = None,
+                       shared_cache_root: Optional[Path] = None) -> 'Project':
         """Load a project from a YAML file
 
         This is the primary factory method for creating Project instances.
@@ -139,6 +161,11 @@ class Project(UIReporter):
             path: Path to project.gbs.yaml file
             gbs_config: Optional GBSConfig for repository merging
             parent_reporter: Optional parent UIReporter (e.g., SuiteExecutor)
+            resource_registry: Optional shared ResourceRegistry. SuiteExecutor
+                passes one in so all projects share the same Resource singleton
+                map and deduplicate identical content-addressed intermediates.
+            shared_cache_root: Optional suite-shared cache root for
+                content-addressed intermediates.
 
         Returns:
             Project instance
@@ -173,7 +200,9 @@ class Project(UIReporter):
             repositories=repositories,
             path=path,
             gbs_config=gbs_config,
-            parent_reporter=parent_reporter
+            parent_reporter=parent_reporter,
+            resource_registry=resource_registry,
+            shared_cache_root=shared_cache_root,
         )
 
     @classmethod
@@ -488,7 +517,8 @@ class PlanRealization:
             semaphore = self.project.semaphore,
             base_output_path = self.project.base_output_path,
             parent_reporter = self.plan,
-            resource_registry = self.project._resource_registry)
+            resource_registry = self.project._resource_registry,
+            shared_cache_root = self.project.shared_cache_root)
 
         num_files = len(self.source_fileset.get_all_files())
         # Extract unique library names from partition names (library.partition format)

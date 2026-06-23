@@ -1,6 +1,10 @@
 """GHDL Dispatchers - VHDL analysis and simulation"""
 
 from __future__ import annotations
+import hashlib
+import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +51,11 @@ class GHDLBaseDispatcher(BaseDispatcher):
 
         # Convert VHDL standard to GHDL version string
         self.ghdl_vhdl_version = self._convert_vhdl_version(vhdl_std)
+
+        # Content hash cache for source files: keyed by (resolved path, mtime
+        # in ns, size). Source files are immutable during a build, so hashing
+        # any given file once is correct.
+        self.__content_hash_cache: dict[tuple, str] = {}
 
     @staticmethod
     def _convert_vhdl_version(vhdl_std: str) -> str:
@@ -147,16 +156,77 @@ class GHDLBaseDispatcher(BaseDispatcher):
 
         return self._ghdl_executable, self._ghdl_backend_type
 
-    def library_workdir(self, library: str) -> Path:
-        """Get work directory for a library
+    def library_cache_workdir(self, library: str, signature: str) -> Path:
+        """Content-addressed shared workdir for a library's analyzed form.
 
-        Args:
-            library: Library name
+        The path encodes the library name, vhdl standard, GHDL backend, and
+        the signature that summarises all inputs that affect what GHDL writes
+        here. Two BuildContexts sharing the same ResourceRegistry will
+        produce the same path for the same inputs, which deduplicates the
+        Import task through the shared Resource at this location.
+        """
+        _, backend = self._get_ghdl_config()
+        slot = f"{self.ghdl_vhdl_version.rstrip('c')}-{backend}"
+        return self.context.shared_cache_root / "ghdl" / slot / f"{library}-{signature}"
 
-        Returns:
-            Path to library work directory
+    def library_elaboration_workdir(self, library: str) -> Path:
+        """Per-project workdir used by elaboration commands.
+
+        Elaboration writes outputs that are specific to the project (the
+        topcell binary, link artifacts). They must not collide with another
+        project's elaboration writes, so this workdir is rooted in the
+        per-project output path rather than the shared cache.
         """
         return self.context.output_path / library
+
+    def materialize_library_workdir(
+        self,
+        source_workdir: Path,
+        dest_workdir: Path,
+    ) -> None:
+        """Populate dest_workdir with hardlinks (or copies) to source_workdir.
+
+        Used to give elaboration its own writeable workdir while reusing the
+        analyzed cf and any compiled object files from the shared cache.
+        Existing files at dest_workdir are left untouched.
+        """
+        dest_workdir.mkdir(parents=True, exist_ok=True)
+        if not source_workdir.exists():
+            return
+        for src in source_workdir.iterdir():
+            if not src.is_file():
+                continue
+            dst = dest_workdir / src.name
+            if dst.exists():
+                continue
+            try:
+                os.link(src, dst)
+            except OSError:
+                # Different filesystems, or the platform forbids hardlinks
+                # for this combination — copy is correct but slower.
+                shutil.copy2(src, dst)
+
+    def content_hash(self, path: Path) -> str:
+        """Cached SHA-256 of a file's bytes."""
+        resolved = path.resolve()
+        try:
+            stat = resolved.stat()
+        except FileNotFoundError:
+            return "missing"
+        key = (resolved, stat.st_mtime_ns, stat.st_size)
+        cached = self.__content_hash_cache.get(key)
+        if cached is not None:
+            return cached
+        h = hashlib.sha256()
+        with open(resolved, "rb") as f:
+            while True:
+                chunk = f.read(1 << 16)
+                if not chunk:
+                    break
+                h.update(chunk)
+        digest = h.hexdigest()
+        self.__content_hash_cache[key] = digest
+        return digest
 
 
 class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
@@ -176,12 +246,57 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
     ):
         super().__init__(context, "ghdl-analyze", vhdl_std, tool_name)
         self._library_build: dict[str, tuple['Resource', Task]] = {}
+        # Cached signatures, persisted across dispatch iterations. Once a
+        # library's signature is computed, the corresponding cf Resource lives
+        # at a fixed cache path and the Import task is registered. We must not
+        # change the signature later — a different signature would point at a
+        # different cache path and break the dedup with peer dispatchers that
+        # share the registry.
+        self._library_signatures: dict[str, str] = {}
 
-    def library_build_get(self, library: str) -> tuple['Resource', Task]:
+    def _compute_library_signature(
+        self,
+        library: str,
+        sources: list,
+        dep_signatures: dict[str, str],
+    ) -> str:
+        """Content hash that captures everything affecting analysis output.
+
+        Includes the source list and contents, vhdl standard, GHDL backend
+        and version, analyze args, and transitive dependency signatures.
+        Two libraries with the same signature produce byte-identical
+        analyzed output and can therefore share a workdir on disk.
+        """
+        _, backend = self._get_ghdl_config()
+        analyze_args = list(self.get_tool_option("analyze_args", []))
+
+        material = {
+            "library": library,
+            "vhdl_std": self.vhdl_std,
+            "ghdl_vhdl_version": self.ghdl_vhdl_version,
+            "backend": backend,
+            "analyze_args": analyze_args,
+            "sources": [
+                {
+                    "path": str(s.path.resolve()),
+                    "hash": self.content_hash(s.path),
+                }
+                for s in sorted(sources, key=lambda r: str(r.path.resolve()))
+            ],
+            "deps": [
+                {"library": d, "signature": dep_signatures[d]}
+                for d in sorted(dep_signatures)
+            ],
+        }
+        encoded = json.dumps(material, sort_keys=True).encode()
+        return hashlib.sha256(encoded).hexdigest()[:16]
+
+    def library_build_get(self, library: str, signature: str) -> tuple['Resource', Task]:
         """Get or create library build task and resource
 
         Args:
             library: Library name
+            signature: Content-addressed signature for this library's inputs
 
         Returns:
             Tuple of (cf resource, import task)
@@ -191,9 +306,9 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
         except KeyError:
             pass
 
-        workdir = self.library_workdir(library)
+        workdir = self.library_cache_workdir(library, signature)
 
-        # .cf file that will be generated
+        # .cf file at the content-addressed cache location
         cf_path = workdir / f"{library}-obj{self.ghdl_vhdl_version.rstrip('c')}.cf"
         cf_resource = self.context.get_resource(
             cf_path,
@@ -203,7 +318,25 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             generated_by=self.name,
         )
 
-        # Create import task (ghdl -i/-a)
+        # Adopt an existing Import task if one already targets this cf path
+        # via the shared ResourceRegistry. Same path implies same signature
+        # implies the same inputs, so the registered task is the right one
+        # for us too. This is how a second project in the suite avoids
+        # recompiling a library that the first project already covered.
+        existing = next(
+            (d for d in cf_resource.depends_on if isinstance(d, Task)),
+            None,
+        )
+        if existing is not None:
+            self._library_build[library] = (cf_resource, existing)
+            # The cf was added to its producing context's pending queue when
+            # that context created the Import task. For downstream dispatchers
+            # in this context (e.g. GHDLSimulateDispatcher building elaboration
+            # -P flags via filter_pending) to see it, we must add it to this
+            # context's pending queue too.
+            self.context.add_pending(cf_resource)
+            return cf_resource, existing
+
         t = task.Import(
             dispatcher=self,
             library_name=library,
@@ -211,39 +344,66 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             outputs=[cf_resource],
         )
 
-        # Task.__init__ already added cf_resource to pending via add_output()
         self._library_build[library] = cf_resource, t
 
         return cf_resource, t
 
     async def process(self) -> None:
         """Analyze VHDL sources into library intermediates"""
-        # Get library dependency graph for correct inter-library dependencies
-        # Use transitive closure for GHDL which needs all transitive dependencies in -P flags
-        lib_deps_graph = self.context._pending_library_dependency_graph_transitive()
+        ordered_libs = self.context._pending_libraries_in_dependency_order()
+        transitive_deps_graph = self.context._pending_library_dependency_graph_transitive()
 
-        for lib, deps in lib_deps_graph.items():
-            _, user_task = self.library_build_get(lib)
+        # Skip work if every library currently in the pending graph already
+        # has a signature assigned. After iteration 1 the VHDL sources have
+        # been consumed, but cf resources are still in pending: that creates
+        # a spurious second visit with empty sources, which would otherwise
+        # compute a different signature for already-processed libraries.
+        unprocessed = [l for l in ordered_libs if l not in self._library_signatures]
+        if not unprocessed and self._library_signatures:
+            return
 
-            for d in deps:
-                dep_cf, _ = self.library_build_get(d)
-
-                if dep_cf not in user_task.inputs:
-                    user_task.add_input(dep_cf)
-
-        # Get libraries in dependency order and process VHDL sources
+        # Per-library VHDL sources currently in pending
+        lib_sources: dict[str, list] = {}
         for library_name, library_files in self.context.get_pending_by_library_ordered():
             if library_name is None:
                 continue
+            lib_sources[library_name] = [
+                r for r in library_files if r.file_type == "vhdl"
+            ]
 
-            cf, task_obj = self.library_build_get(library_name)
+        # Compute signatures in topological order so each library's signature
+        # can incorporate its transitive deps' signatures.
+        for lib in ordered_libs:
+            if lib in self._library_signatures:
+                continue
+            sources = lib_sources.get(lib, [])
+            transitive = transitive_deps_graph.get(lib, set())
+            missing = transitive - set(self._library_signatures)
+            if missing:
+                raise RuntimeError(
+                    f"GHDL: dependencies of '{lib}' lack signatures: {missing}"
+                )
+            dep_sigs = {d: self._library_signatures[d] for d in transitive}
+            self._library_signatures[lib] = self._compute_library_signature(
+                lib, sources, dep_sigs,
+            )
 
-            for resource in library_files:
-                if resource.file_type != "vhdl":
-                    continue
+        # Create or adopt cf resources and tasks, then wire up dep cf inputs
+        for lib in unprocessed:
+            sig = self._library_signatures[lib]
+            cf_resource, task_obj = self.library_build_get(lib, sig)
 
-                # Remove from pending (consuming the source)
-                # Add dependents as task dependencies to ensure proper execution order
+            for d in transitive_deps_graph.get(lib, set()):
+                dep_sig = self._library_signatures[d]
+                dep_cf, _ = self.library_build_get(d, dep_sig)
+                task_obj.add_input(dep_cf, consume=False)
+
+        # Wire VHDL source inputs. add_input is idempotent on adopted tasks,
+        # so a task created by a peer dispatcher tolerates being called again
+        # with the same source resources from this context's pending queue.
+        for lib in unprocessed:
+            _, task_obj = self._library_build[lib]
+            for resource in lib_sources.get(lib, []):
                 task_obj.add_input(resource)
 
 

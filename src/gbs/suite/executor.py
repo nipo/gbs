@@ -66,6 +66,14 @@ class SuiteExecutor(UIReporter):
         self.tags = tags or []
         self.exclude_tags = exclude_tags or []
 
+        # Shared across all projects in the suite: identical content-addressed
+        # intermediates (e.g. GHDL library analysis output) are deduplicated
+        # through the registry, and physically share an on-disk location under
+        # the cache root.
+        from ..build.registry import ResourceRegistry
+        self._resource_registry = ResourceRegistry()
+        self._suite_cache_root = Path("gbs-build") / "suite" / "cache"
+
     async def build_suite(self) -> SuiteResult:
         """Build all projects in the suite
 
@@ -251,8 +259,17 @@ class SuiteExecutor(UIReporter):
             # Find project file
             project_path = self._find_project_file(proj_ref.path)
 
-            # Load project with self as parent reporter
-            project = Project.load_from_file(project_path, gbs_config=self.gbs_config, parent_reporter=self)
+            # Load project with self as parent reporter.
+            # Share the suite-wide ResourceRegistry and cache root so identical
+            # content-addressed intermediates are produced once across the
+            # whole suite.
+            project = Project.load_from_file(
+                project_path,
+                gbs_config=self.gbs_config,
+                parent_reporter=self,
+                resource_registry=self._resource_registry,
+                shared_cache_root=self._suite_cache_root,
+            )
 
             # Set suite-scoped output directory to prevent cross-contamination
             # Format: gbs-build/suite/<project_name>/
@@ -581,7 +598,13 @@ class SuiteExecutor(UIReporter):
                 project_path = self._find_project_file(proj_ref.path)
 
                 # Load project with self as parent reporter
-                project = Project.load_from_file(project_path, gbs_config=self.gbs_config, parent_reporter=self)
+                project = Project.load_from_file(
+                    project_path,
+                    gbs_config=self.gbs_config,
+                    parent_reporter=self,
+                    resource_registry=self._resource_registry,
+                    shared_cache_root=self._suite_cache_root,
+                )
 
                 # Set the SAME suite-scoped output directory as build_suite()
                 # Format: gbs-build/suite/<project_name>/
@@ -596,6 +619,14 @@ class SuiteExecutor(UIReporter):
                 error_msg = str(e)
                 self.warning(f"Failed to clean project '{proj_ref.name}': {error_msg}")
                 results[proj_ref.name] = error_msg
+
+        # Wipe the suite-shared cache root so subsequent builds start cold.
+        # Per-project dispatchers don't own it (it lives outside their
+        # base_output_path), so the suite executor cleans it itself.
+        if self._suite_cache_root.exists():
+            from ..utils import clean_paths
+            import click
+            clean_paths({self._suite_cache_root}, dry_run=dry_run, echo_func=click.echo)
 
         return results
 
