@@ -8,6 +8,7 @@ from ..ui import get_global_hub
 from ..ui.reporter import UIReporter
 from ..ui.messages import MessageSeverity, ToolMessage
 from .task import VirtualResource, Resource, Stamp
+import asyncclick as click
 import asyncio
 
 class BuildContext(UIReporter):
@@ -492,7 +493,6 @@ class BuildContext(UIReporter):
         Args:
             failed_steps: List of (BuildStep, Exception) tuples for failed steps
         """
-        import click
         from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError
 
         # First, print all warnings (not just from failed steps)

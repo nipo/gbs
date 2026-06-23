@@ -5,6 +5,7 @@ Provides the Project class for loading, building, and managing GBS projects.
 
 import sys
 import asyncio
+import asyncclick as click
 
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, AsyncIterable
@@ -338,8 +339,6 @@ class Project(UIReporter):
         Args:
             dry_run: If True, show what would be deleted without actually deleting
         """
-        import click
-
         # Track all cleaned paths to check if base output path becomes empty
         all_cleaned_paths = set()
 
@@ -666,7 +665,6 @@ class PlanRealization:
         from ..build.task import Resource, VirtualResource, Task
 
         if print_func is None:
-            import click
             print_func = click.echo
 
         # Organize steps by type
@@ -968,7 +966,6 @@ class PlanRealization:
         Returns:
             Set of paths that were cleaned (or would be cleaned if dry_run)
         """
-        import click
         from ..utils import clean_paths
 
         # Collect paths to clean from all dispatchers

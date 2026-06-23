@@ -39,12 +39,6 @@ class ResourceTypology(Enum):
     OUTPUT = "output"           # Final deliverable
     DEFINITION = "definition"   # Build-influencing metadata file (not an error if unused)
 
-try:
-    import click
-except ImportError:
-    click = None
-
-
 class BuildError(Exception):
     """Error during build execution"""
     pass

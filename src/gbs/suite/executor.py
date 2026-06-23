@@ -5,6 +5,7 @@ and result collection.
 """
 
 import asyncio
+import asyncclick as click
 import time
 import sys
 from pathlib import Path
@@ -625,7 +626,6 @@ class SuiteExecutor(UIReporter):
         # base_output_path), so the suite executor cleans it itself.
         if self._suite_cache_root.exists():
             from ..utils import clean_paths
-            import click
             clean_paths({self._suite_cache_root}, dry_run=dry_run, echo_func=click.echo)
 
         return results
