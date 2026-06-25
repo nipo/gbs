@@ -28,8 +28,11 @@ def _copy_file(source_path: Path, dest_path: Path) -> None:
     shutil.copy2(source_path, dest_path)
     # copy2 preserves source mode. A read-only source (e.g. a Gowin
     # bitstream) would leave a read-only destination that can't be
-    # replaced on the next run, especially on Windows.
-    os.chmod(dest_path, stat.S_IWRITE | stat.S_IREAD)
+    # replaced on the next run, especially on Windows, so force it
+    # writable -- but additively, so an execute bit (e.g. on the GHDL
+    # simulator binary or its shell wrapper) survives the copy.
+    mode = os.stat(dest_path).st_mode
+    os.chmod(dest_path, mode | stat.S_IWRITE | stat.S_IREAD)
 
 
 class CopyTask(Task):

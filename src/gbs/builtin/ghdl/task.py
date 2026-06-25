@@ -9,6 +9,23 @@ import shlex
 import subprocess
 import sys
 
+
+def make_executable(path: Path) -> None:
+    """Give the simulator output the execute permission on POSIX systems.
+
+    Applies whether the output is a real binary (compiled backends) or a
+    shell wrapper invoking ghdl -r (mcode/jit). On Windows a file's
+    runnability is governed by its extension (and PATHEXT), not by a
+    permission bit, and os.chmod cannot set an execute bit there, so this is
+    a no-op. The execute bits are added to the file's existing mode so its
+    read/write bits are left untouched.
+    """
+    if sys.platform == "win32":
+        return
+    mode = path.stat().st_mode
+    path.chmod(mode | 0o111)
+
+
 class GhdlInvocation(MessageSubprocess):
     error_line = re.compile(r'(?P<file>[^:]+):(?P<line>[0-9]+):(?P<column>[0-9]+):(?P<level>[a-z]+):(?P<message>.+)$')
 
@@ -251,6 +268,8 @@ class CompileLink(Task):
         if process.returncode != 0:
             raise BuildError(f"ghdl -c failed: {process.returncode}")
 
+        make_executable(out_path)
+
 class MakeElab(Task):
     """GHDL make task for mcode/jit backends (ghdl -m / -e + wrapper generator)"""
 
@@ -360,7 +379,8 @@ class MakeElab(Task):
             cmd_str = " ".join(shlex.quote(arg) for arg in run_cmd)
             script_content = f'#!/bin/sh\n\nexec {cmd_str} "$@"\n'
             out_path.write_text(script_content)
-            out_path.chmod(0o755)
+
+        make_executable(out_path)
 
 
 class SimulatorInvocation(MessageSubprocess):
