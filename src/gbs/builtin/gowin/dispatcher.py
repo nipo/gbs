@@ -149,9 +149,12 @@ class GowinDispatcher(BaseDispatcher):
             generated_by=self.name
         )
 
-        # Virtual resource that indicates project has been initialized in gw_sh session
-        # This is volatile - the session state doesn't persist across builds
-        init_marker_resource = self.context.get_virtual_resource("gowin_project_init")
+        # Stamp file that marks "the gw_sh project description is consistent
+        # with the current inputs". A real file rather than a VirtualResource
+        # so its mtime gates Synthesis/PnR: when no input has changed, the
+        # stamp is up-to-date and every downstream task is skipped before
+        # gw_sh ever launches.
+        init_stamp_resource = self.context.get_stamp(".gowin_project_init.stamp")
 
         # Get HDL sources in dependency order
         vhdl_sources = list(self.context.filter_pending(file_type=["vhdl"]))
@@ -273,7 +276,7 @@ class GowinDispatcher(BaseDispatcher):
             output_base_name=output_base_name,
             output_dir=self.context.output_path,
             inputs=init_inputs,
-            outputs=[init_marker_resource],
+            outputs=[init_stamp_resource],
         )
         self.attach_definition_dependencies(init_task)
 
@@ -281,7 +284,7 @@ class GowinDispatcher(BaseDispatcher):
         synth_task = task.Synthesis(
             dispatcher=self,
             session=session,
-            inputs=[init_marker_resource],
+            inputs=[init_stamp_resource],
             outputs=[netlist_resource]
         )
 
@@ -309,7 +312,7 @@ class GowinDispatcher(BaseDispatcher):
         pnr_task = task.PnR(
             dispatcher=self,
             session=session,
-            inputs=[init_marker_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
+            inputs=[init_stamp_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
             outputs=[bitstream_resource, bitstream_bin_resource]
         )
 
