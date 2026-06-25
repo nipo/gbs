@@ -52,9 +52,13 @@ class SimpleBackend(FeedbackBackend):
         self.min_severity = min_severity
         self.min_log_level = min_log_level
 
-        # Track active progress tasks for indentation
+        # Track active progress tasks for indentation and end-of-task
+        # reporting. We only show progress start descriptions on
+        # completion ("[OK] {description}") rather than at each step, to
+        # keep non-TTY output focused on outcomes.
         self._progress_stack: list[str] = []  # Stack of task IDs
         self._progress_indent: dict[str, int] = {}  # task_id -> indent level
+        self._progress_description: dict[str, str] = {}  # task_id -> description
 
     @staticmethod
     def _safe_stream(stream: TextIO) -> TextIO:
@@ -135,7 +139,13 @@ class SimpleBackend(FeedbackBackend):
         stream.flush()
 
     async def _render_progress_start(self, msg: ProgressStart):
-        """Render progress start"""
+        """Record progress start (no output).
+
+        The non-TTY backend doesn't print "> description" lines because
+        the matching ProgressEnd carries everything we need to convey:
+        the outcome and what it was. Stashing description and indent
+        here lets the end handler emit a single, fully-identified line.
+        """
         if not self.show_progress:
             return
 
@@ -146,27 +156,19 @@ class SimpleBackend(FeedbackBackend):
             indent_level = 0
 
         self._progress_indent[msg.task_id] = indent_level
+        self._progress_description[msg.task_id] = msg.description
         self._progress_stack.append(msg.task_id)
 
-        # Render with indentation
-        indent = "  " * indent_level
-        total_str = f"/{msg.total}" if msg.total is not None else ""
-        self.output.write(f"{indent}> {msg.description}{total_str}\n")
-        self.output.flush()
-
     async def _render_progress_update(self, msg: ProgressUpdate):
-        """Render progress update"""
-        if not self.show_progress:
-            return
+        """Skip intermediate progress updates.
 
-        # For simple backend, we only render updates with messages
-        # (not every increment, that would be too noisy)
-        if msg.message:
-            indent_level = self._progress_indent.get(msg.task_id, 0)
-            indent = "  " * (indent_level + 1)
-            completed_str = f"[{msg.completed}] " if msg.completed is not None else ""
-            self.output.write(f"{indent}{completed_str}{msg.message}\n")
-            self.output.flush()
+        BuildStep auto-emits "waiting" / "starting" / "complete"
+        lifecycle messages that duplicate what ProgressEnd already
+        conveys, and inline progress in non-TTY logs is more noise
+        than signal. Final outcome (with description) lands via
+        ProgressEnd.
+        """
+        return
 
     async def _render_progress_end(self, msg: ProgressEnd):
         """Render progress end"""
@@ -178,19 +180,40 @@ class SimpleBackend(FeedbackBackend):
             self._progress_stack.remove(msg.task_id)
 
         indent_level = self._progress_indent.pop(msg.task_id, 0)
+        description = self._progress_description.pop(msg.task_id, "")
         indent = "  " * indent_level
 
-        # Show completion status
+        # Show completion status with the description recorded at start
+        # (falls back to msg.message if the start was never seen)
         if msg.success:
             status = "[OK]"
         else:
             status = "[FAILED]"
 
-        message_str = f": {msg.message}" if msg.message else ""
-        self.output.write(f"{indent}{status} Done{message_str}\n")
+        label = description or msg.message or "Done"
+        suffix = f": {msg.message}" if msg.message and msg.message != description else ""
+        self.output.write(f"{indent}{status} {label}{suffix}\n")
         self.output.flush()
 
     async def _render_build_status(self, msg: BuildStatus):
-        """Render build status"""
-        self.output.write(str(msg) + "\n")
+        """Render build status in the same shape as ProgressEnd.
+
+        "started" is dropped: the corresponding "[OK] target" already
+        announces what happened, and the "started" line carries no
+        extra information once the task is done. Failure/error/skipped
+        map to dedicated tags so the outcome is the first thing visible.
+        """
+        status_map = {
+            "success": "[OK]",
+            "failure": "[FAILED]",
+            "error": "[FAILED]",
+            "skipped": "[SKIPPED]",
+        }
+        if msg.status == "started":
+            return
+        status = status_map.get(msg.status, f"[{msg.status.upper()}]")
+
+        duration_str = f" ({msg.duration:.1f}s)" if msg.duration is not None else ""
+        message_str = f" - {msg.message}" if msg.message else ""
+        self.output.write(f"{status} {msg.target}{duration_str}{message_str}\n")
         self.output.flush()
