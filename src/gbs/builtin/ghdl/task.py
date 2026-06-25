@@ -207,7 +207,7 @@ class CompileLink(Task):
         )
         if root_cf is None:
             raise BuildError(f"No cf input for root library {self.root_library}")
-        elab_workdir = self.dispatcher.library_elaboration_workdir(self.root_library)
+        elab_workdir = self.dispatcher.library_elaboration_workdir(root_cf.path.parent)
         self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
 
         # -P for every non-root library points at its shared cache workdir;
@@ -284,7 +284,7 @@ class MakeElab(Task):
         )
         if root_cf is None:
             raise BuildError(f"No cf input for root library {self.root_library}")
-        elab_workdir = self.dispatcher.library_elaboration_workdir(self.root_library)
+        elab_workdir = self.dispatcher.library_elaboration_workdir(root_cf.path.parent)
         self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
         elab_workdir_str = str(elab_workdir.resolve())
 

@@ -169,15 +169,20 @@ class GHDLBaseDispatcher(BaseDispatcher):
         slot = f"{self.ghdl_vhdl_version.rstrip('c')}-{backend}"
         return self.context.shared_cache_root / "ghdl" / slot / f"{library}-{signature}"
 
-    def library_elaboration_workdir(self, library: str) -> Path:
+    def library_elaboration_workdir(self, cache_workdir: Path) -> Path:
         """Per-project workdir used by elaboration commands.
 
         Elaboration writes outputs that are specific to the project (the
         topcell binary, link artifacts). They must not collide with another
         project's elaboration writes, so this workdir is rooted in the
         per-project output path rather than the shared cache.
+
+        It is keyed by the cache workdir's content-addressed name
+        (<library>-<signature>) so a change to the library's inputs lands in
+        a fresh directory rather than reusing one that still holds the
+        previous signature's elaboration outputs.
         """
-        return self.context.output_path / library
+        return self.context.output_path / "elab" / cache_workdir.name
 
     def materialize_library_workdir(
         self,
@@ -189,17 +194,18 @@ class GHDLBaseDispatcher(BaseDispatcher):
         Used to give elaboration its own writeable workdir while reusing the
         analyzed cf and any compiled object files from the shared cache.
 
-        Each cache-derived file is forced to track the current cache content:
-        the elaboration workdir is not signature-keyed and persists across
-        builds, so a destination cf left over from a previous build (or a
-        previous cache signature) would be stale. GHDL records an analysis
-        timestamp inside each cf and reports the root library as "obsoleted
-        by" a dependency whenever the root's recorded analysis predates a
-        dependency's — exactly what a stale root cf produces once the cache
-        is re-analyzed. Re-linking stale entries keeps the workdir's cf and
-        analysis objects consistent with the dependencies pulled from the
-        cache. Files only present in dest_workdir (elaboration outputs the
-        cache never held) are left untouched.
+        Each cache-derived file is forced to track the current cache content.
+        The elaboration workdir is keyed by the cache signature, but a given
+        signature dir persists across builds and an mtime bump on an unchanged
+        source re-analyses the library in place (same signature, new analysis
+        timestamp), so a destination cf left over from a previous build can
+        still be stale. GHDL records an analysis timestamp inside each cf and
+        reports the root library as "obsoleted by" a dependency whenever the
+        root's recorded analysis predates a dependency's — exactly what a stale
+        root cf produces once the cache is re-analyzed. Re-linking stale
+        entries keeps the workdir's cf and analysis objects consistent with the
+        dependencies pulled from the cache. Files only present in dest_workdir
+        (elaboration outputs the cache never held) are left untouched.
         """
         dest_workdir.mkdir(parents=True, exist_ok=True)
         if not source_workdir.exists():
