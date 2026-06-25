@@ -184,11 +184,22 @@ class GHDLBaseDispatcher(BaseDispatcher):
         source_workdir: Path,
         dest_workdir: Path,
     ) -> None:
-        """Populate dest_workdir with hardlinks (or copies) to source_workdir.
+        """Mirror source_workdir into dest_workdir via hardlinks (or copies).
 
         Used to give elaboration its own writeable workdir while reusing the
         analyzed cf and any compiled object files from the shared cache.
-        Existing files at dest_workdir are left untouched.
+
+        Each cache-derived file is forced to track the current cache content:
+        the elaboration workdir is not signature-keyed and persists across
+        builds, so a destination cf left over from a previous build (or a
+        previous cache signature) would be stale. GHDL records an analysis
+        timestamp inside each cf and reports the root library as "obsoleted
+        by" a dependency whenever the root's recorded analysis predates a
+        dependency's — exactly what a stale root cf produces once the cache
+        is re-analyzed. Re-linking stale entries keeps the workdir's cf and
+        analysis objects consistent with the dependencies pulled from the
+        cache. Files only present in dest_workdir (elaboration outputs the
+        cache never held) are left untouched.
         """
         dest_workdir.mkdir(parents=True, exist_ok=True)
         if not source_workdir.exists():
@@ -198,7 +209,11 @@ class GHDLBaseDispatcher(BaseDispatcher):
                 continue
             dst = dest_workdir / src.name
             if dst.exists():
-                continue
+                # Already the current cache file (same inode) — nothing to do.
+                # Otherwise it is a stale leftover that must be replaced.
+                if dst.samefile(src):
+                    continue
+                dst.unlink()
             try:
                 os.link(src, dst)
             except OSError:
