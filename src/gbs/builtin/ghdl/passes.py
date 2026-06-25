@@ -35,6 +35,7 @@ class GHDLAnalyzePass(BasePass):
 
         return {
             "target-usage": "simulation",
+            "tool": "ghdl",
             "compiler": "ghdl",
             "vhdl-version": vhdl_std,
         }
@@ -88,6 +89,7 @@ class GHDLSimulatePass(BasePass):
 
         return {
             "target-usage": "simulation",
+            "tool": "ghdl",
             "compiler": "ghdl",
             "vhdl-version": vhdl_std,
         }
