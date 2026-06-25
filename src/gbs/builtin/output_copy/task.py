@@ -60,7 +60,7 @@ class CopyTask(Task):
             name=f"copy:{destination.path.name}",
             inputs=[source],
             outputs=[destination],
-            description=f"Copy {source.path.name} to {destination.path}",
+            description=f"Copy {source.path.name}",
         )
 
     async def work(self) -> None:

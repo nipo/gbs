@@ -81,7 +81,7 @@ class Import(Task):
             name=f"ghdl_import_{library_name}",
             inputs=inputs,
             outputs=outputs,
-            description=f"GHDL import {library_name}"
+            description=f"import {library_name}"
         )
         self.library_name = library_name
 
@@ -207,7 +207,7 @@ class CompileLink(Task):
             name=f"ghdl_link_simulator",
             inputs=inputs or [],
             outputs=outputs or [],
-            description=f"GHDL link {topcell}"
+            description=f"link {dispatcher.context.project.name}"
         )
         self.topcell = topcell
         self.root_library = root_library
@@ -286,7 +286,7 @@ class MakeElab(Task):
             name=f"ghdl_make_{topcell}",
             inputs=inputs or [],
             outputs=outputs or [],
-            description=f"GHDL make {topcell}"
+            description=f"make {dispatcher.context.project.name}"
         )
         self.topcell = topcell
         self.root_library = root_library
@@ -427,7 +427,7 @@ class RunSimulation(Task):
             name="ghdl_run_simulation",
             inputs=inputs,
             outputs=outputs,
-            description="GHDL run simulation"
+            description=f"run {dispatcher.context.project.name}"
         )
 
     async def work(self) -> None:

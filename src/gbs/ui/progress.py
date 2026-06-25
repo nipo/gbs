@@ -68,7 +68,7 @@ async def monitor_build_progress(context: BuildContext):
                     if task_name not in task_bars:
                         task_bars[task_name] = tqdm(
                             total=100,
-                            desc=task.name[:40],  # Truncate long names
+                            desc=task.pretty_name[:40],
                             position=bar_position,
                             leave=False,
                             unit="%"

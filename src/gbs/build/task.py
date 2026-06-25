@@ -165,7 +165,7 @@ class BuildStep(UIReporter, asyncio.Future):
             self._ui_progress_task_id = uuid.uuid4().hex
             hub.emit(ProgressStart(
                 task_id=self._ui_progress_task_id,
-                description=self.name,
+                description=self.pretty_name,
                 total=100,  # Percentage-based progress
                 transient=True  # Task progress bars are transient
             ))
