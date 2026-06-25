@@ -1,6 +1,7 @@
 """GHDL Dispatchers - VHDL analysis and simulation"""
 
 from __future__ import annotations
+import functools
 import hashlib
 import json
 import os
@@ -17,6 +18,53 @@ from ...build.task import Task, ResourceTypology
 from . import task
 
 logger = get_logger(__name__)
+
+
+# Backend names recognised in GHDL --version's "code generator" line, in
+# resolution order. JIT must precede llvm because "LLVM JIT" contains both
+# words and JIT is the more specific match.
+_GHDL_BACKENDS = ('jit', 'mcode', 'gcc', 'llvm')
+
+
+@functools.lru_cache(maxsize=None)
+def detect_ghdl_backend(ghdl_executable: str) -> str:
+    """Detect GHDL backend type (mcode, gcc, llvm, or jit).
+
+    Invokes ``ghdl --version`` and parses the "code generator" line. The
+    result is cached per executable path so passes and dispatchers can call
+    it freely without re-spawning ghdl.
+
+    Args:
+        ghdl_executable: Path to GHDL executable.
+
+    Returns:
+        "mcode", "gcc", "llvm", or "jit".
+
+    Raises:
+        RuntimeError: If ghdl is not found or version cannot be parsed.
+    """
+    try:
+        result = subprocess.run(
+            [ghdl_executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except FileNotFoundError:
+        raise RuntimeError(f"GHDL executable not found: {ghdl_executable}")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"GHDL --version failed: {e}")
+
+    for line in result.stdout.split('\n'):
+        if 'code generator' not in line.lower():
+            continue
+        words = line.lower().split()
+        for backend in _GHDL_BACKENDS:
+            if backend in words:
+                logger.info(f"Detected GHDL backend ({ghdl_executable}): {backend}")
+                return backend
+
+    raise RuntimeError("Could not detect GHDL backend type from --version output")
 
 
 class GHDLBaseDispatcher(BaseDispatcher):
@@ -94,46 +142,8 @@ class GHDLBaseDispatcher(BaseDispatcher):
         return self._ghdl_executable
 
     def _detect_ghdl_backend(self, ghdl_executable: str) -> str:
-        """Detect GHDL backend type (mcode, gcc, llvm, or jit)
-
-        Args:
-            ghdl_executable: Path to GHDL executable
-
-        Returns:
-            "mcode", "gcc", "llvm", or "jit"
-
-        Raises:
-            RuntimeError: If ghdl is not found or version cannot be parsed
-        """
-        try:
-            result = subprocess.run(
-                [ghdl_executable, "--version"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-
-            # Look for "code generator" line
-            # Format can be: " llvm 19.1.7 code generator" or "code generator: mcode"
-            # Note: "LLVM JIT" should be detected as "jit", not "llvm"
-            for line in result.stdout.split('\n'):
-                if 'code generator' in line.lower():
-                    line_lower = line.lower()
-                    # Check all words in the line for known backends
-                    # Priority order: jit > mcode > gcc > llvm
-                    # (JIT must come before llvm since "LLVM JIT" contains both words)
-                    words = line_lower.split()
-                    for backend in ['jit', 'mcode', 'gcc', 'llvm']:
-                        if backend in words:
-                            logger.info(f"Detected GHDL backend: {backend}")
-                            return backend
-
-            raise RuntimeError("Could not detect GHDL backend type from --version output")
-
-        except FileNotFoundError:
-            raise RuntimeError(f"GHDL executable not found: {ghdl_executable}")
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"GHDL --version failed: {e}")
+        """Detect GHDL backend type — thin instance wrapper over the module helper."""
+        return detect_ghdl_backend(ghdl_executable)
 
     def _get_ghdl_config(self) -> tuple[str, str]:
         """Get GHDL executable and backend type (cached)

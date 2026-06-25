@@ -4,8 +4,39 @@ from __future__ import annotations
 from typing import Any
 
 from ...base import BasePass
-from .dispatcher import GHDLAnalyzeDispatcher, GHDLSimulateDispatcher, GHDLRunDispatcher
+from ...utils import expand_path
+from .dispatcher import (
+    GHDLAnalyzeDispatcher,
+    GHDLSimulateDispatcher,
+    GHDLRunDispatcher,
+    detect_ghdl_backend,
+)
 from ...protocol import Dispatcher
+
+
+class _GhdlFlavorProbe:
+    """Resolve the configured GHDL tool to its code-generator flavor.
+
+    Filter variables are produced at planning time, before any dispatcher
+    exists. To expose the actual flavor (mcode / llvm / gcc / jit) to source
+    selection — so a partition Makefile can branch on it — passes invoke
+    ``ghdl --version`` themselves. The probe lives here and is shared by the
+    analyze and simulate passes so they advertise the same flavor.
+    """
+
+    @staticmethod
+    def resolve_executable(config: dict[str, Any], gbs_config) -> str:
+        tool_id = config.get("tool", "ghdl")
+        executable = "ghdl"
+        if gbs_config is not None:
+            tool = gbs_config.get_tool(tool_id)
+            if tool is not None:
+                executable = tool.config.get("executable", "ghdl")
+        return str(expand_path(executable))
+
+    @classmethod
+    def flavor(cls, config: dict[str, Any], gbs_config) -> str:
+        return detect_ghdl_backend(cls.resolve_executable(config, gbs_config))
 
 
 class GHDLAnalyzePass(BasePass):
@@ -38,6 +69,7 @@ class GHDLAnalyzePass(BasePass):
             "tool": "ghdl",
             "compiler": "ghdl",
             "vhdl-version": vhdl_std,
+            "ghdl-flavor": _GhdlFlavorProbe.flavor(self.config, self.gbs_config),
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
@@ -92,6 +124,7 @@ class GHDLSimulatePass(BasePass):
             "tool": "ghdl",
             "compiler": "ghdl",
             "vhdl-version": vhdl_std,
+            "ghdl-flavor": _GhdlFlavorProbe.flavor(self.config, self.gbs_config),
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
