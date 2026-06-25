@@ -487,13 +487,52 @@ class BuildContext(UIReporter):
 
         self.end_progress(success=not self.build_failed)
 
+    def _print_failure_detail(self, exc: Exception, indent: str = "    ") -> None:
+        """Render an exception in structured form on the console.
+
+        ToolFailure expands into command/cwd/exit code/output tail.
+        MissingToolError prints with a configuration hint.
+        Any other BuildError shows just its message.
+        """
+        from .task import ToolFailure, MissingToolError
+        import shlex
+
+        if isinstance(exc, ToolFailure):
+            click.echo(click.style(f"{indent}Tool '{exc.tool}' failed", fg="red"))
+            if exc.message and exc.message != f"{exc.tool} failed":
+                click.echo(f"{indent}  {exc.message}")
+            cmd = " ".join(shlex.quote(str(a)) for a in exc.argv)
+            click.echo(f"{indent}  Command: {cmd}")
+            if exc.cwd is not None:
+                click.echo(f"{indent}  In: {exc.cwd}")
+            if exc.returncode is not None:
+                click.echo(f"{indent}  Exit code: {exc.returncode}")
+            if exc.env_extra:
+                click.echo(f"{indent}  Env: {', '.join(f'{k}={v}' for k, v in exc.env_extra.items())}")
+            if exc.log_tail:
+                click.echo(click.style(f"{indent}  Last output lines:", fg="yellow"))
+                for line in exc.log_tail:
+                    click.echo(f"{indent}    {line}")
+            if exc.log_path is not None:
+                click.echo(click.style(f"{indent}  Full output: {exc.log_path}", fg="blue"))
+            return
+
+        if isinstance(exc, MissingToolError):
+            click.echo(click.style(f"{indent}Reason: {exc}", fg="red"))
+            click.echo(click.style(f"{indent}Hint: Check tool configuration", fg="yellow"))
+            return
+
+        exc_msg = str(exc)
+        if exc_msg:
+            click.echo(click.style(f"{indent}Reason: {exc_msg}", fg="red"))
+
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
 
         Args:
             failed_steps: List of (BuildStep, Exception) tuples for failed steps
         """
-        from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError
+        from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError, ToolFailure
 
         # First, print all warnings (not just from failed steps)
         warnings = self.messages_get(severity=MessageSeverity.WARNING)
@@ -524,6 +563,7 @@ class BuildContext(UIReporter):
 
         # For each failed step, collect the associated task and its messages
         tasks_with_messages = {}
+        task_to_exc: dict[Task, Exception] = {}
 
         for step, exc in root_causes:
             task = None
@@ -536,6 +576,9 @@ class BuildContext(UIReporter):
                     if isinstance(dep, Task):
                         task = dep
                         break
+
+            if task is not None and task not in task_to_exc:
+                task_to_exc[task] = exc
 
             if task and task not in tasks_with_messages:
                 # Get ALL warnings and errors from this task (not just errors)
@@ -580,6 +623,11 @@ class BuildContext(UIReporter):
                     click.echo(f"    Failed outputs: {', '.join(str(o.name) for o in failed_outputs[:3])}" +
                              (f" (+{len(failed_outputs)-3} more)" if len(failed_outputs) > 3 else ""))
 
+                # Render structured failure detail (command, exit code, tail
+                # for ToolFailure; reason text for plain BuildError).
+                if task in task_to_exc:
+                    self._print_failure_detail(task_to_exc[task])
+
                 # Show all warnings and errors from this task
                 click.echo(click.style(f"    Messages:", fg="yellow"))
                 for msg in messages[:10]:  # Limit to 10 messages
@@ -608,13 +656,7 @@ class BuildContext(UIReporter):
                     if step.description and step.description != step.name:
                         click.echo(f"    {step.description}")
 
-                    if isinstance(exc, MissingToolError):
-                        click.echo(click.style(f"    Reason: {exc}", fg="red"))
-                        click.echo(click.style(f"    Hint: Check tool configuration", fg="yellow"))
-                    else:
-                        exc_msg = str(exc)
-                        if exc_msg:
-                            click.echo(click.style(f"    Reason: {exc_msg}", fg="red"))
+                    self._print_failure_detail(exc)
 
                     # Show warnings and errors from this task
                     task_messages = [m for m in self.__messages

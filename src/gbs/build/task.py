@@ -28,7 +28,7 @@ from ..ui.messages import MessageSeverity, ToolMessage
 
 from ..ui.reporter import UIReporter
 
-__all__ = ["BuildError", "MissingToolError", "PrerequisiteFailed", "BuildStep",
+__all__ = ["BuildError", "MissingToolError", "ToolFailure", "PrerequisiteFailed", "BuildStep",
            "VirtualResource", "Resource", "Task", "ExecutorTask", "ResourceTypology"]
 
 
@@ -50,6 +50,44 @@ class MissingToolError(BuildError):
     or not properly configured.
     """
     pass
+
+class ToolFailure(BuildError):
+    """An external tool invocation returned a non-zero exit code.
+
+    Carries the context needed to diagnose the failure without dragging
+    the gbs internal traceback into the user's view: which command was
+    run, where, with what exit code, and the tail of the tool's own
+    output.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        tool: str,
+        argv: list[str],
+        returncode: int | None,
+        cwd: Path | None = None,
+        env_extra: dict[str, str] | None = None,
+        log_tail: list[str] | None = None,
+        log_path: Path | None = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.tool = tool
+        # argv entries can be plain strings or pathlib.Path objects in
+        # backends that splice resolved paths in directly (gbs and the
+        # subprocess API both accept that). Normalize to strings here so
+        # downstream renderers / loggers / shlex consumers don't have to
+        # know.
+        self.argv = [str(a) for a in argv]
+        self.returncode = returncode
+        self.cwd = cwd
+        self.env_extra = dict(env_extra) if env_extra else None
+        self.log_tail = list(log_tail) if log_tail else []
+        self.log_path = log_path
+
+    def __str__(self) -> str:
+        return self.message
 
 class PrerequisiteFailed(Exception):
     """Prerequisite failed while we were waiting on it"""
@@ -314,7 +352,19 @@ class BuildStep(UIReporter, asyncio.Future):
         try:
             await self._work()
         except Exception as e:
-            self.error(f"{self.name} excepted: {e}", exc_info=True)
+            import traceback as _tb
+            self.debug(f"{self.name} excepted with traceback:\n{_tb.format_exc()}")
+            if isinstance(e, BuildError):
+                # Expected build failure (tool error, missing tool,
+                # constraint violation, ...). The structured renderer in
+                # the failure summary shows the diagnostic; suppressing
+                # the traceback here keeps the console focused on the
+                # tool's own output.
+                self.error(f"{self.name}: {e}")
+            else:
+                # Unexpected internal exception. Keep the traceback
+                # inline so it is not missed.
+                self.error(f"{self.name} excepted: {e}", exc_info=True)
             await self.update_progress(1.0, f"{self.pretty_name} failed", failed=True)
             self.__mark_done(e)
             return

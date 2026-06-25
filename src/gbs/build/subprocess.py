@@ -3,14 +3,19 @@ of gbs using asyncio.
 """
 
 from __future__ import annotations
+from collections import deque
 from pathlib import Path
 import asyncio
 import os
+import shlex
 from ..ui.messages import MessageSeverity, ToolMessage
 from ..ui.reporter import UIReporter
 from .platform import wrap_bat_argv
+from .task import ToolFailure
 
 __all__ = ["MessageSubprocess"]
+
+OUTPUT_TAIL_LINES = 30
 
 class MessageSubprocess(UIReporter):
     """
@@ -51,6 +56,7 @@ class MessageSubprocess(UIReporter):
         self.env = env
         self.process = None
         self.__queue = asyncio.Queue()
+        self.__output_tail: deque[str] = deque(maxlen=OUTPUT_TAIL_LINES)
 
     async def __aiter__(self) -> AsyncIterator[ToolMessage]:
         """Asynchronous iterator of messages. Messages from stdout and
@@ -97,16 +103,21 @@ class MessageSubprocess(UIReporter):
             yield ToolMessage(severity = MessageSeverity.ERROR,
                               message = line)
 
-    async def __stream_liner(self, stream) -> AsyncIterator[str]:
+    async def __stream_liner(self, stream, stream_tag: str) -> AsyncIterator[str]:
         """Internal tool that takes a stream and yeilds it line by
         line. The final un-terminated chunk, if any, is yielded as a
         line as well so callers never lose the tail of the output.
+
+        Each line is also recorded in the output tail buffer with its
+        stream tag, so a later failure() can attach the last lines of
+        the tool's raw output to a ToolFailure.
         """
         buffer = ""
         while True:
             chunk = await stream.read(1024)
             if not chunk:
                 if buffer:
+                    self.__output_tail.append(f"{stream_tag}: {buffer}")
                     yield buffer
                 break
 
@@ -117,9 +128,10 @@ class MessageSubprocess(UIReporter):
                     line, buffer = buffer.split("\n", 1)
                 except ValueError:
                     break
+                self.__output_tail.append(f"{stream_tag}: {line}")
                 yield line
 
-    async def __stream_handler(self, stream, transformer):
+    async def __stream_handler(self, stream, transformer, stream_tag: str):
         """Internal tool that takes a stream and puts it to queue.
 
         The completion sentinel is posted in a finally block so a
@@ -127,7 +139,7 @@ class MessageSubprocess(UIReporter):
         __aiter__ on this subprocess.
         """
         try:
-            async for msg in transformer(self.__stream_liner(stream)):
+            async for msg in transformer(self.__stream_liner(stream, stream_tag)):
                 await self.__queue.put(msg)
         finally:
             await self.__queue.put(None)
@@ -136,14 +148,22 @@ class MessageSubprocess(UIReporter):
         if self.process:
             return
 
-        self.debug(f"Launching process with argv={self.argv}")
+        # Render argv as a sh-compatible command line so the log entry
+        # can be copy/pasted directly into a terminal to reproduce.
+        cmd = " ".join(shlex.quote(str(a)) for a in self.argv)
+        cwd_prefix = f"cd {shlex.quote(str(self.cwd))} && " if self.cwd and str(self.cwd) != "." else ""
+        env_prefix = ""
+        if self.env:
+            env_prefix = " ".join(
+                f"{k}={shlex.quote(str(v))}" for k, v in self.env.items()
+            ) + " "
+        self.debug(f"Launching: {cwd_prefix}{env_prefix}{cmd}")
 
         # Merge additional environment variables with current environment
         process_env = None
         if self.env:
             process_env = os.environ.copy()
             process_env.update(self.env)
-            self.debug(f"Injecting environment variables: {list(self.env.keys())}")
 
         self.process = await asyncio.create_subprocess_exec(
             *wrap_bat_argv(self.argv),
@@ -155,7 +175,31 @@ class MessageSubprocess(UIReporter):
         )
 
         self.stdout_task = asyncio.create_task(
-            self.__stream_handler(self.process.stdout, self.stdout_transform))
+            self.__stream_handler(self.process.stdout, self.stdout_transform, "out"))
         self.stderr_task = asyncio.create_task(
-            self.__stream_handler(self.process.stderr, self.stderr_transform))
+            self.__stream_handler(self.process.stderr, self.stderr_transform, "err"))
+
+    def failure(
+        self,
+        tool: str,
+        message: str,
+        log_path: Path | None = None,
+    ) -> ToolFailure:
+        """Build a ToolFailure describing this subprocess's non-zero exit.
+
+        The returned exception is meant to be raised by the caller
+        immediately. It captures argv, cwd, returncode, env overrides
+        and the tail of the tool's raw output so the renderer can show
+        a useful diagnostic without exposing the gbs traceback.
+        """
+        return ToolFailure(
+            message=message,
+            tool=tool,
+            argv=self.argv,
+            returncode=self.returncode,
+            cwd=self.cwd,
+            env_extra=self.env,
+            log_tail=list(self.__output_tail),
+            log_path=log_path,
+        )
 

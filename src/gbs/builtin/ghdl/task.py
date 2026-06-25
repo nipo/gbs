@@ -117,7 +117,10 @@ class Import(Task):
                 await self.add_message_obj(msg)
 
             if import_process.returncode != 0:
-                raise BuildError(f"ghdl {cmd} failed for {self.library_name}: {import_process.returncode}")
+                raise import_process.failure(
+                    tool="ghdl",
+                    message=f"ghdl {cmd} failed for library {self.library_name}",
+                )
 
 class VHPIDirectCompile(Task):
     """GHDL VHPIDIRECT C compilation task"""
@@ -174,7 +177,10 @@ class VHPIDirectCompile(Task):
             await self.add_message_obj(msg)
 
         if compile_process.returncode != 0:
-            raise BuildError(f"C compilation failed for {c.path.name}: {compile_process.returncode}")
+            raise compile_process.failure(
+                tool=self.compiler,
+                message=f"C compilation failed for {c.path.name}",
+            )
 
         link_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
             self.compiler, "-shared",
@@ -186,7 +192,10 @@ class VHPIDirectCompile(Task):
             await self.add_message_obj(msg)
 
         if link_process.returncode != 0:
-            raise BuildError(f"Linking failed for {c.path.name}: {link_process.returncode}")
+            raise link_process.failure(
+                tool=self.compiler,
+                message=f"Linking failed for {c.path.name}",
+            )
 
         # Clean up object file
         obj_path.unlink(missing_ok=True)
@@ -266,7 +275,10 @@ class CompileLink(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise BuildError(f"ghdl -c failed: {process.returncode}")
+            raise process.failure(
+                tool="ghdl",
+                message=f"ghdl -c failed for topcell {self.topcell}",
+            )
 
         make_executable(out_path)
 
@@ -339,7 +351,10 @@ class MakeElab(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise BuildError(f"ghdl -m failed: {process.returncode}")
+            raise process.failure(
+                tool="ghdl",
+                message=f"ghdl -m failed for topcell {self.topcell}",
+            )
 
         process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-e",
@@ -354,7 +369,10 @@ class MakeElab(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise BuildError(f"ghdl -e failed: {process.returncode}")
+            raise process.failure(
+                tool="ghdl",
+                message=f"ghdl -e failed for topcell {self.topcell}",
+            )
 
         # Build load flags for VHPIDIRECT libraries
         load_flags = []
@@ -492,13 +510,21 @@ class RunSimulation(Task):
                 self.info("Success pattern found")
             else:
                 self.warning("Expected success pattern not found")
-                raise BuildError(f"Simulation failed")
+                raise process.failure(
+                    tool="ghdl-sim",
+                    message="Simulation did not match success pattern",
+                    log_path=log_path,
+                )
 
         if process_success:
             self.info("Simulation done")
         else:
             self.info(f"Simulation return code {process.returncode}")
             if not success_pattern:
-                raise BuildError(f"Simulation failed")
+                raise process.failure(
+                    tool="ghdl-sim",
+                    message="Simulation failed",
+                    log_path=log_path,
+                )
 
         success_path.touch(exist_ok = True)
