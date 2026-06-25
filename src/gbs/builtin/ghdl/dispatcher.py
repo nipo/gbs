@@ -504,6 +504,39 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         if vhpidirect_count:
             self.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
 
+    # Windows shells run a batch script only when its name ends in one of these.
+    _WINDOWS_RUNNABLE_BATCH_SUFFIXES = {".cmd", ".bat"}
+
+    def _ensure_windows_batch_extension(self) -> None:
+        """Make a Windows simulator-wrapper output runnable from the shell.
+
+        The mcode/jit backend emits the simulator as a batch wrapper around
+        ghdl -r. On Windows a file is only runnable as a batch script if its
+        name ends in .cmd or .bat (there is no execute bit and no shebang), but
+        the user is free to name the output anything. Append .cmd to any
+        ghdl-simulator output goal that lacks a batch extension so it stays
+        runnable. POSIX relies on the execute bit instead and never calls this.
+        """
+        for goal in list(self.context.filter_pending(
+            file_type=["ghdl-simulator"],
+            typology=ResourceTypology.OUTPUT,
+        )):
+            if goal.path.suffix.lower() in self._WINDOWS_RUNNABLE_BATCH_SUFFIXES:
+                continue
+            new_path = goal.path.with_name(goal.path.name + ".cmd")
+            self.context.remove_pending(goal.path)
+            new_goal = self.context.get_resource(
+                new_path,
+                file_type="ghdl-simulator",
+                typology=ResourceTypology.OUTPUT,
+                generated_by=None,
+            )
+            self.context.add_pending(new_goal)
+            self.warning(
+                f"Windows batch simulator output '{goal.path.name}' renamed to "
+                f"'{new_path.name}' so it is runnable from the command line"
+            )
+
     def _create_elaboration_tasks(self,
         topcell: str,
         root_library: str,
@@ -525,6 +558,8 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         else:
             final_task_class = task.MakeElab
             executable_name = "simulator.bat" if sys.platform == "win32" else "simulator.exe"
+            if sys.platform == "win32":
+                self._ensure_windows_batch_extension()
 
         executable_path = self.context.output_path / executable_name
         executable_resource = self.context.get_resource(
