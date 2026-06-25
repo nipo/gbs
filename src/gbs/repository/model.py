@@ -17,10 +17,15 @@ class SourceFile:
         path: Path to the source file (relative to partition root)
         file_type: File type string (e.g., "vhdl", "verilog", "gowin-cst", etc.)
         variant: Optional type variant (e.g., "2008" for VHDL-2008)
+        include_dirs: Extra include directories a compiling backend must add
+            for this source (e.g. the support headers a VHPIDIRECT C file
+            needs). Carried into the resource metadata and consumed by the
+            backend that compiles the file.
     """
     path: Path
     file_type: str
     variant: Optional[str] = None
+    include_dirs: list[Path] = field(default_factory=list)
 
     def __str__(self) -> str:
         if self.variant:

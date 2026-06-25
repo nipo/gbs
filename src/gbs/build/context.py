@@ -990,6 +990,17 @@ class BuildContext(UIReporter):
                     generated_by=None
                 )
 
+                # Carry compile include directories the repository attached to
+                # this source into the resource metadata, where the compiling
+                # backend reads them. Resources are singletons by path, so
+                # extend rather than overwrite to stay order-stable if the same
+                # source is contributed twice.
+                if source_file.include_dirs:
+                    existing = res.metadata.setdefault("include_dirs", [])
+                    for d in source_file.include_dirs:
+                        if d not in existing:
+                            existing.append(d)
+
                 partition_to_resources[partition_name].append(res)
 
         # Second pass: compute source dependencies based on partition dependencies

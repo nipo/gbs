@@ -124,21 +124,31 @@ class VHPIDirectCompile(Task):
         self.compiler = compiler
 
     async def work(self) -> None:
-        """Compile C source to shared library for VHPIDIRECT"""
-        # Ensure output directory exists
+        """Compile a C source into a shared library for VHPIDIRECT.
+
+        VHPIDIRECT C is plain C, called directly by the elaborated design and
+        linked into the simulator; it is not a VPI plugin. It must be built
+        with the C compiler alone. Routing it through ghdl --vpi-compile /
+        --vpi-link pulls in -lghdlvpi, which is both unnecessary here and
+        absent from some GHDL distributions (e.g. oss-cad-suite), so the link
+        fails with "cannot find -lghdlvpi".
+        """
         c, = self.inputs_of_type("ghdl-vhpidirect-c")
         so, = self.outputs_of_type("ghdl-vhpidirect-lib")
-        ghdl_executable, _ = self.dispatcher._get_ghdl_config()
 
         so.path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Compile C source to object file using GHDL's wrapper
         obj_path = so.path.with_suffix('.o')
 
+        # Include directories the source's repository attached to it (e.g. the
+        # VHPIDIRECT support headers a backend ships separately from GHDL).
+        include_flags = [
+            f"-I{Path(d).resolve()}" for d in c.metadata.get("include_dirs", [])
+        ]
+
         compile_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
-            ghdl_executable, "--vpi-compile",
             self.compiler, "-c",
             "-fPIC",  # Position-independent code for shared library
+        ] + include_flags + [
             str(c.path.resolve()),
             "-o", str(obj_path)
         ])
@@ -149,9 +159,7 @@ class VHPIDirectCompile(Task):
         if compile_process.returncode != 0:
             raise BuildError(f"C compilation failed for {c.path.name}: {compile_process.returncode}")
 
-        # Link to shared library using GHDL's wrapper
         link_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
-            ghdl_executable, "--vpi-link",
             self.compiler, "-shared",
             str(obj_path),
             "-o", str(so.path)
