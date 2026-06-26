@@ -271,9 +271,17 @@ def load_project(path: Path):
             if "path" not in output_spec:
                 raise LoadError(f"Output in group '{og_name}' missing 'path'")
 
+            # Resolve relative output paths against the project directory, the
+            # same way source files are resolved. Without this they would be
+            # resolved against the current working directory, which is wrong
+            # when the project is built from a suite (cwd is the suite dir).
+            output_path = Path(output_spec["path"])
+            if not output_path.is_absolute():
+                output_path = base_path / output_path
+
             output_file = OutputFile(
                 type=output_spec["type"],
-                path=Path(output_spec["path"])
+                path=output_path
             )
             og_outputs.append(output_file)
 
