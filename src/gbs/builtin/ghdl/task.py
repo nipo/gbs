@@ -474,7 +474,7 @@ class RunSimulation(Task):
             if file_type == "waveform-vcd":
                 argv.append(f"--vcd={output.path.resolve()}")
             elif file_type == "waveform-ghw":
-                argv.append(f"--ghw={output.path.resolve()}")
+                argv.append(f"--wave={output.path.resolve()}")
             elif file_type == "waveform-fst":
                 argv.append(f"--fst={output.path.resolve()}")
             elif file_type == "simulation-log":
