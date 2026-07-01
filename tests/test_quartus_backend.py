@@ -143,6 +143,55 @@ async def test_project_setup_emits_qip_file_assignment(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_project_setup_emits_qip_file_for_nested_ip(tmp_path):
+    """Test that nested .qip files under ip/<system_name>/ get their own QIP_FILE assignment
+
+    qsys-generate breaks hardened/catalog IP cores (PLLs, HPS, EMIF,
+    Generic Components, ...) out into their own .qip files under
+    ip/<system_name>/<instance>/<instance>.qip, sibling to the top-level
+    <system_name>/ output directory. Quartus doesn't pull these in
+    automatically from the top-level .qip alone (confirmed against a
+    real Agilex 5 design: instances stayed "undefined entity" errors
+    until each nested .qip got its own QIP_FILE assignment), so
+    ProjectSetup needs to discover and list them all.
+    """
+    ctx = BuildContext(base_output_path=tmp_path)
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    qsys_root = tmp_path / "output_files" / "qsys"
+    qip_path = qsys_root / "sys" / "sys.qip"
+    qip_resource = ctx.get_resource(qip_path, file_type="quartus-qip")
+
+    nested_a = qsys_root / "ip" / "sys" / "sys_iopll_0" / "sys_iopll_0.qip"
+    nested_b = qsys_root / "ip" / "sys" / "sys_hps_0" / "sys_hps_0.qip"
+    for nested in (nested_a, nested_b):
+        nested.parent.mkdir(parents=True)
+        nested.touch()
+
+    # Unrelated system's nested ip/ dir must not leak into sys's assignments.
+    other_nested = qsys_root / "ip" / "other_sys" / "other_iopll_0" / "other_iopll_0.qip"
+    other_nested.parent.mkdir(parents=True)
+    other_nested.touch()
+
+    setup_task = ProjectSetup(
+        dispatcher=MockDispatcher(ctx),
+        device="10CL025YU256C8G",
+        vhdl_std="1993",
+        project_name="project",
+        inputs=[qip_resource],
+        outputs=[],
+    )
+
+    await setup_task.work()
+
+    qsf_text = (tmp_path / "project.qsf").read_text()
+    assert f"set_global_assignment -name QIP_FILE {qip_path}" in qsf_text
+    assert f"set_global_assignment -name QIP_FILE {nested_a}" in qsf_text
+    assert f"set_global_assignment -name QIP_FILE {nested_b}" in qsf_text
+    assert str(other_nested) not in qsf_text
+
+
+@pytest.mark.asyncio
 async def test_create_qsys_generate_task_places_qip_under_gbs_build(tmp_path):
     """Test that the .qip Resource is declared under gbs-build, not next to the source .qsys
 
