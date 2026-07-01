@@ -148,6 +148,8 @@ GBS runs ``qsys-generate`` on it to produce a ``.qip`` file, which is then refer
 
 ``qsys-generate`` has no flag to redirect where it writes its output: it always creates a ``<system_name>/`` directory as a sibling of whatever ``.qsys`` file it's given (containing ``<system_name>.qip`` plus the generated HDL), regardless of the current directory. To keep that output scoped to the build directory instead of landing next to your checked-in source ``.qsys``, GBS stages a copy of it under ``gbs-build/.../output_files/qsys/`` first and runs ``qsys-generate`` on the copy — the same pattern used for Vivado block designs. Generation output therefore stays entirely under ``gbs-build/``, cleaned by the normal ``gbs clean``.
 
+Without an associated Quartus project, ``qsys-generate`` prints a "Quartus project not specified" warning on every run — harmless, left as-is.
+
 **Generic Components**: if your system has instances added via Platform Designer's "Generic Component" mechanism with **Implementation Type: IP** (as opposed to a plain catalog component), that instance's actual IP core selection and parameters live in a per-instance ``.ip`` file (IP-XACT), not in the ``.qsys`` itself. ``qsys-generate`` looks for these at ``ip/<system_name>/<system_name>_<instance>.ip``, relative to the ``.qsys`` file, and silently skips generating an implementation for any instance it can't find one for — the resulting ``.v``/``.vhd`` will instantiate an entity that's never defined, which only surfaces later as a Quartus elaboration error. If you have such instances, check in the corresponding ``.ip`` files alongside your ``.qsys`` at ``ip/<system_name>/``:
 
 .. code-block:: text

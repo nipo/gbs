@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from gbs.builtin.quartus.backend import QuartusBackend
 from gbs.builtin.quartus.passes import QuartusSynthesizePass
 from gbs.builtin.quartus.dispatcher import QuartusDispatcher
-from gbs.builtin.quartus.task import ProjectSetup, QuartusProjectExport
+from gbs.builtin.quartus.task import ProjectSetup, QuartusProjectExport, QuartusSubprocess
+from gbs.ui.messages import MessageSeverity
 from gbs.protocol import Dispatcher
 from gbs.base import BaseBackend
 from gbs.build import BuildContext
@@ -533,3 +534,32 @@ async def test_quartus_project_export_regenerates_qpf_with_matching_name(tmp_pat
     qsf_dest = dest_dir / "adc_bringup.qsf"
     assert qsf_dest.is_file()
     assert qsf_dest.read_text() == qsf_resource.path.read_text()
+
+
+def test_quartus_subprocess_classifies_timestamped_stderr_lines():
+    """Test that qsys-generate/qsys-script's timestamped stderr lines are classified correctly
+
+    Confirmed against the real tools: quartus_map/fit/sta/asm/pfg write
+    "Info: ..."/"Warning: ..." to stdout with no timestamp, matching the
+    original regex. qsys-generate/qsys-script instead write almost all
+    their output to stderr, each line prefixed with their own timestamp
+    (e.g. "2026.07.01.17:44:13 Warning: ...") — MessageSubprocess's base
+    stderr_transform tags every stderr line ERROR unconditionally, so
+    without QuartusSubprocess overriding it too, every qsys-generate/
+    qsys-script message (Info included) showed up as an error.
+    """
+    proc = QuartusSubprocess(argv=["true"])
+
+    warning = proc._classify(
+        "2026.07.01.17:44:13 Warning: Quartus project not specified. Use --quartus-project and --rev to specify a Quartus project and revision."
+    )
+    assert warning.severity == MessageSeverity.WARNING
+
+    info = proc._classify("2026.07.01.17:44:22 Info: Saving generation log to blink_generation.rpt")
+    assert info.severity == MessageSeverity.INFO
+
+    # Plain, non-timestamped format (quartus_map/fit/sta/asm/pfg) must
+    # still work unchanged.
+    plain_error = proc._classify("Error (19509): Cannot locate file adc_bringup.sof.")
+    assert plain_error.severity == MessageSeverity.ERROR
+    assert plain_error.identifier == "19509"
