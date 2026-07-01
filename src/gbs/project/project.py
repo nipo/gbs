@@ -572,10 +572,26 @@ class PlanRealization:
 
         plugin_registry = get_plugin_registry()
 
+        # Generic dispatchers are registered for every build. An output group
+        # may opt out of specific ones by name via exclude_dispatchers.
+        excluded_dispatchers = set(self.plan.output_group.exclude_dispatchers)
+        seen_dispatchers = set()
+
         for plugin in plugin_registry.get_all_plugins():
             for dispatcher in plugin.generic_dispatchers(self.build_ctx):
+                seen_dispatchers.add(dispatcher.name)
+                if dispatcher.name in excluded_dispatchers:
+                    logger.info(f"  Excluding generic dispatcher: {dispatcher.name}")
+                    continue
                 self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
+
+        unknown_excluded = excluded_dispatchers - seen_dispatchers
+        if unknown_excluded:
+            logger.warning(
+                f"Output group '{self.plan.output_group.name}' excludes unknown "
+                f"generic dispatcher(s): {', '.join(sorted(unknown_excluded))}"
+            )
 
 
     def _register_definition_files(self):

@@ -290,6 +290,7 @@ def load_project(path: Path):
         og_exclude_passes = og_data.get("exclude_passes", [])
         og_require_backends = og_data.get("require_backends", [])
         og_exclude_backends = og_data.get("exclude_backends", [])
+        og_exclude_dispatchers = og_data.get("exclude_dispatchers", [])
 
         og_partition = og_data.get("partition")
 
@@ -304,7 +305,8 @@ def load_project(path: Path):
             require_passes=og_require_passes,
             exclude_passes=og_exclude_passes,
             require_backends=og_require_backends,
-            exclude_backends=og_exclude_backends
+            exclude_backends=og_exclude_backends,
+            exclude_dispatchers=og_exclude_dispatchers
         )
         output_groups.append(output_group)
 

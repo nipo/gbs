@@ -55,6 +55,8 @@ class OutputGroup:
         exclude_passes: Passes that MUST NOT be in the build plan
         require_backends: Backends that MUST contribute to the build plan
         exclude_backends: Backends that MUST NOT contribute to the build plan
+        exclude_dispatchers: Generic dispatchers (by name) that MUST NOT hook
+            into this build, even though plugins register them for every build
 
     Examples:
         >>> # Simulation output group
@@ -91,6 +93,7 @@ class OutputGroup:
     exclude_passes: list[str] = field(default_factory=list)
     require_backends: list[str] = field(default_factory=list)
     exclude_backends: list[str] = field(default_factory=list)
+    exclude_dispatchers: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         return f"OutputGroup({self.name}, topcell={self.topcell}, {len(self.outputs)} outputs)"
