@@ -7,7 +7,6 @@ from pathlib import Path
 
 from ...build.task import Task, Resource
 from ...build.subprocess import MessageSubprocess
-from ...build import tcl
 from ...ui.messages import MessageSeverity, ToolMessage
 from ...report_aggregator import TextReport, aggregate_text
 
@@ -202,12 +201,24 @@ class QsysScript(Task):
     """Run qsys-script (Intel Platform Designer scripted system creation)
 
     Runs a Tcl script written against Platform Designer's system scripting
-    API to produce a .qsys system file. qsys-script has no command-line
-    flag to name the output file directly — the script itself must call
-    save_system to write it. GBS injects the expected path via the
-    gbs_qsys_output_file Tcl variable (using --cmd, which runs before
-    --script in the same interpreter session), and the script must end
-    with `save_system $gbs_qsys_output_file`.
+    API to produce a .qsys system file.
+
+    Real-world scripts (e.g. anything exported via Platform Designer's own
+    "Export System as Platform Designer script" / qsys-generate
+    --export-qsys-script) end with a hardcoded `save_system <name>` using
+    the same name as the script file itself — they have no notion of an
+    injected output path. And without --quartus-project/
+    --new-quartus-project, qsys-script auto-creates a companion Quartus
+    project named after the script file, next to it, refusing to run
+    again if one already exists.
+
+    So this task stages a fresh copy of the script under its own
+    per-system directory (dispatcher scopes outputs/<system>/<system>.qsys
+    per instance, specifically so this can be wiped and rebuilt from
+    scratch every run without touching a sibling system's output),
+    expects the resulting .qsys to appear as <script_stem>.qsys next to
+    the staged copy, and simply ignores the auto-created .qpf/.qsf
+    byproduct — same staging pattern QsysGenerate uses for .qsys files.
     """
 
     def __init__(
@@ -234,23 +245,43 @@ class QsysScript(Task):
         qsys_output, = [r for r in self.outputs
                         if isinstance(r, Resource) and r.file_type == 'quartus-qsys']
 
-        qsys_output.path.parent.mkdir(parents=True, exist_ok=True)
+        # Wipe and recreate the staging directory: qsys-script's
+        # auto-created companion project refuses to run again if a stale
+        # .qpf/.qsf from a previous run is still sitting here.
+        staging_dir = qsys_output.path.parent
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        staging_dir.mkdir(parents=True)
+        staged_script = staging_dir / script_input.path.name
+        shutil.copy2(script_input.path, staged_script)
 
-        set_output_cmd = tcl.Command([
-            "set", "gbs_qsys_output_file", tcl.String(str(qsys_output.path)),
-        ])
+        # Scripts commonly reference Generic Component .ip files by
+        # relative path (e.g. add_component ... ip/other_system/foo.ip),
+        # resolved relative to the script file itself, and may reach into
+        # any system's ip/ subfolder, not just their own — so stage the
+        # whole ip/ tree next to the source script, not just one system's
+        # slice of it.
+        source_ip_dir = script_input.path.parent / "ip"
+        if source_ip_dir.is_dir():
+            shutil.copytree(source_ip_dir, staging_dir / "ip")
 
         cmd = [
             str(resolve_tool_exe(self.qsys_bin / "qsys-script")),
-            f"--cmd={set_output_cmd}",
-            f"--script={script_input.path}",
+            f"--script={staged_script}",
         ]
 
         self.info(f"Running qsys-script on {script_input.path.name}")
 
+        # The auto-created companion project resolves relative to the
+        # --script path regardless of cwd, but a bare `save_system <name>`
+        # inside the script itself resolves relative to cwd (confirmed
+        # against a real script: it landed in context.output_path, not
+        # next to the staged script, until cwd was pointed here) — so cwd
+        # has to be the staging dir for the expected qsys_output path to
+        # actually be where the .qsys shows up.
         process = QuartusSubprocess(
             argv=cmd,
-            cwd=self.dispatcher.context.output_path,
+            cwd=staging_dir,
             env=self.dispatcher.tool_env or None,
         )
 
