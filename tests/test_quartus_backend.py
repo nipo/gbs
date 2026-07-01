@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from gbs.builtin.quartus.backend import QuartusBackend
 from gbs.builtin.quartus.passes import QuartusSynthesizePass
 from gbs.builtin.quartus.dispatcher import QuartusDispatcher
-from gbs.builtin.quartus.task import ProjectSetup
+from gbs.builtin.quartus.task import ProjectSetup, QuartusProjectExport
 from gbs.protocol import Dispatcher
 from gbs.base import BaseBackend
 from gbs.build import BuildContext
@@ -486,3 +486,41 @@ async def test_task_graph_create_rbf_alone_runs_synthesis(tmp_path):
     assert dispatcher._map_task is not None
     assert dispatcher._fit_task is not None
     assert dispatcher._sta_task is not None
+
+
+@pytest.mark.asyncio
+async def test_quartus_project_export_regenerates_qpf_with_matching_name(tmp_path):
+    """Test that QuartusProjectExport writes a .qpf/.qsf pair matching the requested filename
+
+    A bare copy would leave the exported .qpf's PROJECT_REVISION pointing
+    at the internal "project" name gbs-build/ always uses — Quartus uses
+    that value to locate the matching .qsf, so under any other requested
+    name a verbatim copy would silently break the pairing. Pure file I/O,
+    no subprocess, so this can be exercised directly.
+    """
+    ctx = BuildContext(base_output_path=tmp_path)
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    qpf_resource = ctx.get_resource(tmp_path / "project.qpf", file_type="quartus-qpf")
+    qsf_resource = ctx.get_resource(tmp_path / "project.qsf", file_type="quartus-qsf")
+    qpf_resource.path.write_text('PROJECT_REVISION = "project"\n')
+    qsf_resource.path.write_text("set_global_assignment -name DEVICE 10CL025YU256C8G\n")
+
+    dest_dir = tmp_path / "exported"
+    dest_dir.mkdir()
+    qpf_dest = ctx.get_resource(dest_dir / "adc_bringup.qpf", file_type="quartus-project")
+
+    export_task = QuartusProjectExport(
+        dispatcher=MockDispatcher(ctx),
+        inputs=[qpf_resource, qsf_resource],
+        outputs=[qpf_dest],
+    )
+
+    await export_task.work()
+
+    assert qpf_dest.path.is_file()
+    assert qpf_dest.path.read_text() == 'PROJECT_REVISION = "adc_bringup"\n'
+
+    qsf_dest = dest_dir / "adc_bringup.qsf"
+    assert qsf_dest.is_file()
+    assert qsf_dest.read_text() == qsf_resource.path.read_text()

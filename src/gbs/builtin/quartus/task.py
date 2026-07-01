@@ -531,11 +531,21 @@ class QuartusPfgConvert(Task):
 
 
 class QuartusProjectExport(Task):
-    """Export the generated Quartus project (.qpf + .qsf) to a requested directory
+    """Export the generated Quartus project to a requested .qpf file path
 
     Pure file copy, no subprocess — the quartus-project output type exists
     specifically so a project can be produced without running any of the
     synthesis pipeline.
+
+    The requested output IS the .qpf file (e.g. path: adc_bringup.qpf
+    means you get exactly that file, not a directory containing one named
+    differently). The .qpf is regenerated with PROJECT_REVISION set to
+    the requested filename's stem rather than copied verbatim — a bare
+    copy would leave it pointing at the internal "project" revision name
+    gbs-build/ uses internally, which Quartus uses to locate the matching
+    .qsf, silently breaking the pairing under the new name. The .qsf
+    itself needs no changes (it never references the project name), so
+    it's copied as-is to a sibling file with the same stem.
     """
 
     def __init__(
@@ -553,19 +563,19 @@ class QuartusProjectExport(Task):
         )
 
     async def work(self) -> None:
-        import shutil
-
-        qpf_input, = [r for r in self.inputs
-                      if isinstance(r, Resource) and r.file_type == 'quartus-qpf']
         qsf_input, = [r for r in self.inputs
                       if isinstance(r, Resource) and r.file_type == 'quartus-qsf']
-        dest_dir, = self.outputs
+        qpf_output, = self.outputs
 
-        dest_dir.path.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(qpf_input.path, dest_dir.path / qpf_input.path.name)
-        shutil.copy2(qsf_input.path, dest_dir.path / qsf_input.path.name)
+        qpf_output.path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.info(f"Exported Quartus project to {dest_dir.path}")
+        project_name = qpf_output.path.stem
+        qpf_output.path.write_text(f'PROJECT_REVISION = "{project_name}"\n')
+
+        qsf_dest = qpf_output.path.with_suffix(".qsf")
+        shutil.copy2(qsf_input.path, qsf_dest)
+
+        self.info(f"Exported Quartus project to {qpf_output.path} (+ {qsf_dest.name})")
 
 
 class AggregateReport(Task):
