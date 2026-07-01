@@ -9,6 +9,7 @@ from typing import Optional
 @dataclass
 class DeviceInfo:
     """Gowin device information parsed from CSV"""
+    internal_id: str
     part: str
     family: str
     revision: str
@@ -34,7 +35,10 @@ class DeviceInfo:
         if self.part.lower() != device.lower():
             return False
         
-        if len(terms) > 1 and terms[1].lower() != self.revision.lower():
+        if len(terms) > 1 and terms[1] and terms[1].lower() != self.revision.lower():
+            return False
+
+        if len(terms) > 2 and terms[2] and terms[2].lower() != self.internal_id.lower():
             return False
 
         return True
@@ -42,6 +46,7 @@ class DeviceInfo:
     @classmethod
     def from_csv(cls, line):
         return cls(
+            internal_id = line[0],
             part = line[1],
             family = line[3],
             revision = line[5],
