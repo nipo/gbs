@@ -24,6 +24,8 @@ Supported Outputs
 -----------------
 
 - ``quartus-sof``: SRAM Object File for FPGA programming
+- ``quartus-jam``: JAM STAPL file, converted from the ``.sof`` via ``quartus_pfg``/``quartus_cpf``
+- ``quartus-rbf``: Raw Binary File, converted from the ``.sof`` via ``quartus_pfg``/``quartus_cpf``
 - ``quartus-synthesis-report``: Aggregated synthesis report
 - ``quartus-pnr-report``: Aggregated place-and-route report
 - ``quartus-project``: Generated Quartus project directory (``.qpf`` + ``.qsf``), ready to open in the Quartus GUI — see "Project-Only Output" below

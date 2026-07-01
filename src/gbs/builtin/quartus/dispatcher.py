@@ -285,7 +285,7 @@ class QuartusDispatcher(BaseDispatcher):
         # tasks in the first place.
         needs_synthesis = any(
             self.context.filter_pending(file_type=t)
-            for t in ("quartus-sof", "quartus-jam", "quartus-synthesis-report", "quartus-pnr-report")
+            for t in ("quartus-sof", "quartus-jam", "quartus-rbf", "quartus-synthesis-report", "quartus-pnr-report")
         )
         if not needs_synthesis:
             return
@@ -366,10 +366,20 @@ class QuartusDispatcher(BaseDispatcher):
 
         for dest in self.context.filter_pending(file_type="quartus-jam"):
             jam_resource = intermediate(output_files / f"{pn}.jam", "quartus-jam")
-            task.SofJamConvert(
+            task.QuartusPfgConvert(
                 dispatcher=self,
                 name="quartus_sof_jam",
                 title="Generate JAM STAPL",
                 inputs=[sof_resource],
                 outputs=[jam_resource],
+            )
+
+        for dest in self.context.filter_pending(file_type="quartus-rbf"):
+            rbf_resource = intermediate(output_files / f"{pn}.rbf", "quartus-rbf")
+            task.QuartusPfgConvert(
+                dispatcher=self,
+                name="quartus_sof_rbf",
+                title="Generate RBF",
+                inputs=[sof_resource],
+                outputs=[rbf_resource],
             )

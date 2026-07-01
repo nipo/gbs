@@ -470,8 +470,14 @@ class QuartusAsm(QuartusTask):
             description="Quartus Assembler",
         )
 
-class SofJamConvert(Task):
-    """Run quartus_pfg (Programming file generator)"""
+class QuartusPfgConvert(Task):
+    """Run quartus_pfg (Programming file generator) to convert a .sof to another format
+
+    Used for both quartus-jam (STAPL) and quartus-rbf (Raw Binary File)
+    outputs — the command is identical either way (quartus_pfg -c <sof>
+    <output>); the output file's extension alone tells quartus_pfg what
+    to produce.
+    """
 
     def __init__(
         self,
@@ -486,22 +492,21 @@ class SofJamConvert(Task):
             name=name,
             inputs=inputs,
             outputs=outputs,
-            description="Jam convert",
+            description=title,
         )
         self.quartus_bin = dispatcher._get_quartus_bin()
         self.executable = "quartus_pfg" if dispatcher.is_pro else "quartus_cpf"
 
     async def work(self) -> None:
         sof_input, = [r for r in self.inputs
-                      if isinstance(r, Resource) and r.file_type in ('quartus-sof')]
-        jam_output, = [r for r in self.outputs
-                       if isinstance(r, Resource) and r.file_type == 'quartus-jam']
+                      if isinstance(r, Resource) and r.file_type == 'quartus-sof']
+        output, = self.outputs
 
-        jam_output.path.parent.mkdir(parents=True, exist_ok=True)
-        
+        output.path.parent.mkdir(parents=True, exist_ok=True)
+
         cmd = [
             str(self.quartus_bin / self.executable),
-            "-c", str(sof_input.path), str(jam_output.path)
+            "-c", str(sof_input.path), str(output.path)
         ]
 
         self.info(f"Running {self.executable}")
@@ -519,6 +524,8 @@ class SofJamConvert(Task):
             raise RuntimeError(
                 f"{self.executable} failed with return code {process.returncode}"
             )
+
+        self.info(f"{self.executable} complete")
 
         self.info(f"{self.executable} complete")
 

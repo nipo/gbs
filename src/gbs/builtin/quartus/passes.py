@@ -22,8 +22,8 @@ class QuartusSynthesizePass(BasePass):
 
     Input types: vhdl, verilog, quartus-sdc, quartus-pin-assignment, quartus-qsys,
                  quartus-qsys-script
-    Output types: quartus-sof, quartus-jam, quartus-synthesis-report,
-                  quartus-pnr-report, quartus-project
+    Output types: quartus-sof, quartus-jam, quartus-rbf,
+                  quartus-synthesis-report, quartus-pnr-report, quartus-project
 
     quartus-project is the odd one out: it's just the generated .qpf/.qsf,
     and requesting it alone skips the whole synthesis pipeline (see
@@ -37,6 +37,7 @@ class QuartusSynthesizePass(BasePass):
     output_types = {
         "quartus-sof",
         "quartus-jam",
+        "quartus-rbf",
         "quartus-synthesis-report",
         "quartus-pnr-report",
         "quartus-project",
