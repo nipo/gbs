@@ -308,6 +308,14 @@ class GowinDispatcher(BaseDispatcher):
             outputs=[timing_sdc_resource]
         )
 
+        # Depend on the build definition files so that dropping a constraint
+        # file from the sources (which changes a definition file's mtime but
+        # none of the remaining constraint files) forces re-aggregation. These
+        # are non-consuming inputs of a foreign file_type, so work() filters
+        # them out and never concatenates their content.
+        self.attach_definition_dependencies(self._pin_cst_task)
+        self.attach_definition_dependencies(self._timing_sdc_task)
+
         # Create PnR task (depends on init + netlist + constraints)
         pnr_task = task.PnR(
             dispatcher=self,
