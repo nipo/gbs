@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
-from ...build.task import ResourceTypology
+from ...build.task import Resource, ResourceTypology
 from ...utils import expand_path
 from . import task
 
@@ -57,11 +57,18 @@ class QuartusDispatcher(BaseDispatcher):
         self._map_task = None
         self._fit_task = None
         self._sta_task = None
+        self._qsys_qip = {}
+        self._qsys_scripts = {}
 
     def _get_quartus_bin(self) -> Path:
         """Get path to quartus bin directory"""
         quartus_path = expand_path(self.get_tool_option("path"))
         return quartus_path / "quartus" / "bin"
+
+    def _get_qsys_bin(self) -> Path:
+        """Get path to qsys bin directory (sibling of quartus/bin under the same install)"""
+        quartus_path = expand_path(self.get_tool_option("path"))
+        return quartus_path / "qsys" / "bin"
 
     @property
     def is_pro(self) -> bool:
@@ -101,6 +108,10 @@ class QuartusDispatcher(BaseDispatcher):
         - Pin assignments → project setup (appended verbatim into QSF)
         - SDC constraints → project setup (path listed in QSF, consume=False)
                            + quartus_sta (reads actual content, consume=False)
+        - Qsys systems → qsys_generate (produces a .qip)
+                       → project setup (.qip path listed in QSF, consume=False)
+        - Qsys scripts → qsys_script (produces a .qsys)
+                       → qsys_generate → project setup (as above)
         """
         existing_map = {r.path for r in self._map_task.inputs}
         existing_setup = {r.path for r in self._setup_task.inputs}
@@ -121,6 +132,92 @@ class QuartusDispatcher(BaseDispatcher):
                 self._setup_task.add_input(resource, consume=False)
             if resource.path not in existing_sta:
                 self._sta_task.add_input(resource, consume=False)
+
+        for resource in self.context.filter_pending(file_type=["quartus-qsys"]):
+            if resource.path not in self._qsys_qip:
+                self._qsys_qip[resource.path] = self._create_qsys_generate_task(resource)
+
+        for resource in self.context.filter_pending(file_type=["quartus-qsys-script"]):
+            if resource.path not in self._qsys_scripts:
+                qsys_resource = self._create_qsys_script_task(resource)
+                self._qsys_scripts[resource.path] = qsys_resource
+                self._qsys_qip[qsys_resource.path] = self._create_qsys_generate_task(qsys_resource)
+
+        for qip_resource in self._qsys_qip.values():
+            if qip_resource.path not in existing_setup:
+                self._setup_task.add_input(qip_resource, consume=False)
+
+    def _create_qsys_script_task(self, tcl_resource: Resource) -> Resource:
+        """Create a qsys_script task for a single .tcl file, returning its generated .qsys output
+
+        Written under a dedicated scripts/ subfolder, separate from where
+        _create_qsys_generate_task stages its own .qsys copy, so the two
+        tasks never write into the same directory.
+        """
+        system_name = tcl_resource.path.stem
+        qsys_out_dir = self.context.output_path / "output_files" / "qsys" / "scripts"
+        qsys_resource = self.context.get_resource(
+            qsys_out_dir / f"{system_name}.qsys",
+            file_type="quartus-qsys",
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+        )
+
+        script_task = task.QsysScript(
+            dispatcher=self,
+            qsys_bin=self._get_qsys_bin(),
+            inputs=[tcl_resource],
+            outputs=[qsys_resource],
+        )
+        self.attach_definition_dependencies(script_task)
+
+        return qsys_resource
+
+    def _create_qsys_generate_task(self, qsys_resource: Resource) -> Resource:
+        """Create a qsys_generate task for a single .qsys file, returning its .qip output
+
+        qsys-generate has no output-location flag: it always writes
+        <system_name>/<system_name>.qip as a sibling directory of
+        whatever .qsys file it's given (verified against qsys-generate
+        --help — no --output-directory or similar option exists). To
+        keep that output under gbs-build regardless of where the source
+        .qsys lives, QsysGenerate.work() stages a copy of it here, at
+        output_files/qsys/<system_name>.qsys, before running the tool —
+        so the .qip Resource can be declared at the build-scoped
+        sibling location computed below.
+
+        Any ip/<system_name>/*.ip Generic Component files next to the
+        source .qsys are attached as non-consuming inputs too (not
+        declared as project sources, so filter_pending never sees them —
+        they have to be picked up here instead), so editing one marks
+        this task stale the same way editing the .qsys itself would.
+        """
+        system_name = qsys_resource.path.stem
+        qsys_out_dir = self.context.output_path / "output_files" / "qsys" / system_name
+        qip_resource = self.context.get_resource(
+            qsys_out_dir / f"{system_name}.qip",
+            file_type="quartus-qip",
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+        )
+
+        qsys_task = task.QsysGenerate(
+            dispatcher=self,
+            qsys_bin=self._get_qsys_bin(),
+            inputs=[qsys_resource],
+            outputs=[qip_resource],
+        )
+        self.attach_definition_dependencies(qsys_task)
+
+        source_ip_dir = qsys_resource.path.parent / "ip" / system_name
+        if source_ip_dir.is_dir():
+            for ip_file in sorted(source_ip_dir.glob("*.ip")):
+                ip_resource = self.context.get_resource(
+                    ip_file, file_type="quartus-qsys-ip", typology=ResourceTypology.SOURCE,
+                )
+                qsys_task.add_input(ip_resource, consume=False)
+
+        return qip_resource
 
     async def _task_graph_create(self) -> None:
         """Create all Quartus build tasks"""

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 import re
+import shutil
 from pathlib import Path
 
 from ...build.task import Task, Resource
 from ...build.subprocess import MessageSubprocess
+from ...build import tcl
 from ...ui.messages import MessageSeverity, ToolMessage
 from ...report_aggregator import TextReport, aggregate_text
 
@@ -104,6 +106,165 @@ class QuartusTask(Task):
         self.info(f"{self.executable} complete")
 
 
+class QsysGenerate(Task):
+    """Run qsys-generate (Intel Platform Designer system generation)
+
+    Expands a Qsys/Platform Designer .qsys system file into synthesizable
+    HDL and a .qip file. Quartus resolves the referenced HDL itself once
+    the .qip is listed in the .qsf via a QIP_FILE assignment, so this task
+    only needs to track the .qip as an output.
+
+    qsys-generate has no flag to redirect its output location: it always
+    writes <system_name>/<system_name>.qip as a sibling directory of
+    whatever .qsys file it's given. To keep that output under gbs-build
+    instead of next to the (possibly source-tree) input .qsys, this task
+    stages a copy of the input next to the expected .qip output first,
+    then runs qsys-generate on the copy — the same pattern
+    vivado/task.py uses to stage .bd files before generate_target.
+
+    "Generic Component" (IP implementation type) instances in a system
+    store their configuration in a per-instance .ip file (IP-XACT) rather
+    than in the .qsys itself — qsys-generate looks for these at
+    ip/<system_name>/<system_name>_<instance>.ip, resolved relative to
+    the .qsys file it's generating, and silently skips generating an
+    implementation for any instance whose .ip file it can't find. So an
+    ip/<system_name>/ directory next to the source .qsys, if present, is
+    staged alongside the copy too.
+    """
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        qsys_bin: Path,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name="qsys_generate",
+            inputs=inputs,
+            outputs=outputs,
+            description="Qsys system generation",
+        )
+        self.qsys_bin = qsys_bin
+
+    async def work(self) -> None:
+        from ...utils import resolve_tool_exe
+
+        qsys_input, = [r for r in self.inputs
+                       if isinstance(r, Resource) and r.file_type == 'quartus-qsys']
+        qip_output, = [r for r in self.outputs
+                       if isinstance(r, Resource) and r.file_type == 'quartus-qip']
+
+        # qip_output.path is <staging_dir>/<system_name>/<system_name>.qip;
+        # stage the .qsys copy as its sibling so qsys-generate's own
+        # sibling-directory output lands at qip_output.path.parent.
+        staged_qsys = qip_output.path.parent.parent / qsys_input.path.name
+        staged_qsys.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(qsys_input.path, staged_qsys)
+
+        # Stage any Generic Component .ip files (ip/<system_name>/) that
+        # sit next to the source .qsys, so qsys-generate can find them
+        # relative to the staged copy in the same layout.
+        system_name = qsys_input.path.stem
+        source_ip_dir = qsys_input.path.parent / "ip" / system_name
+        if source_ip_dir.is_dir():
+            staged_ip_dir = staged_qsys.parent / "ip" / system_name
+            shutil.copytree(source_ip_dir, staged_ip_dir, dirs_exist_ok=True)
+            self.info(f"Staged Generic Component .ip files from {source_ip_dir}")
+
+        cmd = [
+            str(resolve_tool_exe(self.qsys_bin / "qsys-generate")),
+            str(staged_qsys),
+            "--synthesis=VERILOG",
+        ]
+
+        self.info(f"Running qsys-generate on {qsys_input.path.name}")
+
+        process = QuartusSubprocess(
+            argv=cmd,
+            cwd=self.dispatcher.context.output_path,
+            env=self.dispatcher.tool_env or None,
+        )
+
+        async for msg in process:
+            await self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"qsys-generate failed with return code {process.returncode}"
+            )
+
+        self.info("qsys-generate complete")
+
+
+class QsysScript(Task):
+    """Run qsys-script (Intel Platform Designer scripted system creation)
+
+    Runs a Tcl script written against Platform Designer's system scripting
+    API to produce a .qsys system file. qsys-script has no command-line
+    flag to name the output file directly — the script itself must call
+    save_system to write it. GBS injects the expected path via the
+    gbs_qsys_output_file Tcl variable (using --cmd, which runs before
+    --script in the same interpreter session), and the script must end
+    with `save_system $gbs_qsys_output_file`.
+    """
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        qsys_bin: Path,
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name="qsys_script",
+            inputs=inputs,
+            outputs=outputs,
+            description="Qsys scripted system generation",
+        )
+        self.qsys_bin = qsys_bin
+
+    async def work(self) -> None:
+        from ...utils import resolve_tool_exe
+
+        script_input, = [r for r in self.inputs
+                         if isinstance(r, Resource) and r.file_type == 'quartus-qsys-script']
+        qsys_output, = [r for r in self.outputs
+                        if isinstance(r, Resource) and r.file_type == 'quartus-qsys']
+
+        qsys_output.path.parent.mkdir(parents=True, exist_ok=True)
+
+        set_output_cmd = tcl.Command([
+            "set", "gbs_qsys_output_file", tcl.String(str(qsys_output.path)),
+        ])
+
+        cmd = [
+            str(resolve_tool_exe(self.qsys_bin / "qsys-script")),
+            f"--cmd={set_output_cmd}",
+            f"--script={script_input.path}",
+        ]
+
+        self.info(f"Running qsys-script on {script_input.path.name}")
+
+        process = QuartusSubprocess(
+            argv=cmd,
+            cwd=self.dispatcher.context.output_path,
+            env=self.dispatcher.tool_env or None,
+        )
+
+        async for msg in process:
+            await self.add_message_obj(msg)
+
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"qsys-script failed with return code {process.returncode}"
+            )
+
+        self.info("qsys-script complete")
+
+
 class ProjectSetup(Task):
     """Generate Quartus project files (.qpf and .qsf)
 
@@ -166,6 +327,7 @@ class ProjectSetup(Task):
             "vhdl": "VHDL_FILE",
             "verilog": "VERILOG_FILE",
             "quartus-sdc": "SDC_FILE",
+            "quartus-qip": "QIP_FILE",
         }
 
         for rsrc in self.inputs:

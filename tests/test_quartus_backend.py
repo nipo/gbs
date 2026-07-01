@@ -1,0 +1,273 @@
+"""Tests for Quartus Backend, including quartus-qsys input support"""
+
+import pytest
+from types import SimpleNamespace
+
+from gbs.builtin.quartus.backend import QuartusBackend
+from gbs.builtin.quartus.passes import QuartusSynthesizePass
+from gbs.builtin.quartus.dispatcher import QuartusDispatcher
+from gbs.builtin.quartus.task import ProjectSetup
+from gbs.protocol import Dispatcher
+from gbs.base import BaseBackend
+from gbs.build import BuildContext
+
+
+# Minimal dispatcher stand-in, mirrors the MockDispatcher used in test_tasks.py
+class MockDispatcher:
+    def __init__(self, context):
+        self.context = context
+        self.name = "mock"
+
+
+# Minimal gbs_config stand-in, just enough for BuildContext.get_tool()/
+# QuartusDispatcher.get_tool_option() to resolve a tool "path"
+class FakeGBSConfig:
+    def get_tool(self, identifier):
+        return SimpleNamespace(config={"path": "/opt/altera_pro/25.3.1"})
+
+
+def test_backend_creation():
+    """Test that QuartusBackend can be instantiated"""
+    backend = QuartusBackend()
+
+    assert isinstance(backend, QuartusBackend)
+    assert isinstance(backend, BaseBackend)
+    assert backend.name == "gbs.builtin.quartus"
+
+
+def test_backend_implements_protocol():
+    """Test that QuartusBackend implements Backend Protocol"""
+    backend = QuartusBackend()
+
+    assert hasattr(backend, 'contribute_passes')
+    assert callable(backend.contribute_passes)
+
+
+def test_contribute_passes_with_sof_output():
+    """Test that backend contributes the synthesize pass when a part is selected"""
+    backend = QuartusBackend()
+
+    config = {"target": {"part": "10CL025YU256C8G"}}
+    output_types = {"quartus-sof"}
+
+    passes = backend.contribute_passes(config, output_types)
+
+    assert len(passes) == 1
+    assert isinstance(passes[0], QuartusSynthesizePass)
+
+
+def test_contribute_passes_no_matching_output():
+    """Test that backend returns empty list when no matching output requested"""
+    backend = QuartusBackend()
+
+    config = {"target": {"part": "10CL025YU256C8G"}}
+    output_types = {"netlist", "bitstream"}
+
+    passes = backend.contribute_passes(config, output_types)
+
+    assert passes == []
+
+
+def test_quartus_synthesize_pass_metadata():
+    """Test QuartusSynthesizePass metadata, including the quartus-qsys input type"""
+    assert QuartusSynthesizePass.name == "quartus-synthesize"
+    assert "vhdl" in QuartusSynthesizePass.input_types
+    assert "quartus-sdc" in QuartusSynthesizePass.input_types
+    assert "quartus-pin-assignment" in QuartusSynthesizePass.input_types
+    assert "quartus-qsys" in QuartusSynthesizePass.input_types
+    assert "quartus-qsys-script" in QuartusSynthesizePass.input_types
+    assert "quartus-sof" in QuartusSynthesizePass.output_types
+
+
+def test_quartus_synthesize_pass_filter_vars():
+    """Test QuartusSynthesizePass filter variables"""
+    config = {"target": {"part": "10CL025YU256C8G"}, "vhdl_standard": "2008"}
+    pass_instance = QuartusSynthesizePass(config)
+
+    filter_vars = pass_instance.filter_vars()
+
+    assert filter_vars["target-usage"] == "synthesis"
+    assert filter_vars["vendor"] == "altera"
+    assert filter_vars["vhdl-version"] == "2008"
+    assert filter_vars["target_part"] == "10CL025YU256C8G"
+
+
+def test_pass_creates_dispatcher():
+    """Test that pass creates a QuartusDispatcher correctly"""
+    config = {
+        "target": {"part": "10CL025YU256C8G"},
+        "vhdl_standard": "2008",
+        "tool": "quartus",
+    }
+
+    pass_obj = QuartusSynthesizePass(config)
+    ctx = BuildContext()
+    dispatchers = pass_obj.dispatchers(ctx)
+
+    assert len(dispatchers) == 1
+    dispatcher = dispatchers[0]
+    assert isinstance(dispatcher, Dispatcher)
+    assert dispatcher.name == "quartus"
+    assert dispatcher.device == "10CL025YU256C8G"
+    assert dispatcher.vhdl_std == "2008"
+
+
+@pytest.mark.asyncio
+async def test_project_setup_emits_qip_file_assignment(tmp_path):
+    """Test that a quartus-qip input produces a QIP_FILE assignment in the .qsf
+
+    ProjectSetup.work() only writes text files and doesn't shell out to any
+    tool, so this can be exercised directly without a Quartus install.
+    """
+    ctx = BuildContext(base_output_path=tmp_path)
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    # Mirrors the .qip path QuartusDispatcher._create_qsys_generate_task
+    # computes: output_files/qsys/<system_name>/<system_name>.qip.
+    qip_path = tmp_path / "output_files" / "qsys" / "sys" / "sys.qip"
+    qip_resource = ctx.get_resource(qip_path, file_type="quartus-qip")
+
+    setup_task = ProjectSetup(
+        dispatcher=MockDispatcher(ctx),
+        device="10CL025YU256C8G",
+        vhdl_std="1993",
+        project_name="project",
+        inputs=[qip_resource],
+        outputs=[],
+    )
+
+    await setup_task.work()
+
+    qsf_text = (tmp_path / "project.qsf").read_text()
+    assert f"set_global_assignment -name QIP_FILE {qip_path}" in qsf_text
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_generate_task_places_qip_under_gbs_build(tmp_path):
+    """Test that the .qip Resource is declared under gbs-build, not next to the source .qsys
+
+    qsys-generate has no output-directory flag (verified against
+    qsys-generate --help): it always writes <system_name>/<system_name>.qip
+    as a sibling directory of whatever .qsys file it's given. GBS works
+    around this by having QsysGenerate.work() stage a copy of the source
+    .qsys under gbs-build before running the tool, so the resulting .qip
+    stays scoped to this output group's build directory regardless of
+    where the source .qsys lives (avoids races if the same .qsys were
+    ever referenced by more than one output group).
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    source_dir = tmp_path / "some" / "source" / "tree"
+    qsys_resource = ctx.get_resource(source_dir / "my_system.qsys", file_type="quartus-qsys")
+
+    qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
+
+    expected = ctx.output_path / "output_files" / "qsys" / "my_system" / "my_system.qip"
+    assert qip_resource.path == expected
+    assert dispatcher.get_clean_paths() == {ctx.output_path}
+    assert qip_resource.path.is_relative_to(ctx.output_path)
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_generate_task_tracks_generic_component_ip_files(tmp_path):
+    """Test that ip/<system_name>/*.ip files are attached as inputs to qsys_generate
+
+    Generic Component (IP implementation type) instances store their
+    configuration in a per-instance .ip file next to the .qsys rather
+    than in the .qsys itself. Those files aren't declared as project
+    sources, so nothing else would ever mark qsys_generate stale when one
+    changes — this task must pick them up directly off disk.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    source_dir = tmp_path / "hdl"
+    ip_dir = source_dir / "ip" / "my_system"
+    ip_dir.mkdir(parents=True)
+    (ip_dir / "my_system_some_instance.ip").write_text("<ipxact:component/>")
+    (ip_dir / "my_system_other_instance.ip").write_text("<ipxact:component/>")
+
+    qsys_resource = ctx.get_resource(source_dir / "my_system.qsys", file_type="quartus-qsys")
+
+    qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
+
+    qsys_task, = qip_resource.depends_on
+    ip_inputs = {r.path for r in qsys_task.inputs if r.file_type == "quartus-qsys-ip"}
+    assert ip_inputs == {
+        ip_dir / "my_system_some_instance.ip",
+        ip_dir / "my_system_other_instance.ip",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_generate_task_without_ip_dir(tmp_path):
+    """Test that a missing ip/<system_name>/ directory is a harmless no-op"""
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    qsys_resource = ctx.get_resource(tmp_path / "my_system.qsys", file_type="quartus-qsys")
+
+    qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
+
+    qsys_task, = qip_resource.depends_on
+    assert [r for r in qsys_task.inputs if r.file_type == "quartus-qsys-ip"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_script_task_wires_into_qsys_generate(tmp_path):
+    """Test that a .tcl resource produces a quartus-qsys output resource
+
+    Also verifies the qsys_script output (scripts/<name>.qsys) and the
+    qsys_generate staging path (<name>.qsys, computed by
+    _create_qsys_generate_task) don't collide, since both now live under
+    the same output_files/qsys/ directory.
+
+    _create_qsys_script_task()/_create_qsys_generate_task() only build
+    Resources and Task graph wiring, no subprocess is invoked, so this can
+    be exercised directly without a Quartus install.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    tcl_resource = ctx.get_resource(tmp_path / "my_system.tcl", file_type="quartus-qsys-script")
+
+    qsys_resource = dispatcher._create_qsys_script_task(tcl_resource)
+
+    assert qsys_resource.file_type == "quartus-qsys"
+    assert qsys_resource.path == ctx.output_path / "output_files" / "qsys" / "scripts" / "my_system.qsys"
+
+    qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
+
+    assert qip_resource.file_type == "quartus-qip"
+    expected_qip = ctx.output_path / "output_files" / "qsys" / "my_system" / "my_system.qip"
+    assert qip_resource.path == expected_qip
+    assert qip_resource.path.parent != qsys_resource.path.parent
