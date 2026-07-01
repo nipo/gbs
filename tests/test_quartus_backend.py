@@ -288,10 +288,12 @@ async def test_create_qsys_generate_task_without_ip_dir(tmp_path):
 async def test_create_qsys_script_task_wires_into_qsys_generate(tmp_path):
     """Test that a .tcl resource produces a quartus-qsys output resource
 
-    Also verifies the qsys_script output (scripts/<name>.qsys) and the
-    qsys_generate staging path (<name>.qsys, computed by
+    Also verifies the qsys_script output (scripts/<name>/<name>.qsys) and
+    the qsys_generate staging path (<name>.qsys, computed by
     _create_qsys_generate_task) don't collide, since both now live under
-    the same output_files/qsys/ directory.
+    the same output_files/qsys/ directory. Each script-generated system
+    gets its own scripts/<name>/ subfolder (rather than a shared
+    scripts/) since QsysScript.work() wipes that directory on every run.
 
     _create_qsys_script_task()/_create_qsys_generate_task() only build
     Resources and Task graph wiring, no subprocess is invoked, so this can
@@ -312,7 +314,8 @@ async def test_create_qsys_script_task_wires_into_qsys_generate(tmp_path):
     qsys_resource = dispatcher._create_qsys_script_task(tcl_resource)
 
     assert qsys_resource.file_type == "quartus-qsys"
-    assert qsys_resource.path == ctx.output_path / "output_files" / "qsys" / "scripts" / "my_system.qsys"
+    expected_qsys = ctx.output_path / "output_files" / "qsys" / "scripts" / "my_system" / "my_system.qsys"
+    assert qsys_resource.path == expected_qsys
 
     qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
 
@@ -320,3 +323,44 @@ async def test_create_qsys_script_task_wires_into_qsys_generate(tmp_path):
     expected_qip = ctx.output_path / "output_files" / "qsys" / "my_system" / "my_system.qip"
     assert qip_resource.path == expected_qip
     assert qip_resource.path.parent != qsys_resource.path.parent
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_script_task_tracks_whole_ip_tree(tmp_path):
+    """Test that _create_qsys_script_task tracks every .ip file under ip/, not just its own system's
+
+    A qsys-script's add_component calls can reference any system's .ip
+    files by relative path (confirmed against a real script exported
+    from Platform Designer, which pulled components from a sibling
+    system's ip/ subfolder) — so unlike _create_qsys_generate_task
+    (which only needs ip/<system_name>/), this needs to track the whole
+    tree for correct staleness detection.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    source_dir = tmp_path / "hdl"
+    own_ip_dir = source_dir / "ip" / "my_system"
+    other_ip_dir = source_dir / "ip" / "other_system"
+    own_ip_dir.mkdir(parents=True)
+    other_ip_dir.mkdir(parents=True)
+    (own_ip_dir / "my_system_some_instance.ip").write_text("<ipxact:component/>")
+    (other_ip_dir / "other_system_some_instance.ip").write_text("<ipxact:component/>")
+
+    tcl_resource = ctx.get_resource(source_dir / "my_system.tcl", file_type="quartus-qsys-script")
+
+    qsys_resource = dispatcher._create_qsys_script_task(tcl_resource)
+
+    script_task, = qsys_resource.depends_on
+    ip_inputs = {r.path for r in script_task.inputs if r.file_type == "quartus-qsys-ip"}
+    assert ip_inputs == {
+        own_ip_dir / "my_system_some_instance.ip",
+        other_ip_dir / "other_system_some_instance.ip",
+    }

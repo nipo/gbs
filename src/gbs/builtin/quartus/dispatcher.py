@@ -150,12 +150,21 @@ class QuartusDispatcher(BaseDispatcher):
     def _create_qsys_script_task(self, tcl_resource: Resource) -> Resource:
         """Create a qsys_script task for a single .tcl file, returning its generated .qsys output
 
-        Written under a dedicated scripts/ subfolder, separate from where
-        _create_qsys_generate_task stages its own .qsys copy, so the two
-        tasks never write into the same directory.
+        Written under a dedicated scripts/<system_name>/ subfolder: separate
+        from where _create_qsys_generate_task stages its own .qsys copy, so
+        the two tasks never write into the same directory, and scoped per
+        system (not just scripts/) because QsysScript.work() wipes this
+        directory on every run to avoid colliding with qsys-script's
+        auto-created companion project from a previous run — sharing it
+        across systems would risk deleting a sibling's output mid-build.
+
+        The whole ip/ tree next to the source .tcl (not just
+        ip/<system_name>/) is tracked here too, since a script's
+        add_component calls can reference any system's .ip files by
+        relative path, not just its own.
         """
         system_name = tcl_resource.path.stem
-        qsys_out_dir = self.context.output_path / "output_files" / "qsys" / "scripts"
+        qsys_out_dir = self.context.output_path / "output_files" / "qsys" / "scripts" / system_name
         qsys_resource = self.context.get_resource(
             qsys_out_dir / f"{system_name}.qsys",
             file_type="quartus-qsys",
@@ -170,6 +179,14 @@ class QuartusDispatcher(BaseDispatcher):
             outputs=[qsys_resource],
         )
         self.attach_definition_dependencies(script_task)
+
+        source_ip_dir = tcl_resource.path.parent / "ip"
+        if source_ip_dir.is_dir():
+            for ip_file in sorted(source_ip_dir.rglob("*.ip")):
+                ip_resource = self.context.get_resource(
+                    ip_file, file_type="quartus-qsys-ip", typology=ResourceTypology.SOURCE,
+                )
+                script_task.add_input(ip_resource, consume=False)
 
         return qsys_resource
 

@@ -157,17 +157,17 @@ A ``quartus-qsys-script`` input is a ``.tcl`` file written against Platform Desi
 
 GBS runs ``qsys-script`` on it to produce a ``.qsys`` file, which then flows through the same ``qsys-generate`` step described above.
 
-``qsys-script`` has no command-line flag to name the output ``.qsys`` file — the script itself must call the Tcl ``save_system`` command to write it. GBS injects the expected output path as a Tcl variable via ``--cmd`` (which runs before ``--script``, in the same interpreter session), so **your script must end with**:
+The script must end with a bare ``save_system <name>`` call, where ``<name>`` matches the ``.tcl`` file's own stem — exactly what Platform Designer's own "Export System as Platform Designer script" feature (or ``qsys-generate --export-qsys-script``) already produces, so a script exported straight from the GUI works as-is. GBS runs ``qsys-script`` against a staged copy of your script under ``gbs-build/``, not the original, and expects the resulting ``.qsys`` next to that copy.
 
-.. code-block:: tcl
-
-   save_system $gbs_qsys_output_file
+That staging matters for another reason too: without ``--quartus-project``/``--new-quartus-project`` (which GBS doesn't pass), ``qsys-script`` auto-creates a companion Quartus project named after the script file, next to it, and refuses to run again if one already exists from a previous run. Staging under ``gbs-build/`` keeps that byproduct out of your source tree and lets GBS wipe it before every run.
 
 Since GBS doesn't pass ``--package-version``, your script must also declare the scripting API version itself, e.g.:
 
 .. code-block:: tcl
 
    package require -exact qsys 16.0
+
+If your script's ``add_component`` calls reference Generic Component ``.ip`` files by relative path (as Platform-Designer-exported scripts typically do, e.g. ``ip/other_system/some_instance.ip``) — note these are resolved relative to the script file itself, and can reach into *any* system's ``ip/`` subfolder, not just the one being generated. GBS stages the entire ``ip/`` tree next to your source script alongside the staged copy, so these keep resolving correctly.
 
 See Intel's *Quartus Prime Pro Edition User Guide: Platform Designer*, section "Generate a Platform Designer System with qsys-script", for the full scripting API.
 
