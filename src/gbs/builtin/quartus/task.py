@@ -343,6 +343,22 @@ class ProjectSetup(Task):
                         f'set_global_assignment -name {assignment} {rsrc.path}'
                     )
 
+                if rsrc.file_type == "quartus-qip":
+                    # qsys-generate breaks hardened/catalog IP cores (PLLs,
+                    # HPS, EMIF, Generic Components, ...) out into their own
+                    # nested .qip files under ip/<system_name>/, rather than
+                    # folding them into the top-level .qip. It only
+                    # registers those with a Quartus project automatically
+                    # when given one via --quartus-project, which GBS
+                    # doesn't do, so they need their own QIP_FILE
+                    # assignments here too.
+                    nested_ip_dir = rsrc.path.parent.parent / "ip" / rsrc.path.parent.name
+                    if nested_ip_dir.is_dir():
+                        for nested_qip in sorted(nested_ip_dir.rglob("*.qip")):
+                            lines.append(
+                                f'set_global_assignment -name QIP_FILE {nested_qip}'
+                            )
+
         # Append pin assignment fragments verbatim
         for rsrc in self.inputs:
             if rsrc.file_type == "quartus-pin-assignment":
