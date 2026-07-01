@@ -10,6 +10,7 @@ from gbs.builtin.quartus.task import ProjectSetup
 from gbs.protocol import Dispatcher
 from gbs.base import BaseBackend
 from gbs.build import BuildContext
+from gbs.build.task import ResourceTypology
 
 
 # Minimal dispatcher stand-in, mirrors the MockDispatcher used in test_tasks.py
@@ -56,6 +57,19 @@ def test_contribute_passes_with_sof_output():
     assert isinstance(passes[0], QuartusSynthesizePass)
 
 
+def test_contribute_passes_with_project_output():
+    """Test that backend contributes the synthesize pass for quartus-project alone"""
+    backend = QuartusBackend()
+
+    config = {"target": {"part": "10CL025YU256C8G"}}
+    output_types = {"quartus-project"}
+
+    passes = backend.contribute_passes(config, output_types)
+
+    assert len(passes) == 1
+    assert isinstance(passes[0], QuartusSynthesizePass)
+
+
 def test_contribute_passes_no_matching_output():
     """Test that backend returns empty list when no matching output requested"""
     backend = QuartusBackend()
@@ -77,6 +91,7 @@ def test_quartus_synthesize_pass_metadata():
     assert "quartus-qsys" in QuartusSynthesizePass.input_types
     assert "quartus-qsys-script" in QuartusSynthesizePass.input_types
     assert "quartus-sof" in QuartusSynthesizePass.output_types
+    assert "quartus-project" in QuartusSynthesizePass.output_types
 
 
 def test_quartus_synthesize_pass_filter_vars():
@@ -364,3 +379,75 @@ async def test_create_qsys_script_task_tracks_whole_ip_tree(tmp_path):
         own_ip_dir / "my_system_some_instance.ip",
         other_ip_dir / "other_system_some_instance.ip",
     }
+
+
+@pytest.mark.asyncio
+async def test_task_graph_create_project_only_skips_synthesis(tmp_path):
+    """Test that requesting only quartus-project never builds the synthesis pipeline
+
+    BuildContext._launch() launches every task ever created, regardless of
+    whether anything depends on its output — so the only way to actually
+    skip quartus_map/fit/sta/asm is to never construct them. This path
+    returns before self.is_pro is read, so no real Quartus install is
+    needed.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    project_dest = ctx.get_resource(
+        tmp_path / "quartus_project", file_type="quartus-project",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(project_dest)
+
+    await dispatcher._task_graph_create()
+
+    assert dispatcher._setup_task is not None
+    assert dispatcher._map_task is None
+    assert dispatcher._fit_task is None
+    assert dispatcher._sta_task is None
+
+
+@pytest.mark.asyncio
+async def test_task_graph_create_project_and_sof_runs_both(tmp_path):
+    """Test that requesting quartus-project alongside quartus-sof still runs the full pipeline
+
+    Reaches self.is_pro (unlike the project-only path), but FakeGBSConfig's
+    fake tool path makes it degrade gracefully to False (subprocess.run
+    raises FileNotFoundError for the nonexistent quartus_sh, caught by
+    is_pro's own except clause) — no real install needed here either.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    project_dest = ctx.get_resource(
+        tmp_path / "quartus_project", file_type="quartus-project",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(project_dest)
+    sof_dest = ctx.get_resource(
+        tmp_path / "design.sof", file_type="quartus-sof",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(sof_dest)
+
+    await dispatcher._task_graph_create()
+
+    assert dispatcher._setup_task is not None
+    assert dispatcher._map_task is not None
+    assert dispatcher._fit_task is not None
+    assert dispatcher._sta_task is not None
