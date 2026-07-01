@@ -17,6 +17,8 @@ Supported Inputs
 - ``verilog``: Verilog source files
 - ``quartus-sdc``: SDC timing constraint files
 - ``quartus-pin-assignment``: Pin assignment files
+- ``quartus-qsys``: Intel Platform Designer (Qsys) system files
+- ``quartus-qsys-script``: Platform Designer Tcl scripting API files (scripted/parameterized system generation)
 
 Supported Outputs
 -----------------
@@ -101,11 +103,71 @@ Build Process
 
 The Quartus build process:
 
-1. **Project Setup**: Generate ``.qpf`` and ``.qsf`` project files with HDL sources, device, pin assignments, and SDC constraints.
-2. **Analysis & Synthesis** (``quartus_map`` / ``quartus_syn``): Compile HDL to netlist.
-3. **Fitter** (``quartus_fit``): Place and route the design.
-4. **Timing Analysis** (``quartus_sta``): Analyze timing paths against constraints.
-5. **Assembler** (``quartus_asm``): Generate the ``.sof`` bitstream file.
+1. **Qsys Script Generation** (``qsys-script``, if ``quartus-qsys-script`` inputs are present): Run each Tcl scripting-API file to produce a ``.qsys`` system file, before Qsys generation.
+2. **Qsys Generation** (``qsys-generate``, if ``quartus-qsys`` or ``quartus-qsys-script`` inputs are present): Expand each Platform Designer system into synthesizable HDL and a ``.qip`` file, before project setup.
+3. **Project Setup**: Generate ``.qpf`` and ``.qsf`` project files with HDL sources, device, pin assignments, SDC constraints, and any generated ``.qip`` files.
+4. **Analysis & Synthesis** (``quartus_map`` / ``quartus_syn``): Compile HDL to netlist.
+5. **Fitter** (``quartus_fit``): Place and route the design.
+6. **Timing Analysis** (``quartus_sta``): Analyze timing paths against constraints.
+7. **Assembler** (``quartus_asm``): Generate the ``.sof`` bitstream file.
+
+Qsys Systems
+------------
+
+A ``quartus-qsys`` input is a ``.qsys`` system file authored externally (typically via the Platform Designer GUI) and checked into the project like any other source file:
+
+.. code-block:: yaml
+
+   root:
+     sources:
+       - file_type: quartus-qsys
+         files:
+           - hdl/my_system.qsys
+
+GBS runs ``qsys-generate`` on it to produce a ``.qip`` file, which is then referenced from the ``.qsf`` via a ``QIP_FILE`` assignment — Quartus resolves the actual generated HDL itself from there, the same way it does for SDC and pin-assignment files. The ``qsys-generate`` executable is expected at ``<path>/qsys/bin/qsys-generate``, alongside the ``quartus/bin`` directory used for the rest of the toolchain.
+
+``qsys-generate`` has no flag to redirect where it writes its output: it always creates a ``<system_name>/`` directory as a sibling of whatever ``.qsys`` file it's given (containing ``<system_name>.qip`` plus the generated HDL), regardless of the current directory. To keep that output scoped to the build directory instead of landing next to your checked-in source ``.qsys``, GBS stages a copy of it under ``gbs-build/.../output_files/qsys/`` first and runs ``qsys-generate`` on the copy — the same pattern used for Vivado block designs. Generation output therefore stays entirely under ``gbs-build/``, cleaned by the normal ``gbs clean``.
+
+**Generic Components**: if your system has instances added via Platform Designer's "Generic Component" mechanism with **Implementation Type: IP** (as opposed to a plain catalog component), that instance's actual IP core selection and parameters live in a per-instance ``.ip`` file (IP-XACT), not in the ``.qsys`` itself. ``qsys-generate`` looks for these at ``ip/<system_name>/<system_name>_<instance>.ip``, relative to the ``.qsys`` file, and silently skips generating an implementation for any instance it can't find one for — the resulting ``.v``/``.vhd`` will instantiate an entity that's never defined, which only surfaces later as a Quartus elaboration error. If you have such instances, check in the corresponding ``.ip`` files alongside your ``.qsys`` at ``ip/<system_name>/``:
+
+.. code-block:: text
+
+   hdl/
+     my_system.qsys
+     ip/
+       my_system/
+         my_system_some_instance.ip
+
+GBS stages this ``ip/<system_name>/`` directory alongside the ``.qsys`` copy automatically, if present. Implementation Types **HDL** and **Blackbox** have no ``.ip`` file at all — those need their entity supplied as a regular ``vhdl``/``verilog`` source in your project instead (Blackbox components are never auto-generated; see Intel's *Quartus Prime Pro Edition User Guide: Platform Designer*, section "Creating Generic Components in a System").
+
+Scripted Qsys Generation
+-------------------------
+
+A ``quartus-qsys-script`` input is a ``.tcl`` file written against Platform Designer's system scripting API (``add_instance``, ``add_connection``, ``set_instance_parameter_value``, ``save_system``, ...), letting a system's topology be described as a checked-in, diffable script instead of only a binary/XML ``.qsys`` saved from the GUI:
+
+.. code-block:: yaml
+
+   root:
+     sources:
+       - file_type: quartus-qsys-script
+         files:
+           - hdl/my_system.tcl
+
+GBS runs ``qsys-script`` on it to produce a ``.qsys`` file, which then flows through the same ``qsys-generate`` step described above.
+
+``qsys-script`` has no command-line flag to name the output ``.qsys`` file — the script itself must call the Tcl ``save_system`` command to write it. GBS injects the expected output path as a Tcl variable via ``--cmd`` (which runs before ``--script``, in the same interpreter session), so **your script must end with**:
+
+.. code-block:: tcl
+
+   save_system $gbs_qsys_output_file
+
+Since GBS doesn't pass ``--package-version``, your script must also declare the scripting API version itself, e.g.:
+
+.. code-block:: tcl
+
+   package require -exact qsys 16.0
+
+See Intel's *Quartus Prime Pro Edition User Guide: Platform Designer*, section "Generate a Platform Designer System with qsys-script", for the full scripting API.
 
 Filter Variables
 ----------------

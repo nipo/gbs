@@ -161,6 +161,8 @@ Supported file types:
 - ``vivado-ip-customization-tcl`` - Post-packaging TCL scripts (for IP packaging)
 - ``quartus-sdc`` - Quartus timing constraints (SDC format)
 - ``quartus-pin-assignment`` - QSF pin assignment fragments
+- ``quartus-qsys`` - Intel Platform Designer (Qsys) system file
+- ``quartus-qsys-script`` - Intel Platform Designer (Qsys) Tcl scripting API file
 
 Output Groups
 -------------

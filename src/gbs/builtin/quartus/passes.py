@@ -20,11 +20,15 @@ class QuartusSynthesizePass(BasePass):
     - Run Timing Analysis (quartus_sta)
     - Run Assembler / Generate bitstream (quartus_asm)
 
-    Input types: vhdl, verilog, quartus-sdc, quartus-pin-assignment
+    Input types: vhdl, verilog, quartus-sdc, quartus-pin-assignment, quartus-qsys,
+                 quartus-qsys-script
     Output types: quartus-sof, quartus-jam, quartus-synthesis-report, quartus-pnr-report
     """
     name = "quartus-synthesize"
-    input_types = {"vhdl", "verilog", "quartus-sdc", "quartus-pin-assignment"}
+    input_types = {
+        "vhdl", "verilog", "quartus-sdc", "quartus-pin-assignment",
+        "quartus-qsys", "quartus-qsys-script",
+    }
     output_types = {
         "quartus-sof",
         "quartus-jam",
