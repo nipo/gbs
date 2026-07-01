@@ -404,7 +404,7 @@ async def test_task_graph_create_project_only_skips_synthesis(tmp_path):
     )
 
     project_dest = ctx.get_resource(
-        tmp_path / "quartus_project", file_type="quartus-project",
+        tmp_path / "adc_bringup.qpf", file_type="quartus-project",
         typology=ResourceTypology.OUTPUT,
     )
     ctx.add_pending(project_dest)
@@ -415,6 +415,15 @@ async def test_task_graph_create_project_only_skips_synthesis(tmp_path):
     assert dispatcher._map_task is None
     assert dispatcher._fit_task is None
     assert dispatcher._sta_task is None
+
+    # QuartusProjectExport writes directly to the requested destination,
+    # bypassing output_copy's own cleanup tracking, so gbs clean needs
+    # QuartusDispatcher to report both exported files itself.
+    assert dispatcher.get_clean_paths() == {
+        ctx.output_path,
+        tmp_path / "adc_bringup.qpf",
+        tmp_path / "adc_bringup.qsf",
+    }
 
 
 @pytest.mark.asyncio
