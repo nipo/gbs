@@ -28,7 +28,7 @@ Supported Outputs
 - ``quartus-rbf``: Raw Binary File, converted from the ``.sof`` via ``quartus_pfg``/``quartus_cpf``
 - ``quartus-synthesis-report``: Aggregated synthesis report
 - ``quartus-pnr-report``: Aggregated place-and-route report
-- ``quartus-project``: Generated Quartus project directory (``.qpf`` + ``.qsf``), ready to open in the Quartus GUI — see "Project-Only Output" below
+- ``quartus-project``: Generated Quartus project file (``.qpf``, with a matching ``.qsf`` alongside it), ready to open in the Quartus GUI — see "Project-Only Output" below
 
 Configuration
 -------------
@@ -117,15 +117,17 @@ The Quartus build process:
 Project-Only Output
 --------------------
 
-``quartus-project`` is the one output type that doesn't trigger steps 4-7 above. Requesting it *by itself* generates and exports just the ``.qpf``/``.qsf`` — with all HDL sources, pin assignments, SDC constraints, and Qsys ``.qip`` files already listed, ready to open and compile manually in the Quartus GUI — without running synthesis, Fitter, Timing Analysis, or the Assembler at all:
+``quartus-project`` is the one output type that doesn't trigger steps 4-7 above. Requesting it *by itself* generates and exports just the ``.qpf``/``.qsf`` — with all HDL sources, pin assignments, SDC constraints, and Qsys ``.qip`` files already listed, ready to open and compile manually in the Quartus GUI — without running synthesis, Fitter, Timing Analysis, or the Assembler at all.
+
+The requested ``path`` names the ``.qpf`` file directly, and a ``.qsf`` with the same stem is written alongside it — ``path: adc_bringup.qpf`` gives you exactly ``adc_bringup.qpf`` and ``adc_bringup.qsf`` in the same directory, both usable together (the ``.qpf``'s internal revision name is set to match, since Quartus uses that to find its ``.qsf``):
 
 .. code-block:: yaml
 
    outputs:
      - type: quartus-project
-       path: quartus_project/
+       path: adc_bringup.qpf
 
-If you request ``quartus-project`` alongside a synthesis-requiring output (``quartus-sof``, ``quartus-jam``, or either report type), both are produced — the full pipeline still runs, and the exported project directory is a side artifact from the same ``.qpf``/``.qsf`` generation, not a separate build.
+If you request ``quartus-project`` alongside a synthesis-requiring output (``quartus-sof``, ``quartus-jam``, ``quartus-rbf``, or either report type), both are produced — the full pipeline still runs, and the exported project is a side artifact from the same ``.qpf``/``.qsf`` generation, not a separate build.
 
 Qsys Systems
 ------------

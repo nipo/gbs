@@ -268,8 +268,8 @@ class QuartusDispatcher(BaseDispatcher):
         )
         self.attach_definition_dependencies(self._setup_task)
 
-        # quartus-project: export the project as-is, independent of
-        # whether synthesis also runs below
+        # quartus-project: export the project under the requested name,
+        # independent of whether synthesis also runs below
         for dest in self.context.filter_pending(file_type="quartus-project"):
             task.QuartusProjectExport(
                 dispatcher=self,
