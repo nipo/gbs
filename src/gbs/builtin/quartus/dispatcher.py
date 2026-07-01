@@ -112,13 +112,18 @@ class QuartusDispatcher(BaseDispatcher):
                        → project setup (.qip path listed in QSF, consume=False)
         - Qsys scripts → qsys_script (produces a .qsys)
                        → qsys_generate → project setup (as above)
+
+        _map_task/_sta_task are None when only quartus-project was
+        requested (no synthesis pipeline was built) — sources still get
+        listed in the .qsf via _setup_task so the exported project has
+        them ready, but there's nothing to feed them to for synthesis.
         """
-        existing_map = {r.path for r in self._map_task.inputs}
+        existing_map = {r.path for r in self._map_task.inputs} if self._map_task else set()
         existing_setup = {r.path for r in self._setup_task.inputs}
-        existing_sta = {r.path for r in self._sta_task.inputs}
+        existing_sta = {r.path for r in self._sta_task.inputs} if self._sta_task else set()
 
         for resource in self.context.filter_pending(file_type=["vhdl", "verilog"]):
-            if resource.path not in existing_map:
+            if self._map_task and resource.path not in existing_map:
                 self._map_task.add_input(resource)
             if resource.path not in existing_setup:
                 self._setup_task.add_input(resource, consume=False)
@@ -130,7 +135,7 @@ class QuartusDispatcher(BaseDispatcher):
         for resource in self.context.filter_pending(file_type=["quartus-sdc"]):
             if resource.path not in existing_setup:
                 self._setup_task.add_input(resource, consume=False)
-            if resource.path not in existing_sta:
+            if self._sta_task and resource.path not in existing_sta:
                 self._sta_task.add_input(resource, consume=False)
 
         for resource in self.context.filter_pending(file_type=["quartus-qsys"]):
@@ -252,6 +257,39 @@ class QuartusDispatcher(BaseDispatcher):
         qpf_resource = intermediate(op / f"{self.project_name}.qpf", "quartus-qpf")
         qsf_resource = intermediate(op / f"{self.project_name}.qsf", "quartus-qsf")
 
+        # Project setup — always needed, it's what produces the .qpf/.qsf
+        self._setup_task = task.ProjectSetup(
+            dispatcher=self,
+            device=self.device,
+            vhdl_std=self.vhdl_std,
+            project_name=self.project_name,
+            inputs=[],
+            outputs=[qpf_resource, qsf_resource],
+        )
+        self.attach_definition_dependencies(self._setup_task)
+
+        # quartus-project: export the project as-is, independent of
+        # whether synthesis also runs below
+        for dest in self.context.filter_pending(file_type="quartus-project"):
+            task.QuartusProjectExport(
+                dispatcher=self,
+                inputs=[qpf_resource, qsf_resource],
+                outputs=[dest],
+            )
+
+        # If nothing that needs synthesis was requested, stop here.
+        # Creating QuartusMap/Fit/Sta/Asm would make BuildContext._launch()
+        # run them unconditionally regardless of whether anything depends
+        # on their output (it launches every registered task), so the
+        # only way to actually skip synthesis is to never construct these
+        # tasks in the first place.
+        needs_synthesis = any(
+            self.context.filter_pending(file_type=t)
+            for t in ("quartus-sof", "quartus-jam", "quartus-synthesis-report", "quartus-pnr-report")
+        )
+        if not needs_synthesis:
+            return
+
         # Primary build artifacts and report side-products
         pn = self.project_name
 
@@ -267,17 +305,6 @@ class QuartusDispatcher(BaseDispatcher):
         flow_report = intermediate(output_files / f"{pn}.flow.rpt", "quartus-flow-report")
         sof_resource = intermediate(output_files / f"{pn}.sof", "quartus-sof")
         asm_report = intermediate(output_files / f"{pn}.asm.rpt", "quartus-asm-report")
-
-        # Project setup
-        self._setup_task = task.ProjectSetup(
-            dispatcher=self,
-            device=self.device,
-            vhdl_std=self.vhdl_std,
-            project_name=self.project_name,
-            inputs=[],
-            outputs=[qpf_resource, qsf_resource],
-        )
-        self.attach_definition_dependencies(self._setup_task)
 
         # Analysis & Synthesis
         # Pro edition renamed quartus_map to quartus_syn

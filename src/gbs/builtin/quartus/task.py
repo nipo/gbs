@@ -522,6 +522,45 @@ class SofJamConvert(Task):
 
         self.info(f"{self.executable} complete")
 
+
+class QuartusProjectExport(Task):
+    """Export the generated Quartus project (.qpf + .qsf) to a requested directory
+
+    Pure file copy, no subprocess — the quartus-project output type exists
+    specifically so a project can be produced without running any of the
+    synthesis pipeline.
+    """
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name="quartus_project_export",
+            inputs=inputs,
+            outputs=outputs,
+            description="Export Quartus project",
+        )
+
+    async def work(self) -> None:
+        import shutil
+
+        qpf_input, = [r for r in self.inputs
+                      if isinstance(r, Resource) and r.file_type == 'quartus-qpf']
+        qsf_input, = [r for r in self.inputs
+                      if isinstance(r, Resource) and r.file_type == 'quartus-qsf']
+        dest_dir, = self.outputs
+
+        dest_dir.path.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(qpf_input.path, dest_dir.path / qpf_input.path.name)
+        shutil.copy2(qsf_input.path, dest_dir.path / qsf_input.path.name)
+
+        self.info(f"Exported Quartus project to {dest_dir.path}")
+
+
 class AggregateReport(Task):
     """Aggregate Quartus report files into a single tabbed HTML file."""
 

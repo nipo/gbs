@@ -26,6 +26,7 @@ Supported Outputs
 - ``quartus-sof``: SRAM Object File for FPGA programming
 - ``quartus-synthesis-report``: Aggregated synthesis report
 - ``quartus-pnr-report``: Aggregated place-and-route report
+- ``quartus-project``: Generated Quartus project directory (``.qpf`` + ``.qsf``), ready to open in the Quartus GUI — see "Project-Only Output" below
 
 Configuration
 -------------
@@ -110,6 +111,19 @@ The Quartus build process:
 5. **Fitter** (``quartus_fit``): Place and route the design.
 6. **Timing Analysis** (``quartus_sta``): Analyze timing paths against constraints.
 7. **Assembler** (``quartus_asm``): Generate the ``.sof`` bitstream file.
+
+Project-Only Output
+--------------------
+
+``quartus-project`` is the one output type that doesn't trigger steps 4-7 above. Requesting it *by itself* generates and exports just the ``.qpf``/``.qsf`` — with all HDL sources, pin assignments, SDC constraints, and Qsys ``.qip`` files already listed, ready to open and compile manually in the Quartus GUI — without running synthesis, Fitter, Timing Analysis, or the Assembler at all:
+
+.. code-block:: yaml
+
+   outputs:
+     - type: quartus-project
+       path: quartus_project/
+
+If you request ``quartus-project`` alongside a synthesis-requiring output (``quartus-sof``, ``quartus-jam``, or either report type), both are produced — the full pipeline still runs, and the exported project directory is a side artifact from the same ``.qpf``/``.qsf`` generation, not a separate build.
 
 Qsys Systems
 ------------
