@@ -91,6 +91,8 @@ def test_quartus_synthesize_pass_metadata():
     assert "quartus-qsys" in QuartusSynthesizePass.input_types
     assert "quartus-qsys-script" in QuartusSynthesizePass.input_types
     assert "quartus-sof" in QuartusSynthesizePass.output_types
+    assert "quartus-jam" in QuartusSynthesizePass.output_types
+    assert "quartus-rbf" in QuartusSynthesizePass.output_types
     assert "quartus-project" in QuartusSynthesizePass.output_types
 
 
@@ -444,6 +446,39 @@ async def test_task_graph_create_project_and_sof_runs_both(tmp_path):
         typology=ResourceTypology.OUTPUT,
     )
     ctx.add_pending(sof_dest)
+
+    await dispatcher._task_graph_create()
+
+    assert dispatcher._setup_task is not None
+    assert dispatcher._map_task is not None
+    assert dispatcher._fit_task is not None
+    assert dispatcher._sta_task is not None
+
+
+@pytest.mark.asyncio
+async def test_task_graph_create_rbf_alone_runs_synthesis(tmp_path):
+    """Test that requesting only quartus-rbf still runs the full synthesis pipeline
+
+    quartus-rbf is produced from the .sof (via quartus_pfg), so it must be
+    treated as synthesis-requiring in _task_graph_create's needs_synthesis
+    check the same way quartus-jam already is — otherwise requesting rbf
+    alone would incorrectly skip the very pipeline that produces its input.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    rbf_dest = ctx.get_resource(
+        tmp_path / "design.rbf", file_type="quartus-rbf",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(rbf_dest)
 
     await dispatcher._task_graph_create()
 
