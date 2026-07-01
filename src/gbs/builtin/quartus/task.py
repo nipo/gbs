@@ -20,10 +20,22 @@ class QuartusSubprocess(MessageSubprocess):
         Warning (12345): message
         Error (12345): message
         Critical Warning (12345): message
+
+    quartus_map/fit/sta/asm/pfg all write messages in this format to
+    stdout. Platform Designer's qsys-generate/qsys-script are different in
+    two ways (confirmed against the real tools): they write almost all of
+    their output to stderr instead, and each line carries their own
+    leading timestamp (e.g. "2026.07.01.17:44:13 Warning: ..."). Without
+    handling both, every qsys-generate/qsys-script message — Info and
+    Warning alike — ends up misclassified as an error: MessageSubprocess's
+    base stderr_transform tags every stderr line ERROR unconditionally,
+    regardless of content, and this class previously only overrode
+    stdout_transform.
     """
 
     message_format = re.compile(
-        r'^(?P<level>Info|Warning|Error|Critical Warning)'
+        r'^(?:\d{4}\.\d{2}\.\d{2}\.\d{2}:\d{2}:\d{2}\s+)?'
+        r'(?P<level>Info|Warning|Error|Critical Warning)'
         r'(?:\s+\((?P<code>\d+)\))?'
         r':\s+(?P<message>.*)$'
     )
@@ -35,19 +47,25 @@ class QuartusSubprocess(MessageSubprocess):
         "Error": MessageSeverity.ERROR,
     }
 
+    def _classify(self, line: str) -> ToolMessage:
+        m = self.message_format.match(line)
+        if not m:
+            return ToolMessage(severity=MessageSeverity.DEBUG, message=line)
+
+        severity = self.level_map.get(m.group("level"), MessageSeverity.INFO)
+        return ToolMessage(
+            severity=severity,
+            identifier=m.group("code"),
+            message=m.group("message"),
+        )
+
     async def stdout_transform(self, lines):
         async for line in lines:
-            m = self.message_format.match(line)
-            if not m:
-                yield ToolMessage(severity=MessageSeverity.DEBUG, message=line)
-                continue
+            yield self._classify(line)
 
-            severity = self.level_map.get(m.group("level"), MessageSeverity.INFO)
-            yield ToolMessage(
-                severity=severity,
-                identifier=m.group("code"),
-                message=m.group("message"),
-            )
+    async def stderr_transform(self, lines):
+        async for line in lines:
+            yield self._classify(line)
 
 
 class QuartusTask(Task):
@@ -129,6 +147,11 @@ class QsysGenerate(Task):
     implementation for any instance whose .ip file it can't find. So an
     ip/<system_name>/ directory next to the source .qsys, if present, is
     staged alongside the copy too.
+
+    Without an associated project, qsys-generate warns "Quartus project
+    not specified" on every run — left as-is (not worth the coordination
+    cost of pointing it at a real or dummy project; see git history for
+    the version that tried).
     """
 
     def __init__(
@@ -210,15 +233,16 @@ class QsysScript(Task):
     injected output path. And without --quartus-project/
     --new-quartus-project, qsys-script auto-creates a companion Quartus
     project named after the script file, next to it, refusing to run
-    again if one already exists.
+    again if one already exists (and warns "Quartus project not
+    specified" every run either way, left as-is).
 
     So this task stages a fresh copy of the script under its own
     per-system directory (dispatcher scopes outputs/<system>/<system>.qsys
     per instance, specifically so this can be wiped and rebuilt from
     scratch every run without touching a sibling system's output),
     expects the resulting .qsys to appear as <script_stem>.qsys next to
-    the staged copy, and simply ignores the auto-created .qpf/.qsf
-    byproduct — same staging pattern QsysGenerate uses for .qsys files.
+    the staged copy — same staging pattern QsysGenerate uses for .qsys
+    files.
     """
 
     def __init__(
