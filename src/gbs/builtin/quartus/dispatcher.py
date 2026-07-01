@@ -59,6 +59,7 @@ class QuartusDispatcher(BaseDispatcher):
         self._sta_task = None
         self._qsys_qip = {}
         self._qsys_scripts = {}
+        self._project_export_paths = set()
 
     def _get_quartus_bin(self) -> Path:
         """Get path to quartus bin directory"""
@@ -69,6 +70,18 @@ class QuartusDispatcher(BaseDispatcher):
         """Get path to qsys bin directory (sibling of quartus/bin under the same install)"""
         quartus_path = expand_path(self.get_tool_option("path"))
         return quartus_path / "qsys" / "bin"
+
+    def get_clean_paths(self) -> set:
+        """Return paths that should be cleaned by this dispatcher
+
+        Includes the gbs-build output path plus any quartus-project
+        exports, since QuartusProjectExport writes directly to its
+        requested destination rather than going through the generic
+        output_copy mechanism (which tracks its own copied paths for
+        cleaning) — so those exported .qpf/.qsf files would otherwise
+        never be cleaned.
+        """
+        return super().get_clean_paths() | self._project_export_paths
 
     @property
     def is_pro(self) -> bool:
@@ -276,6 +289,12 @@ class QuartusDispatcher(BaseDispatcher):
                 inputs=[qpf_resource, qsf_resource],
                 outputs=[dest],
             )
+            # This task writes directly to dest (bypassing the generic
+            # output_copy mechanism, which only ever touches resources
+            # still "unsatisfied" once we're done), so gbs clean needs to
+            # be told about both exported files explicitly.
+            self._project_export_paths.add(dest.path)
+            self._project_export_paths.add(dest.path.with_suffix(".qsf"))
 
         # If nothing that needs synthesis was requested, stop here.
         # Creating QuartusMap/Fit/Sta/Asm would make BuildContext._launch()
