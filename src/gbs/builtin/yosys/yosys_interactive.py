@@ -35,6 +35,7 @@ class Session(shell.Session):
         await super().session_init()
         await self.execute(["plugin", "-i", "ghdl"])
         
+    loop_pattern = re.compile(r'^.*Detected loop at')
     # Regex patterns for parsing yosys output
     # Yosys format: "level: message" or just plain output
     msg_pattern = re.compile(r'^(?P<level>Info|Warning|Error|Fatal):\s+(?P<message>.*)$', re.IGNORECASE)
@@ -53,6 +54,15 @@ class Session(shell.Session):
         """Parse a lines into ToolMessages"""
         async for line in lines:
             if not line:
+                continue
+
+            # Try to match yosys message format
+            match = self.loop_pattern.match(line)
+            if match:
+                yield ToolMessage(
+                    severity=MessageSeverity.DEBUG,
+                    message=line,
+                )
                 continue
 
             # Try to match yosys message format
