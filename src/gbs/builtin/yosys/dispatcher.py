@@ -148,7 +148,7 @@ class YosysDispatcher(BaseDispatcher):
                                     outputs = [output])
                 self.intermediate.append(output)
                 prev = self.intermediate[-1]
-        self.write_netlist.add_input(self.intermediate[-1])
+        self.write_netlist.add_input(prev)
 
         # Get libraries in dependency order and process VHDL sources
         for library_name, library_files in self.context.get_pending_by_library_ordered():
