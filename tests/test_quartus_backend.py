@@ -161,6 +161,47 @@ async def test_project_setup_emits_qip_file_assignment(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_project_setup_emits_qip_file_before_sdc_file(tmp_path):
+    """Test that QIP_FILE assignments always precede SDC_FILE, regardless of input order
+
+    Quartus sources each IP core's own embedded SDC (which creates that
+    core's internal clocks, e.g. a transceiver's recovered clock) while
+    resolving its QIP_FILE assignment. A user SDC_FILE listed earlier in
+    the .qsf gets evaluated before those clocks exist — confirmed against
+    a real Agilex 5 design: Quartus warned (22198) "constraints reference
+    clocks before they are created", and a set_clock_groups naming an
+    IP-internal clock silently matched zero objects despite a correct
+    pattern, purely because of assignment order in the .qsf.
+    """
+    ctx = BuildContext(base_output_path=tmp_path)
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    sdc_path = tmp_path / "timing.sdc"
+    sdc_path.write_text("create_clock -name clock_i -period 20.000 [get_ports {PL8}]\n")
+    sdc_resource = ctx.get_resource(sdc_path, file_type="quartus-sdc")
+
+    qip_path = tmp_path / "output_files" / "qsys" / "sys" / "sys.qip"
+    qip_resource = ctx.get_resource(qip_path, file_type="quartus-qip")
+
+    # sdc added before qip, deliberately — the fix must not depend on caller order.
+    setup_task = ProjectSetup(
+        dispatcher=MockDispatcher(ctx),
+        device="10CL025YU256C8G",
+        vhdl_std="1993",
+        project_name="project",
+        inputs=[sdc_resource, qip_resource],
+        outputs=[],
+    )
+
+    await setup_task.work()
+
+    qsf_text = (tmp_path / "project.qsf").read_text()
+    qip_line = qsf_text.index(f"set_global_assignment -name QIP_FILE {qip_path}")
+    sdc_line = qsf_text.index(f"set_global_assignment -name SDC_FILE {sdc_path}")
+    assert qip_line < sdc_line
+
+
+@pytest.mark.asyncio
 async def test_project_setup_emits_qip_file_for_nested_ip(tmp_path):
     """Test that nested .qip files under ip/<system_name>/ get their own QIP_FILE assignment
 
