@@ -377,17 +377,29 @@ class ProjectSetup(Task):
         vhdl_version = vhdl_version_map.get(self.vhdl_std, "VHDL_1993")
         lines.append(f'set_global_assignment -name VHDL_INPUT_VERSION {vhdl_version}')
 
-        # Add source files
+        # Add source files. QIP_FILE must be emitted before SDC_FILE: Quartus
+        # sources each IP core's own embedded SDC (which creates that core's
+        # internal clocks) while resolving its QIP_FILE assignment, so a
+        # user SDC_FILE listed earlier in the .qsf gets evaluated before
+        # those clocks exist — confirmed empirically via Quartus warning
+        # (22198) "constraints reference clocks before they are created",
+        # and a user SDC referencing an IP-internal clock (e.g. a
+        # set_false_path/set_clock_groups naming a transceiver's recovered
+        # clock) silently matching zero objects despite a correct pattern.
+        # Iterating file types in a fixed order (rather than a single pass
+        # over self.inputs in whatever order they were added) guarantees
+        # this regardless of dispatcher wiring order.
         type_to_assignment = {
+            "quartus-qip": "QIP_FILE",
             "vhdl": "VHDL_FILE",
             "verilog": "VERILOG_FILE",
             "quartus-sdc": "SDC_FILE",
-            "quartus-qip": "QIP_FILE",
         }
 
-        for rsrc in self.inputs:
-            assignment = type_to_assignment.get(rsrc.file_type)
-            if assignment:
+        for file_type, assignment in type_to_assignment.items():
+            for rsrc in self.inputs:
+                if rsrc.file_type != file_type:
+                    continue
                 if rsrc.file_type == "vhdl" and rsrc.library and rsrc.library != "work":
                     lines.append(
                         f'set_global_assignment -name {assignment} {rsrc.path} '
