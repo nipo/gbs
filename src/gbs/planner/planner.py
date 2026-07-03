@@ -229,13 +229,24 @@ class BuildPlanner(UIReporter):
         selected = []
         for pp in possibilities:
             names = set(p.name for p in pp.passes)
+            backends = set(p.backend_name for p in pp.passes)
             if set(output_group.require_passes) - names:
                 continue
             if set(output_group.exclude_passes) & names:
                 continue
+            if set(output_group.require_backends) - backends:
+                continue
+            if set(output_group.exclude_backends) & backends:
+                continue
 
             selected.append(pp)
-        
+
+        # Prune non-minimal plans: a plan whose pass set is a strict
+        # superset of another candidate's carries redundant passes
+        pass_sets = [set(p.name for p in pp.passes) for pp in selected]
+        selected = [pp for i, pp in enumerate(selected)
+                    if not any(other < pass_sets[i] for other in pass_sets)]
+
         if not selected:
             raise PlanningError(f"Cannot find passes from {source_types} to {output_types}")
 

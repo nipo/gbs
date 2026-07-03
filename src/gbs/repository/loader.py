@@ -285,12 +285,21 @@ def load_project(path: Path):
             )
             og_outputs.append(output_file)
 
-        # Parse constraints
-        og_require_passes = og_data.get("require_passes", [])
-        og_exclude_passes = og_data.get("exclude_passes", [])
-        og_require_backends = og_data.get("require_backends", [])
-        og_exclude_backends = og_data.get("exclude_backends", [])
-        og_exclude_dispatchers = og_data.get("exclude_dispatchers", [])
+        # Parse constraints; a lone name may be given instead of a
+        # one-element list
+        def constraint_list(key: str) -> list[str]:
+            value = og_data.get(key, [])
+            if isinstance(value, str):
+                return [value]
+            if not isinstance(value, list):
+                raise LoadError(f"Output group '{og_name}': '{key}' must be a list of names")
+            return value
+
+        og_require_passes = constraint_list("require_passes")
+        og_exclude_passes = constraint_list("exclude_passes")
+        og_require_backends = constraint_list("require_backends")
+        og_exclude_backends = constraint_list("exclude_backends")
+        og_exclude_dispatchers = constraint_list("exclude_dispatchers")
 
         og_partition = og_data.get("partition")
 
