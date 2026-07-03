@@ -513,9 +513,17 @@ class QuartusPfgConvert(Task):
     """Run quartus_pfg (Programming file generator) to convert a .sof to another format
 
     Used for both quartus-jam (STAPL) and quartus-rbf (Raw Binary File)
-    outputs — the command is identical either way (quartus_pfg -c <sof>
+    outputs — the base command is the same either way (quartus_pfg -c <sof>
     <output>); the output file's extension alone tells quartus_pfg what
     to produce.
+
+    Also used for the payload-bearing quartus-hps-sof/jam/rbf outputs: if
+    a quartus-hps-fsbl input is attached, -o hps_path=<file> is appended
+    so quartus_pfg embeds the HPS first-stage bootloader during the
+    conversion. For quartus-hps-sof the "conversion" is .sof to .sof and
+    exists solely to embed the payload. The dispatcher only attaches the
+    FSBL input on tasks producing a quartus-hps-* output, so plain
+    outputs never pick up the payload.
     """
 
     def __init__(
@@ -539,6 +547,8 @@ class QuartusPfgConvert(Task):
     async def work(self) -> None:
         sof_input, = [r for r in self.inputs
                       if isinstance(r, Resource) and r.file_type == 'quartus-sof']
+        hps_fsbl_inputs = [r for r in self.inputs
+                           if isinstance(r, Resource) and r.file_type == 'quartus-hps-fsbl']
         output, = self.outputs
 
         output.path.parent.mkdir(parents=True, exist_ok=True)
@@ -547,6 +557,9 @@ class QuartusPfgConvert(Task):
             str(self.quartus_bin / self.executable),
             "-c", str(sof_input.path), str(output.path)
         ]
+        if hps_fsbl_inputs:
+            hps_fsbl_input, = hps_fsbl_inputs
+            cmd += ["-o", f"hps_path={hps_fsbl_input.path}"]
 
         self.info(f"Running {self.executable}")
 
@@ -564,8 +577,6 @@ class QuartusPfgConvert(Task):
                 tool=self.executable,
                 message=f"{self.executable} failed with return code {process.returncode}",
             )
-
-        self.info(f"{self.executable} complete")
 
         self.info(f"{self.executable} complete")
 

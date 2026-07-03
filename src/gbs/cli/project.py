@@ -99,9 +99,11 @@ async def build(ctx, jobs, output_groups):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     except Exception as e:
-        from ..build.task import BuildError, MissingToolError
-        if isinstance(e, MissingToolError):
-            # Configuration error — print the message with config hint
+        from ..build.task import BuildError, MissingToolError, ConfigurationError
+        if isinstance(e, (MissingToolError, ConfigurationError)):
+            # Configuration error — print the message with config hint.
+            # Raised before task execution starts (e.g. during build graph
+            # construction), so nothing has printed a failure summary yet.
             click.echo(f"Error: {e}", err=True)
             sys.exit(1)
         elif isinstance(e, BuildError):

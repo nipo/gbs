@@ -96,6 +96,9 @@ def test_quartus_synthesize_pass_metadata():
     assert "quartus-sof" in QuartusSynthesizePass.output_types
     assert "quartus-jam" in QuartusSynthesizePass.output_types
     assert "quartus-rbf" in QuartusSynthesizePass.output_types
+    assert "quartus-hps-sof" in QuartusSynthesizePass.output_types
+    assert "quartus-hps-jam" in QuartusSynthesizePass.output_types
+    assert "quartus-hps-rbf" in QuartusSynthesizePass.output_types
     assert "quartus-project" in QuartusSynthesizePass.output_types
 
 
@@ -540,6 +543,176 @@ async def test_task_graph_create_rbf_alone_runs_synthesis(tmp_path):
     assert dispatcher._map_task is not None
     assert dispatcher._fit_task is not None
     assert dispatcher._sta_task is not None
+
+
+@pytest.mark.asyncio
+async def test_hps_fsbl_wired_into_hps_tasks_only(tmp_path):
+    """Test that the quartus-hps-fsbl source feeds quartus-hps-* tasks, and only those
+
+    Whether a programming file embeds the HPS first-stage bootloader is part of
+    its output type: quartus-hps-sof/jam/rbf carry it, plain quartus-sof/jam/rbf
+    never do. QuartusPfgConvert.work() adds -o hps_path=<file> exactly when a
+    quartus-hps-fsbl resource is among its inputs, so _task_graph_create must
+    attach the fsbl to every hps task (a single fsbl can feed all three) and to
+    no plain conversion task — both flavors can be requested from one group, off
+    the same payload-free .sof intermediate.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    fsbl_path = tmp_path / "u-boot-spl-dtb.hex"
+    fsbl_path.write_text("")
+    fsbl_resource = ctx.get_resource(fsbl_path, file_type="quartus-hps-fsbl")
+    ctx.add_pending(fsbl_resource)
+
+    for file_type, filename in (
+        ("quartus-jam", "design.jam"),
+        ("quartus-hps-sof", "design_hps.sof"),
+        ("quartus-hps-jam", "design_hps.jam"),
+        ("quartus-hps-rbf", "design_hps.rbf"),
+    ):
+        dest = ctx.get_resource(
+            tmp_path / filename, file_type=file_type,
+            typology=ResourceTypology.OUTPUT,
+        )
+        ctx.add_pending(dest)
+
+    await dispatcher._task_graph_create()
+
+    jam_task, = [s for s in ctx.steps if getattr(s, "name", None) == "quartus_sof_jam"]
+    assert fsbl_resource not in jam_task.inputs
+    jam_output, = jam_task.outputs
+    assert jam_output.file_type == "quartus-jam"
+
+    for task_name, output_type in (
+        ("quartus_hps_sof", "quartus-hps-sof"),
+        ("quartus_hps_jam", "quartus-hps-jam"),
+        ("quartus_hps_rbf", "quartus-hps-rbf"),
+    ):
+        hps_task, = [s for s in ctx.steps if getattr(s, "name", None) == task_name]
+        assert fsbl_resource in hps_task.inputs
+        hps_output, = hps_task.outputs
+        assert hps_output.file_type == output_type
+        # conversion always starts from the payload-free .sof, quartus_pfg
+        # embeds the payload during conversion
+        assert any(r.file_type == "quartus-sof" for r in hps_task.inputs)
+
+
+@pytest.mark.asyncio
+async def test_hps_output_without_fsbl_source_raises_configuration_error(tmp_path):
+    """Test that requesting a quartus-hps-* output without a quartus-hps-fsbl source fails
+
+    A quartus-hps-jam output promises an embedded first-stage bootloader; with
+    no quartus-hps-fsbl source there is nothing to embed, and silently emitting
+    a payload-free file under a payload-bearing type would defeat the whole
+    point of the distinct types.
+    """
+    from gbs.build.task import ConfigurationError
+
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    jam_dest = ctx.get_resource(
+        tmp_path / "design_hps.jam", file_type="quartus-hps-jam",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(jam_dest)
+
+    with pytest.raises(ConfigurationError, match="no\\s+quartus-hps-fsbl source"):
+        await dispatcher._task_graph_create()
+
+
+@pytest.mark.asyncio
+async def test_fsbl_source_without_hps_output_raises_configuration_error(tmp_path):
+    """Test that a quartus-hps-fsbl source with only plain outputs requested fails
+
+    Plain quartus-sof/jam/rbf outputs never embed the FSBL, so an FSBL source
+    in a group that requests no quartus-hps-* output is dead input — and almost
+    certainly means the user expected the payload in the plain files (the
+    behavior an earlier revision had). A clear error beats silently ignoring
+    the source; groups that legitimately share sources can gate the FSBL out
+    with source filters.
+    """
+    from gbs.build.task import ConfigurationError
+
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    fsbl_path = tmp_path / "u-boot-spl-dtb.hex"
+    fsbl_path.write_text("")
+    ctx.add_pending(ctx.get_resource(fsbl_path, file_type="quartus-hps-fsbl"))
+
+    jam_dest = ctx.get_resource(
+        tmp_path / "design.jam", file_type="quartus-jam",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(jam_dest)
+
+    with pytest.raises(ConfigurationError, match="no quartus-hps-sof/jam/rbf output"):
+        await dispatcher._task_graph_create()
+
+
+@pytest.mark.asyncio
+async def test_multiple_hps_fsbl_sources_raise_configuration_error(tmp_path):
+    """Test that two quartus-hps-fsbl sources raise ConfigurationError, not a silent BuildError
+
+    quartus_pfg only accepts a single -o hps_path=<file>, so more than one
+    quartus-hps-fsbl source is a project misconfiguration, not something GBS
+    could resolve on its own. This must raise ConfigurationError specifically
+    (not plain BuildError): the CLI treats bare BuildError as "already reported
+    by _cleanup()" and prints nothing, but this check runs during
+    _task_graph_create(), before task execution (and thus _cleanup()) ever
+    starts — so the message needs to reach the user some other way, which is
+    exactly what ConfigurationError's dedicated CLI handling is for.
+    """
+    from gbs.build.task import ConfigurationError
+
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    fsbl_path_1 = tmp_path / "u-boot-spl-dtb-1.hex"
+    fsbl_path_1.write_text("")
+    fsbl_path_2 = tmp_path / "u-boot-spl-dtb-2.hex"
+    fsbl_path_2.write_text("")
+    ctx.add_pending(ctx.get_resource(fsbl_path_1, file_type="quartus-hps-fsbl"))
+    ctx.add_pending(ctx.get_resource(fsbl_path_2, file_type="quartus-hps-fsbl"))
+
+    jam_dest = ctx.get_resource(
+        tmp_path / "design.jam", file_type="quartus-jam",
+        typology=ResourceTypology.OUTPUT,
+    )
+    ctx.add_pending(jam_dest)
+
+    with pytest.raises(ConfigurationError, match="Only one quartus-hps-fsbl"):
+        await dispatcher._task_graph_create()
 
 
 @pytest.mark.asyncio

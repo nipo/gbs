@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
-from ...build.task import Resource, ResourceTypology
+from ...build.task import Resource, ResourceTypology, ConfigurationError
 from ...utils import expand_path
 from . import task
 
@@ -302,9 +302,38 @@ class QuartusDispatcher(BaseDispatcher):
         # on their output (it launches every registered task), so the
         # only way to actually skip synthesis is to never construct these
         # tasks in the first place.
+        # HPS FSBL configuration checks run before the needs_synthesis
+        # early return so a misconfigured group errors out even when it
+        # requests no synthesis output at all.
+        hps_fsbl_resources = self.context.filter_pending(file_type="quartus-hps-fsbl")
+        requested_hps_types = [
+            t for t in ("quartus-hps-sof", "quartus-hps-jam", "quartus-hps-rbf")
+            if self.context.filter_pending(file_type=t)
+        ]
+        if len(hps_fsbl_resources) > 1: # only one FSBL file is accepted, as only one HPS instance can exist in a design
+            raise ConfigurationError(
+                f"Only one quartus-hps-fsbl source is supported per project, found "
+                f"{len(hps_fsbl_resources)}: "
+                + ", ".join(str(r.path) for r in hps_fsbl_resources)
+            )
+        if requested_hps_types and not hps_fsbl_resources:
+            raise ConfigurationError(
+                "Outputs " + ", ".join(requested_hps_types)
+                + " embed the HPS first-stage bootloader, but no "
+                "quartus-hps-fsbl source is defined"
+            )
+        if hps_fsbl_resources and not requested_hps_types:
+            raise ConfigurationError(
+                f"quartus-hps-fsbl source {hps_fsbl_resources[0].path} is defined, "
+                "but no quartus-hps-sof/jam/rbf output requests it — plain "
+                "quartus-sof/jam/rbf outputs never embed the FSBL"
+            )
+
         needs_synthesis = any(
             self.context.filter_pending(file_type=t)
-            for t in ("quartus-sof", "quartus-jam", "quartus-rbf", "quartus-synthesis-report", "quartus-pnr-report")
+            for t in ("quartus-sof", "quartus-jam", "quartus-rbf",
+                      "quartus-hps-sof", "quartus-hps-jam", "quartus-hps-rbf",
+                      "quartus-synthesis-report", "quartus-pnr-report")
         )
         if not needs_synthesis:
             return
@@ -402,3 +431,25 @@ class QuartusDispatcher(BaseDispatcher):
                 inputs=[sof_resource],
                 outputs=[rbf_resource],
             )
+
+        # Payload-bearing variants: same quartus_pfg conversion, always from
+        # the payload-free .sof intermediate (quartus_pfg embeds the FSBL
+        # during conversion; there is no tool that inserts it into a finished
+        # .jam/.rbf). QuartusPfgConvert appends -o hps_path=<fsbl> when the
+        # quartus-hps-fsbl input is attached, which it only is here.
+        hps_conversions = (
+            ("quartus-hps-sof", f"{pn}_hps.sof", "quartus_hps_sof", "Generate HPS SOF"),
+            ("quartus-hps-jam", f"{pn}_hps.jam", "quartus_hps_jam", "Generate HPS JAM STAPL"),
+            ("quartus-hps-rbf", f"{pn}_hps.rbf", "quartus_hps_rbf", "Generate HPS RBF"),
+        )
+        for file_type, filename, task_name, title in hps_conversions:
+            for dest in self.context.filter_pending(file_type=file_type):
+                hps_resource = intermediate(output_files / filename, file_type)
+                hps_task = task.QuartusPfgConvert(
+                    dispatcher=self,
+                    name=task_name,
+                    title=title,
+                    inputs=[sof_resource],
+                    outputs=[hps_resource],
+                )
+                hps_task.add_input(hps_fsbl_resources[0], consume=False)

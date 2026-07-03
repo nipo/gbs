@@ -19,6 +19,7 @@ Supported Inputs
 - ``quartus-pin-assignment``: Pin assignment files
 - ``quartus-qsys``: Intel Platform Designer (Qsys) system files
 - ``quartus-qsys-script``: Platform Designer Tcl scripting API files (scripted/parameterized system generation)
+- ``quartus-hps-fsbl``: Compiled first-stage bootloader (``.hex``), embedded by the ``quartus-hps-*`` output types — see "HPS First-Stage Bootloader" below
 
 Supported Outputs
 -----------------
@@ -26,6 +27,7 @@ Supported Outputs
 - ``quartus-sof``: SRAM Object File for FPGA programming
 - ``quartus-jam``: JAM STAPL file, converted from the ``.sof`` via ``quartus_pfg``/``quartus_cpf``
 - ``quartus-rbf``: Raw Binary File, converted from the ``.sof`` via ``quartus_pfg``/``quartus_cpf``
+- ``quartus-hps-sof``, ``quartus-hps-jam``, ``quartus-hps-rbf``: same formats with the HPS first-stage bootloader embedded — see "HPS First-Stage Bootloader" below
 - ``quartus-synthesis-report``: Aggregated synthesis report
 - ``quartus-pnr-report``: Aggregated place-and-route report
 - ``quartus-project``: Generated Quartus project file (``.qpf``, with a matching ``.qsf`` alongside it), ready to open in the Quartus GUI — see "Project-Only Output" below
@@ -127,7 +129,7 @@ The requested ``path`` names the ``.qpf`` file directly, and a ``.qsf`` with the
      - type: quartus-project
        path: adc_bringup.qpf
 
-If you request ``quartus-project`` alongside a synthesis-requiring output (``quartus-sof``, ``quartus-jam``, ``quartus-rbf``, or either report type), both are produced — the full pipeline still runs, and the exported project is a side artifact from the same ``.qpf``/``.qsf`` generation, not a separate build.
+If you request ``quartus-project`` alongside a synthesis-requiring output (``quartus-sof``, ``quartus-jam``, ``quartus-rbf``, their ``quartus-hps-*`` variants, or either report type), both are produced — the full pipeline still runs, and the exported project is a side artifact from the same ``.qpf``/``.qsf`` generation, not a separate build.
 
 Qsys Systems
 ------------
@@ -190,6 +192,38 @@ Since GBS doesn't pass ``--package-version``, your script must also declare the 
 If your script's ``add_component`` calls reference Generic Component ``.ip`` files by relative path (as Platform-Designer-exported scripts typically do, e.g. ``ip/other_system/some_instance.ip``) — note these are resolved relative to the script file itself, and can reach into *any* system's ``ip/`` subfolder, not just the one being generated. GBS stages the entire ``ip/`` tree next to your source script alongside the staged copy, so these keep resolving correctly.
 
 See Intel's *Quartus Prime Pro Edition User Guide: Platform Designer*, section "Generate a Platform Designer System with qsys-script", for the full scripting API.
+
+HPS First-Stage Bootloader
+---------------------------
+
+Designs using the Agilex HPS (Hard Processor System) need their compiled first-stage bootloader (FSBL) baked into the programming file, or the HPS has nothing to boot from. Whether a programming file carries the FSBL is part of its output type: ``quartus-hps-sof``, ``quartus-hps-jam`` and ``quartus-hps-rbf`` embed it, while plain ``quartus-sof``/``quartus-jam``/``quartus-rbf`` never do. The two flavors cannot be mixed up, and both can be requested from the same output group (a single synthesis run):
+
+.. code-block:: yaml
+
+   root:
+     sources:
+       - file_type: quartus-hps-fsbl
+         files:
+           - src/fsbl.hex
+
+   output:
+     - name: synthesis
+       # ...
+       outputs:
+         - type: quartus-hps-jam       # for JTAG bring-up, boots the HPS
+           path: out/project_hps.jam
+         - type: quartus-rbf           # plain fabric bitstream, no payload
+           path: out/project.rbf
+
+Each ``quartus-hps-*`` output is generated from the payload-free ``.sof`` by passing the FSBL to ``quartus_pfg``/``quartus_cpf`` via ``-o hps_path=<file>``:
+
+.. code-block:: bash
+
+   quartus_pfg -c project.sof project_hps.jam -o hps_path=src/fsbl.hex
+
+``quartus-hps-sof`` is a ``.sof``-to-``.sof`` conversion that exists solely to embed the payload.
+
+Requesting a ``quartus-hps-*`` output without a ``quartus-hps-fsbl`` source is a configuration error, and so is the reverse — an FSBL source in a build whose outputs never embed it almost certainly means the payload was expected somewhere. Use source filters to drop the FSBL from output groups that don't produce ``quartus-hps-*`` files.
 
 Filter Variables
 ----------------

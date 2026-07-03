@@ -163,6 +163,7 @@ Supported file types:
 - ``quartus-pin-assignment`` - QSF pin assignment fragments
 - ``quartus-qsys`` - Intel Platform Designer (Qsys) system file
 - ``quartus-qsys-script`` - Intel Platform Designer (Qsys) Tcl scripting API file
+- ``quartus-hps-fsbl`` - Compiled HPS first-stage bootloader (.hex), embedded by the ``quartus-hps-*`` output types
 
 Output Groups
 -------------
@@ -423,6 +424,9 @@ Supported compression suffixes:
 **Quartus:**
 
 - ``quartus-sof`` - SRAM Object File (bitstream)
+- ``quartus-jam`` - JAM STAPL file
+- ``quartus-rbf`` - Raw Binary File
+- ``quartus-hps-sof``, ``quartus-hps-jam``, ``quartus-hps-rbf`` - same formats with the HPS first-stage bootloader embedded (require a ``quartus-hps-fsbl`` source)
 
 **Report output types:**
 

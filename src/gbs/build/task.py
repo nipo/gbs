@@ -51,6 +51,17 @@ class MissingToolError(BuildError):
     """
     pass
 
+class ConfigurationError(BuildError):
+    """Project configuration is invalid in a way the user needs to fix
+
+    Raised for problems detected during build graph construction —
+    before task execution starts, so nothing has printed a failure
+    summary yet (unlike a plain BuildError, which the CLI assumes
+    _cleanup() has already reported). The CLI prints this exception's
+    message directly instead of staying silent.
+    """
+    pass
+
 class ToolFailure(BuildError):
     """An external tool invocation returned a non-zero exit code.
 

@@ -21,9 +21,15 @@ class QuartusSynthesizePass(BasePass):
     - Run Assembler / Generate bitstream (quartus_asm)
 
     Input types: vhdl, verilog, quartus-sdc, quartus-pin-assignment, quartus-qsys,
-                 quartus-qsys-script
+                 quartus-qsys-script, quartus-hps-fsbl
     Output types: quartus-sof, quartus-jam, quartus-rbf,
+                  quartus-hps-sof, quartus-hps-jam, quartus-hps-rbf,
                   quartus-synthesis-report, quartus-pnr-report, quartus-project
+
+    The quartus-hps-* output types are the payload-bearing variants of
+    quartus-sof/jam/rbf: same format, but with the HPS first-stage
+    bootloader (the quartus-hps-fsbl input) embedded. Plain
+    quartus-sof/jam/rbf outputs never embed the FSBL.
 
     quartus-project is the odd one out: it's just the generated .qpf/.qsf,
     and requesting it alone skips the whole synthesis pipeline (see
@@ -32,12 +38,19 @@ class QuartusSynthesizePass(BasePass):
     name = "quartus-synthesize"
     input_types = {
         "vhdl", "verilog", "quartus-sdc", "quartus-pin-assignment",
-        "quartus-qsys", "quartus-qsys-script",
+        "quartus-qsys", "quartus-qsys-script", "quartus-hps-fsbl"
     }
     output_types = {
+        "quartus-sof",
         "quartus-jam",
+        "quartus-rbf",
+        "quartus-hps-sof",
+        "quartus-hps-jam",
+        "quartus-hps-rbf",
+        "quartus-synthesis-report",
+        "quartus-pnr-report",
         "quartus-project",
-        "bitstream",        "quartus-sof", "quartus-rbf",
+        "bitstream",
         "synthesis-report", "quartus-synthesis-report",
         "pnr-report",       "quartus-pnr-report",
     }
