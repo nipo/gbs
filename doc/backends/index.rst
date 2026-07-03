@@ -22,6 +22,7 @@ FPGA Synthesis
 .. toctree::
    :maxdepth: 1
 
+   diamond
    gowin
    ise
    quartus

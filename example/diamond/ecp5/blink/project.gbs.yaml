@@ -1,0 +1,30 @@
+name: blink
+
+root:
+  name: top
+  deps:
+    - nsl_hwdep.clock
+  sources:
+    - file_type: vhdl
+      files:
+        - blink.vhd
+    - file_type: ecp5-lpf
+      files:
+        - icepi-zero.lpf
+
+output:
+  - name: pnr
+    topcell: top
+    require_backends:
+      - gbs.builtin.diamond
+    # part is the full Diamond part number, as displayed in the
+    # Diamond device selector
+    target:
+      part: LFE5U-25F-6BG256C
+    outputs:
+      - type: ecp5-bitstream
+        path: blink.bit
+      - type: diamond-synthesis-report
+        path: synthesis-report.html
+      - type: diamond-pnr-report
+        path: pnr-report.html
