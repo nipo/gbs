@@ -127,9 +127,16 @@ def _apply_tool_overrides(proj, tool_overrides, tool_version_overrides):
     metavar="BACKEND=VERSION",
     help="Pin a tool version for a backend (e.g. yosys=2026-03-24)"
 )
+@click.argument("output_groups", nargs=-1, metavar="[OUTPUT_GROUP...]")
 @click.pass_context
-async def build(ctx, jobs, tool_overrides, tool_version_overrides):
-    """Build a project"""
+async def build(ctx, jobs, tool_overrides, tool_version_overrides, output_groups):
+    """Build a project.
+
+    With no OUTPUT_GROUP arguments, every output group declared in the
+    project is built. Pass one or more output group names to restrict
+    the build to that subset — useful when different groups target
+    tools that are not all available locally.
+    """
     logger = get_logger()
     project_file = get_project_file(ctx)
     gbs_config = ctx.obj.get("gbs_config")
@@ -146,8 +153,13 @@ async def build(ctx, jobs, tool_overrides, tool_version_overrides):
         proj.set_max_parallel(jobs)
     _apply_tool_overrides(proj, tool_overrides, tool_version_overrides)
 
+    selected = list(output_groups) if output_groups else None
+
     try:
-        await proj.build()
+        await proj.build(selected)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
     except Exception as e:
         from ..build.task import BuildError, MissingToolError
         if isinstance(e, MissingToolError):

@@ -243,16 +243,32 @@ class Project(UIReporter):
 
         raise LoadError(f"No project.gbs.yaml found in {start_path} or parent directories")
 
-    async def realizations(self) -> AsyncIterable: # [PlanRealization]
+    async def realizations(
+        self,
+        output_group_names: Optional[list[str]] = None,
+    ) -> AsyncIterable: # [PlanRealization]
+        """Yield PlanRealization for each requested output group.
+
+        Args:
+            output_group_names: Restrict to output groups with these
+                names. ``None`` means every output group defined in
+                the project. Unknown names raise ValueError.
+        """
+        output_groups = self.__select_output_groups(output_group_names)
+
         if self.__realizations is not None:
             for p in self.__realizations:
-                yield p
+                if output_group_names is None or p.plan.output_group.name in output_group_names:
+                    yield p
+            return
 
         plugin_registry = get_plugin_registry()
 
-        # Plan build for all output groups
+        # Plan build for the selected output groups
         logger.info("")
-        logger.info(f"Planning build for {len(self.model.output_groups)} output group(s)...")
+        logger.info(
+            f"Planning build for {len(output_groups)} output group(s)..."
+        )
         backends = plugin_registry.get_all_backends()
         backend_names = plugin_registry.list_backends()
 
@@ -260,9 +276,11 @@ class Project(UIReporter):
         all_repositories = self.repositories
 
         from ..planner.planner import BuildPlanner
-        self.__realizations = []
+        # Only cache when we planned the full set. A partial run must
+        # not poison later calls that ask for a different subset.
+        cache = [] if output_group_names is None else None
 
-        for output_group in self.model.output_groups:
+        for output_group in output_groups:
             # Get the root partition template for this output group
             root_template = self.model.get_root_partition_template(output_group)
 
@@ -296,25 +314,61 @@ class Project(UIReporter):
 
             await realization.dispatch()
 
-            self.__realizations.append(realization)
+            if cache is not None:
+                cache.append(realization)
 
             yield realization
-            
-    async def build(self):
+
+        if cache is not None:
+            self.__realizations = cache
+
+    def __select_output_groups(
+        self,
+        output_group_names: Optional[list[str]],
+    ) -> list:
+        """Resolve `output_group_names` against the model.
+
+        Returns the ordered list of output groups to consider. Raises
+        ValueError with the list of known names when any requested
+        name is unknown.
+        """
+        if output_group_names is None:
+            return self.model.output_groups
+
+        by_name = {og.name: og for og in self.model.output_groups}
+        unknown = [n for n in output_group_names if n not in by_name]
+        if unknown:
+            known = ", ".join(sorted(by_name)) or "(none)"
+            raise ValueError(
+                f"Unknown output group(s): {', '.join(unknown)}. "
+                f"Known: {known}"
+            )
+        # Preserve project-file order among the requested subset.
+        requested = set(output_group_names)
+        return [og for og in self.model.output_groups if og.name in requested]
+
+    async def build(
+        self,
+        output_group_names: Optional[list[str]] = None,
+    ):
         """Build the project
 
-        Executes the build for all output groups.
+        Args:
+            output_group_names: Restrict the build to these output
+                groups. ``None`` builds every output group.
 
         Raises:
-            Exception: If build fails
+            ValueError: If a requested name is not defined in the
+                project.
+            Exception: If build fails.
 
         Example:
             >>> proj = Project.load_from_file(Path("project.gbs.yaml"))
             >>> await proj.build()
+            >>> await proj.build(["simulation"])
         """
-        # Collect all realizations first (plan + dispatch all groups)
         realizations = []
-        async for realization in self.realizations():
+        async for realization in self.realizations(output_group_names):
             realizations.append(realization)
 
         # Execute all output groups concurrently.
@@ -389,23 +443,9 @@ class Project(UIReporter):
             {'simulation': {Path('src/top.vhd'), Path('src/uart.vhd')}}
         """
         result = {}
-
-        # Filter output groups if names provided
-        output_groups_to_plan = self.model.output_groups
-        if output_group_names is not None:
-            output_groups_to_plan = [
-                og for og in self.model.output_groups
-                if og.name in output_group_names
-            ]
-
-        # Run planning for each output group
-        async for realization in self.realizations():
-            # Check if this output group should be included
-            if output_group_names is None or realization.plan.output_group.name in output_group_names:
-                # Extract all source file paths from the source fileset
-                source_files = {sf.path for sf in realization.source_fileset.get_all_files()}
-                result[realization.plan.output_group.name] = source_files
-
+        async for realization in self.realizations(output_group_names):
+            source_files = {sf.path for sf in realization.source_fileset.get_all_files()}
+            result[realization.plan.output_group.name] = source_files
         return result
 
     async def needs_rebuild(
