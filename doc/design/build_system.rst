@@ -136,7 +136,7 @@ Pass Example
            return [GHDLDispatcher(
                context=context,
                vhdl_std=self.config.get("vhdl_standard", "1993"),
-               tool_name=self.config.get("tool", "ghdl"),
+               tool_name=self.resolve_tool_identifier("ghdl"),
            )]
 
 Build Planning

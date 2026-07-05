@@ -91,12 +91,17 @@ The ``target:`` dict is specified at the output group level. The planner
 injects it into the backend config so passes can access it as
 ``self.config["target"]``.
 
-Passes read the tool identifier with ``self.config.get("tool", "<default>")``:
+Passes read the tool identifier with
+``self.resolve_tool_identifier("<default>")``. This helper
+combines the backend's ``tool`` and ``tool_version`` config keys
+(the latter set by the ``--tool-version`` CLI flag) into a single
+``name[:variant][@version]`` identifier suitable for
+``GBSConfig.get_tool``:
 
 .. code-block:: python
 
    def dispatchers(self, context):
-       tool = self.config.get("tool", "mybackend")
+       tool = self.resolve_tool_identifier("mybackend")
        target = self.config["target"]
        return [MyDispatcher(context=context, tool_name=tool, target=target)]
 

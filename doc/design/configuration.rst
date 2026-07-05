@@ -91,21 +91,43 @@ Tools are external programs (GHDL, Gowin EDA, Xilinx ISE) that GBS invokes.
 Each tool has:
 
 - **name**: Tool identifier (e.g., ``ghdl``, ``gowin``, ``ise``)
-- **variant**: Distinguishes different installations (e.g., ``llvm``, ``jit``)
-- **config**: Tool-specific settings (paths, executables)
+- **variant**: User-declared label distinguishing different installations
+  (e.g., ``llvm``, ``jit``, ``prime``). Part of the selection identity.
+- **version**: Optional scalar orthogonal to variant. Not part of the
+  selection identity, but a separate filter at lookup time. Typically
+  set by a toolchain provider from install metadata (e.g. the
+  ``release-tag`` of an ``oss-cad-suite`` build).
+- **config**: Tool-specific settings (paths, executables).
 
 Tool Reference Format
 ~~~~~~~~~~~~~~~~~~~~~
 
-Reference tools using ``name:variant`` format:
+Reference tools using ``name[:variant][@version]``:
 
 .. code-block:: yaml
 
    backend_config:
      gbs.builtin.ghdl:
-       tool: ghdl:llvm    # Uses GHDL LLVM variant
+       tool: ghdl:llvm             # variant filter
+     gbs.builtin.yosys:
+       tool: yosys@2026-03-24      # version filter (any variant)
+     gbs.builtin.nextpnr:
+       tool: nextpnr-ecp5:apio-2026@2026-03-24  # both
 
-If variant is omitted, the first matching tool is used.
+Any component may be omitted; each specified component filters by
+exact equality, and unspecified components mean "any". If more than
+one tool matches, the first one in the merged config wins.
+
+Selection identity is ``(name, variant)``: two entries with the same
+``(name, variant)`` but different versions do not coexist — the later
+one overrides. To keep two versions of the same tool selectable
+side-by-side, give them different variants (a toolchain entry can do
+this in one line, see below).
+
+An orthogonal ``tool_version`` key on a backend config pins the
+version without touching ``tool``. Backends combine both at plan
+time as ``name[:variant]@version``. The CLI ``--tool-version`` flag
+sets this key.
 
 Tool Configuration Examples
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -187,6 +209,73 @@ Tool-specific variables take precedence over existing values.
 The ``tool_env`` property on ``BaseDispatcher`` provides these variables
 to backends. All 11 built-in backends pass them to their subprocess and
 session constructors automatically.
+
+Toolchains
+----------
+
+A toolchain is a shared install prefix that yields many tools at once
+(e.g. an ``oss-cad-suite`` tree, an apio package directory, a vendor
+suite install). Rather than writing a ``tools:`` entry per binary, a
+``toolchains:`` entry names a provider ``type`` and its options; the
+provider is dispatched by the plugin registry and returns
+``ToolConfig`` entries at config-load time. Explicit ``tools:``
+entries still overlay on top, so a single override does not disable
+the rest of the toolchain.
+
+.. code-block:: yaml
+
+   toolchains:
+     - type: apio                     # provider dispatched by 'type'
+       # root: ~/.apio/packages       # provider-specific option
+       variant: apio-2026             # tags every emitted tool
+
+   tools:
+     - name: yosys
+       variant: apio-2026
+       config:
+         executable: /custom/yosys    # overrides the apio-provided one
+
+Merge rules:
+
+- ``toolchains:`` extends unconditionally across config layers (user,
+  tree, project).
+- Later toolchain entries override earlier ones on ``(name, variant)``
+  collisions during expansion.
+- Explicit ``tools:`` entries win over anything expansion produced.
+
+Every expanded ``ToolConfig`` carries a ``via`` provenance tag equal
+to the source toolchain's ``type[:variant]`` identifier, which
+``gbs config tool`` renders in its output so users can see why a tool
+appeared in their config. A provider that pre-sets ``via`` keeps its
+own, more specific label.
+
+Two dimensions to distinguish coexisting installs:
+
+- **Variant** is user-declared. When two toolchain entries would
+  emit tools with the same ``(name, variant)`` the second overrides
+  the first. To keep them selectable side by side, give each entry a
+  distinct ``variant:``.
+- **Version** is a metadata scalar, typically filled by the provider
+  from install-time metadata (``BUILD-INFO.json`` for oss-cad-suite,
+  for example). Version does not participate in identity but can
+  filter a selection via ``name@version`` or the ``--tool-version``
+  CLI flag.
+
+Built-in providers:
+
+``apio``
+   Scans ``~/.apio/packages`` (or the ``root:`` option) for known
+   package directories (``oss-cad-suite``, ``tools-openxc7``). Emits
+   one ``ToolConfig`` per binary that actually exists in each
+   package; missing binaries are silently skipped. Reads the
+   package's ``BUILD-INFO.json`` for ``release-tag`` and stamps every
+   emitted tool with it as ``version``. An optional ``variant:`` key
+   on the toolchain entry is stamped on every tool (overriding the
+   per-tool default variant, which is otherwise used when the tool
+   binary is a specific flavour, e.g. ``ghdl:llvm``).
+
+External plugins can register additional provider types by returning
+them from ``Plugin.enumerate_toolchain_providers()``.
 
 Profile System
 --------------
@@ -299,8 +388,10 @@ existed previously (``ghdl_tool:``, ``gowin_tool:``, ``ise_tool:``, etc.).
          gbs.builtin.quartus:
            tool: quartus:prime-25.2
 
-All built-in backends read ``self.config.get("tool", "<default_name>")``
-in their ``dispatchers()`` method.
+All built-in backends read ``self.resolve_tool_identifier("<default_name>")``
+in their ``dispatchers()`` method. The helper folds the ``tool_version``
+key (used by ``--tool-version`` and by explicit config) into the returned
+identifier.
 
 ``get_tool_option()`` on BaseDispatcher
 ---------------------------------------

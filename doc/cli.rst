@@ -52,9 +52,17 @@ Build a project.
     Maximum number of parallel tasks. Overrides ``max_parallel`` from config files.
     Must be >= 1.
 
-``-t, --tool BACKEND=TOOL:VARIANT``
-    Override tool variant for a backend. BACKEND is a substring match against
-    backend names. Can be specified multiple times.
+``-t, --tool BACKEND=TOOL[:VARIANT]``
+    Override tool identifier for a backend. BACKEND is a substring
+    match against backend names. TOOL follows the tool identifier
+    syntax ``name[:variant][@version]`` (see ``gbs config tool``
+    below). Can be specified multiple times.
+
+``--tool-version BACKEND=VERSION``
+    Pin a tool version for a backend without changing the tool
+    identifier. Combined with ``--tool`` (or the backend's default
+    tool) at plan time as ``name[:variant]@version``. Can be
+    specified multiple times.
 
 **Examples:**
 
@@ -73,7 +81,10 @@ Build a project.
    gbs project build -j 8
 
    # Override tool variant for quartus backends
-   gbs project build -t quartus=quartus-pro:24.2
+   gbs project build -t quartus=quartus:prime
+
+   # Pin the yosys version supplied by an apio toolchain
+   gbs project build --tool-version yosys=2026-03-24
 
    # Build project in another directory
    gbs -C /path/to/project project build
@@ -198,23 +209,78 @@ which config file each entry came from.
 gbs config tool
 ~~~~~~~~~~~~~~~
 
-List all tool variants matching NAME (substring search), in selection order.
-The first match is marked as default.
+List configured tools, optionally filtered by an identifier.
 
 .. code-block:: bash
 
-   gbs config tool NAME
+   gbs config tool [IDENTIFIER]
 
 **Arguments:**
 
-``NAME``
-    Substring to match against tool variant names.
+``IDENTIFIER`` (optional)
+    Tool identifier in the form ``name[:variant][@version]``. Any
+    component may be omitted; each specified component filters by
+    exact equality — the same rule ``GBSConfig.get_tool`` uses at
+    build time. A leading ``:`` or ``@`` means "any name" (e.g.
+    ``@2026-03-24`` matches every tool tagged with that version).
 
-**Example:**
+    With no argument, every configured tool is listed.
+
+**Output**
+
+Each entry shows the tool's full identifier, an origin annotation
+pointing at the config file (and, for tools expanded from a
+``toolchains:`` entry, the ``via`` toolchain identifier), and the
+raw config keys. The ``(default)`` marker sits on the first
+occurrence of a given name — that is the entry an unqualified
+lookup would return.
+
+**Examples:**
 
 .. code-block:: bash
 
-   gbs config tool quartus
+   # List every configured tool
+   gbs config tool
+
+   # All yosys entries
+   gbs config tool yosys
+
+   # Just one specific variant of yosys
+   gbs config tool yosys:apio-2026
+
+   # Any tool tagged with a given version
+   gbs config tool @2026-03-24
+
+gbs config toolchain
+~~~~~~~~~~~~~~~~~~~~
+
+List configured toolchains, optionally filtered by an identifier.
+Each result shows the toolchain's options and every tool it
+expanded into.
+
+.. code-block:: bash
+
+   gbs config toolchain [IDENTIFIER]
+
+**Arguments:**
+
+``IDENTIFIER`` (optional)
+    Toolchain identifier in the form ``type[:variant]``. Filtering
+    follows the same exact-match rule as ``gbs config tool``; a
+    leading ``:`` means "any type".
+
+**Examples:**
+
+.. code-block:: bash
+
+   # List every configured toolchain
+   gbs config toolchain
+
+   # All apio toolchains
+   gbs config toolchain apio
+
+   # A specific apio entry
+   gbs config toolchain apio:apio-2026
 
 Repository Commands
 -------------------
