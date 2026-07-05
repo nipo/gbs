@@ -40,7 +40,7 @@ class GowinSynthesizePass(BasePass):
         self.device = self.config.get("target", {}).get("part")
         self.gowin_path = None
         self.device_info = None
-        self._tool_name = self.config.get("tool", "gowin")
+        self._tool_name = self.resolve_tool_identifier("gowin")
 
         if self.gbs_config:
             _tool_config = self.gbs_config.get_tool(self._tool_name)

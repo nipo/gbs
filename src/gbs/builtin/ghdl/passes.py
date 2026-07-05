@@ -26,7 +26,8 @@ class _GhdlFlavorProbe:
 
     @staticmethod
     def resolve_executable(config: dict[str, Any], gbs_config) -> str:
-        tool_id = config.get("tool", "ghdl")
+        from ...base.pass_ import resolve_tool_identifier
+        tool_id = resolve_tool_identifier(config, "ghdl")
         executable = "ghdl"
         if gbs_config is not None:
             tool = gbs_config.get_tool(tool_id)
@@ -82,7 +83,7 @@ class GHDLAnalyzePass(BasePass):
             GHDLAnalyzeDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        tool_name = self.config.get("tool", "ghdl")
+        tool_name = self.resolve_tool_identifier("ghdl")
 
         return [GHDLAnalyzeDispatcher(
             context=context,
@@ -137,7 +138,7 @@ class GHDLSimulatePass(BasePass):
             GHDLSimulateDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        tool_name = self.config.get("tool", "ghdl")
+        tool_name = self.resolve_tool_identifier("ghdl")
 
         return [GHDLSimulateDispatcher(
             context=context,
@@ -173,7 +174,7 @@ class GHDLRunPass(BasePass):
         Returns:
             GHDLRunDispatcher singleton
         """
-        tool_name = self.config.get("tool", "ghdl")
+        tool_name = self.resolve_tool_identifier("ghdl")
         return [GHDLRunDispatcher(context=context,
                                   tool_name = tool_name,
                                   config = self.config)]

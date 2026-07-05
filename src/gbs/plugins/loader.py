@@ -16,7 +16,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from ..logging import get_logger
-from ..protocol import Plugin, Backend
+from ..protocol import Plugin, Backend, ToolchainProvider
 
 logger = get_logger(__name__)
 
@@ -243,6 +243,43 @@ class PluginRegistry:
             backends = plugin.enumerate_backends()
             all_backends.extend(backends)
         return all_backends
+
+    # Toolchain provider methods
+
+    def get_toolchain_provider_class(self, type_name: str) -> Optional[type[ToolchainProvider]]:
+        """Look up a toolchain provider class by its `type` name.
+
+        Scans all plugins in registration order. When two plugins claim
+        the same type, the last one to register wins (with a warning).
+
+        Args:
+            type_name: The `type:` value from a `toolchains:` config entry.
+
+        Returns:
+            ToolchainProvider class, or None if no plugin provides this type.
+        """
+        found: Optional[type[ToolchainProvider]] = None
+        for plugin in self._plugins.values():
+            providers = plugin.enumerate_toolchain_providers()
+            if type_name in providers:
+                if found is not None:
+                    logger.warning(
+                        f"Toolchain provider type {type_name!r} claimed by multiple plugins; "
+                        f"using {plugin.name}"
+                    )
+                found = providers[type_name]
+        return found
+
+    def all_toolchain_provider_types(self) -> list[str]:
+        """List every toolchain type registered across plugins.
+
+        Returns:
+            Sorted list of unique type names.
+        """
+        types: set[str] = set()
+        for plugin in self._plugins.values():
+            types.update(plugin.enumerate_toolchain_providers().keys())
+        return sorted(types)
 
 
 # Global plugin registry singleton

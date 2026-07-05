@@ -42,7 +42,7 @@ class EcppackPass(BasePass):
         Returns:
             EcppackDispatcher singleton
         """
-        ecppack_tool = self.config.get("tool", "ecppack")
+        ecppack_tool = self.resolve_tool_identifier("ecppack")
 
         return [EcppackDispatcher(
             context=context,

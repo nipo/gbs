@@ -11,6 +11,7 @@ from typing import Protocol, runtime_checkable, TYPE_CHECKING
 if TYPE_CHECKING:
     from .backend import Backend
     from .dispatcher import Dispatcher
+    from .toolchain import ToolchainProvider
     from ..build.context import BuildContext
     from ..plugins.loader import RepositoryLoader
 
@@ -69,5 +70,21 @@ class Plugin(Protocol):
 
         Returns:
             Dict mapping loader name to RepositoryLoader class
+        """
+        ...
+
+    def enumerate_toolchain_providers(self) -> dict[str, type[ToolchainProvider]]:
+        """Enumerate toolchain provider classes provided by this plugin
+
+        Toolchain providers expand a single `toolchains:` config entry
+        into multiple ToolConfig entries by discovering tools under a
+        shared install prefix. Returns a dict mapping the `type:` key
+        (as used in config) to a ToolchainProvider class (not instance).
+
+        Classes are instantiated with the entry's options dict when a
+        matching `toolchains:` entry is processed.
+
+        Returns:
+            Dict mapping toolchain type name to ToolchainProvider class
         """
         ...

@@ -11,7 +11,30 @@ if TYPE_CHECKING:
     from ..build.context import BuildContext
     from ..config.model import GBSConfig
 
-__all__ = ["BasePass"]
+__all__ = ["BasePass", "resolve_tool_identifier"]
+
+
+def resolve_tool_identifier(config: dict[str, Any], default_name: str) -> str:
+    """Combine backend `tool` and `tool_version` into a single identifier.
+
+    `config["tool"]` carries 'name[:variant][@version]'; `config["tool_version"]`
+    is a separate scalar. When both an embedded version and `tool_version`
+    are set, `tool_version` wins so an explicit --tool-version CLI
+    override beats a pre-baked identifier in the project file.
+
+    Args:
+        config: Backend config dict (typically `pass_.config`).
+        default_name: Tool name used when `tool` is unset.
+
+    Returns:
+        Identifier suitable for GBSConfig.get_tool().
+    """
+    tool = config.get("tool", default_name)
+    version = config.get("tool_version")
+    if version:
+        base = tool.split('@', 1)[0]
+        tool = f"{base}@{version}"
+    return tool
 
 
 class BasePass:
@@ -60,6 +83,13 @@ class BasePass:
         self.config = config
         self.project_config = project_config or {}
         self.gbs_config = gbs_config
+
+    def resolve_tool_identifier(self, default_name: str) -> str:
+        """Combine backend `tool` and `tool_version` config into one identifier.
+
+        See resolve_tool_identifier() below for the merge rule.
+        """
+        return resolve_tool_identifier(self.config, default_name)
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for source enumeration

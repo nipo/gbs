@@ -331,7 +331,8 @@ class BuildContext(UIReporter):
         """Get tool configuration by identifier
 
         Args:
-            identifier: Tool identifier in format 'name' or 'name:variant'
+            identifier: 'name', 'name:variant', 'name@version', or
+                        'name:variant@version'
             required: If True, raise error if tool not found
 
         Returns:
@@ -341,10 +342,9 @@ class BuildContext(UIReporter):
             BuildError: If required=True and tool not found
 
         Examples:
-            >>> ctx.get_tool("ghdl:llvm")  # Specific variant
-            {'executable': '/usr/bin/ghdl'}
-            >>> ctx.get_tool("gcc")  # Any variant
-            {'executable': 'gcc'}
+            >>> ctx.get_tool("ghdl:llvm")            # variant filter
+            >>> ctx.get_tool("gcc")                  # any variant
+            >>> ctx.get_tool("yosys@2026-03-24")     # version filter
         """
         from .task import BuildError
 

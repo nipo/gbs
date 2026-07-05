@@ -38,7 +38,7 @@ class DiamondEcp5Pass(BasePass):
         self.vhdl_std = self.config.get("vhdl_standard", "1993")
         self.synthesis = self.config.get("synthesis", "lse")
         self.strategy = self.config.get("strategy", {})
-        self._tool_name = self.config.get("tool", "diamond")
+        self._tool_name = self.resolve_tool_identifier("diamond")
 
         if self.vhdl_std not in ("1993", "2008"):
             raise ValueError(f"Diamond supports VHDL-1993 and VHDL-2008, not {self.vhdl_std}")

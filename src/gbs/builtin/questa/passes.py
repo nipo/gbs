@@ -51,7 +51,7 @@ class QuestaSimulatePass(BasePass):
             QuestaDispatcher instance
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        questa_tool = self.config.get("tool", "questa")
+        questa_tool = self.resolve_tool_identifier("questa")
 
         return [QuestaDispatcher(
             context=context,

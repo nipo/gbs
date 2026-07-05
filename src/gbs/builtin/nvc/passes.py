@@ -51,7 +51,7 @@ class NVCSimulatePass(BasePass):
             NVCDispatcher singleton
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        nvc_tool = self.config.get("tool", "nvc")
+        nvc_tool = self.resolve_tool_identifier("nvc")
 
         return [NVCDispatcher(
             context=context,

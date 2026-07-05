@@ -70,7 +70,7 @@ class IseSynthesizePass(BasePass):
         Returns:
             IseDispatcher singleton
         """
-        tool = self.config.get("tool", "ise")
+        tool = self.resolve_tool_identifier("ise")
         vhdl_std = self.config.get("vhdl_standard", "1993")
         target = self.config["target"]
 

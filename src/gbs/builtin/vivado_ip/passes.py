@@ -58,7 +58,7 @@ class VivadoIpPackagePass(BasePass):
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Vivado IP dispatcher for execution"""
-        vivado_tool = self.config.get("tool", "vivado")
+        vivado_tool = self.resolve_tool_identifier("vivado")
         vhdl_std = self.config.get("vhdl_standard", "1993")
         target = self.config.get("target", {})
 

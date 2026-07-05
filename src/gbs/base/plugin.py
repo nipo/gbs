@@ -8,7 +8,7 @@ from abc import ABC
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..protocol import Backend, Dispatcher
+    from ..protocol import Backend, Dispatcher, ToolchainProvider
     from ..build.context import BuildContext
     from ..plugins.loader import RepositoryLoader
 
@@ -80,6 +80,20 @@ class BasePlugin(ABC):
 
         Returns:
             Dict mapping loader name to RepositoryLoader class
+        """
+        return {}
+
+    def enumerate_toolchain_providers(self) -> dict[str, type[ToolchainProvider]]:
+        """Enumerate toolchain provider classes provided by this plugin
+
+        Toolchain providers expand a single `toolchains:` config entry
+        into multiple ToolConfig entries. Returns a dict mapping the
+        `type:` key (as used in config) to a ToolchainProvider class.
+
+        Default implementation returns empty dict. Override to provide providers.
+
+        Returns:
+            Dict mapping toolchain type name to ToolchainProvider class
         """
         return {}
 

@@ -4,6 +4,11 @@ Handles loading and merging configuration from:
 - ~/.config/gbs.yaml (user config)
 - .gbs.yaml (tree config, first found walking up from CWD)
 - Plugin-contributed defaults
+
+Also supports `toolchains:` entries: each entry names a provider `type`
+(from a plugin) and options; after merging config layers, providers are
+consulted to expand their entries into ToolConfig objects. Explicit
+`tools:` entries then overlay the expanded set.
 """
 
 from __future__ import annotations
@@ -23,28 +28,55 @@ DEFAULT_FILE_URL_TEMPLATE = "file://{path}#L{line}:{column}"
 
 @dataclass
 class ToolConfig:
-    """Tool definition with optional variant
+    """Tool definition with optional variant and version
+
+    `variant` is a user-declared label (e.g. "llvm" vs "mcode" for ghdl,
+    "prime" vs "standard" for quartus). `version` is orthogonal — a
+    scalar taken from the installed tool or its package metadata.
+
+    Selection identity is (name, variant): two entries with the same
+    (name, variant) but different versions do not coexist; the later
+    one overrides. To keep two versions of the same tool selectable,
+    give them different variants (e.g. one per toolchain entry).
 
     Examples:
-        >>> tool = ToolConfig("ghdl", "llvm", {"executable": "/usr/bin/ghdl"})
+        >>> tool = ToolConfig("ghdl", "llvm", None, {"executable": "/usr/bin/ghdl"})
         >>> tool.identifier
         'ghdl:llvm'
 
-        >>> tool = ToolConfig("gcc", None, {"path": "/usr/bin/gcc"})
+        >>> tool = ToolConfig("yosys", None, "2026-03-24", {"executable": "/apio/bin/yosys"})
         >>> tool.identifier
-        'gcc'
+        'yosys@2026-03-24'
     """
     name: str
     variant: Optional[str] = None
+    version: Optional[str] = None
     config: dict[str, Any] = field(default_factory=dict)
     origin: Optional[Path] = None  # Config file this tool was loaded from
 
     @property
     def identifier(self) -> str:
-        """Returns 'name' or 'name:variant'"""
+        """Returns 'name[:variant][@version]' from the fields that are set."""
+        result = self.name
         if self.variant:
-            return f"{self.name}:{self.variant}"
-        return self.name
+            result += f":{self.variant}"
+        if self.version:
+            result += f"@{self.version}"
+        return result
+
+@dataclass
+class ToolchainSpec:
+    """A `toolchains:` config entry, prior to expansion.
+
+    Attributes:
+        type: Provider type name (dispatched via the plugin registry).
+        options: Remaining keys from the entry (root, packages, ...).
+        origin: Config file this entry was declared in.
+    """
+    type: str
+    options: dict[str, Any] = field(default_factory=dict)
+    origin: Optional[Path] = None
+
 
 @dataclass
 class GBSConfig:
@@ -62,6 +94,7 @@ class GBSConfig:
     - max_log_count: Override (higher priority wins)
     """
     tools: list[ToolConfig] = field(default_factory=list)
+    toolchains: list[ToolchainSpec] = field(default_factory=list)
     repositories: list[dict] = field(default_factory=list)
     max_parallel: Optional[int] = None  # Maximum parallel tasks (None = use default)
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
@@ -69,30 +102,52 @@ class GBSConfig:
     loaded_files: list[Path] = field(default_factory=list)  # Config files that were loaded
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
-        """Lookup tool by 'name' or 'name:variant'
+        """Lookup tool by 'name[:variant][@version]'.
+
+        Any of the three fields may be omitted to widen the match. First
+        match in insertion order wins (stable ordering across load runs).
 
         Args:
-            identifier: Either 'name' or 'name:variant'
+            identifier: 'name', 'name:variant', 'name@version', or
+                        'name:variant@version'.
 
         Returns:
             Matching ToolConfig, or None if not found.
-            If only name specified, returns first matching name (stable order).
 
         Examples:
-            >>> config.get_tool("ghdl:llvm")  # Exact match
-            >>> config.get_tool("ghdl")       # Any variant of ghdl
+            >>> config.get_tool("ghdl:llvm")            # variant filter
+            >>> config.get_tool("ghdl")                 # any variant
+            >>> config.get_tool("yosys@2026-03-24")     # version filter
+            >>> config.get_tool("yosys:apio@2026-03-24")
         """
-        if ':' in identifier:
-            name, variant = identifier.split(':', 1)
-            for tool in self.tools:
-                if tool.name == name and str(tool.variant) == variant:
-                    return tool
-        else:
-            # Match any variant for this name (first match)
-            for tool in self.tools:
-                if tool.name == identifier:
-                    return tool
+        name, variant, version = self._parse_identifier(identifier)
+        for tool in self.tools:
+            if tool.name != name:
+                continue
+            if variant is not None and tool.variant != variant:
+                continue
+            if version is not None and tool.version != version:
+                continue
+            return tool
         return None
+
+    @staticmethod
+    def _parse_identifier(identifier: str) -> tuple[str, Optional[str], Optional[str]]:
+        """Split 'name[:variant][@version]' into (name, variant, version).
+
+        Only the first ':' and the first '@' are treated as delimiters,
+        so tool paths/versions with either character are preserved.
+        """
+        rest = identifier
+        version: Optional[str] = None
+        if '@' in rest:
+            rest, version = rest.split('@', 1)
+        variant: Optional[str] = None
+        if ':' in rest:
+            name, variant = rest.split(':', 1)
+        else:
+            name = rest
+        return name, variant, version
 
     @classmethod
     def load(cls, plugin_defaults: Optional[list[ToolConfig]] = None) -> 'GBSConfig':
@@ -118,10 +173,75 @@ class GBSConfig:
         tree_config = cls._load_tree_config()
         final = cls._merge_configs(merged, tree_config)
 
+        # Expand toolchains: each ToolchainSpec is dispatched to its
+        # provider, whose ToolConfig entries are overlaid by any explicit
+        # `tools:` entries from the config files above.
+        final._expand_toolchains()
+
         logger.debug(f"Loaded config: {len(final.tools)} tools, "
+                    f"{len(final.toolchains)} toolchains, "
                     f"{len(final.repositories)} repositories")
 
         return final
+
+    def _expand_toolchains(self) -> None:
+        """Resolve `toolchains:` entries and merge their tools into self.tools.
+
+        Provider lookup uses the plugin registry singleton. Each
+        toolchain expansion is a fresh ToolConfig list; later toolchains
+        override earlier ones on (name, variant) collisions. Explicit
+        tools already in `self.tools` win over all expansions.
+        """
+        if not self.toolchains:
+            return
+
+        # Late import to avoid a circular dependency during plugin discovery.
+        from ..plugins.loader import get_plugin_registry
+        registry = get_plugin_registry()
+
+        expanded: list[ToolConfig] = []
+        for spec in self.toolchains:
+            provider_class = registry.get_toolchain_provider_class(spec.type)
+            if provider_class is None:
+                logger.warning(
+                    f"Unknown toolchain type {spec.type!r} in "
+                    f"{spec.origin or '<unknown>'}; skipping"
+                )
+                continue
+            try:
+                provider = provider_class(spec.options, origin=spec.origin)
+                tools = provider.enumerate_tools()
+            except Exception as e:
+                logger.warning(
+                    f"Toolchain provider {spec.type!r} from "
+                    f"{spec.origin or '<unknown>'} failed: {e}"
+                )
+                continue
+
+            for tool in tools:
+                idx = self._find_tool_index(expanded, tool.name, tool.variant)
+                if idx is not None:
+                    expanded[idx] = tool
+                else:
+                    expanded.append(tool)
+
+        # Overlay explicit tools on top of expanded set.
+        for explicit in self.tools:
+            idx = self._find_tool_index(expanded, explicit.name, explicit.variant)
+            if idx is not None:
+                expanded[idx] = explicit
+            else:
+                expanded.append(explicit)
+
+        self.tools = expanded
+
+    @staticmethod
+    def _find_tool_index(tools: list[ToolConfig], name: str, variant: Optional[str]) -> Optional[int]:
+        """Locate a tool by (name, variant); returns None if absent."""
+        for idx, existing in enumerate(tools):
+            if existing.name == name and existing.variant == variant:
+                return idx
+        return None
 
     @classmethod
     def _load_user_config(cls) -> 'GBSConfig':
@@ -173,7 +293,24 @@ class GBSConfig:
             tools.append(ToolConfig(
                 name=tool_data['name'],
                 variant=tool_data.get('variant'),
+                version=tool_data.get('version'),
                 config=tool_data.get('config', {}),
+                origin=path.resolve(),
+            ))
+
+        # Parse toolchains
+        toolchains = []
+        for tc_data in data.get('toolchains', []):
+            if not isinstance(tc_data, dict) or 'type' not in tc_data:
+                logger.warning(
+                    f"Invalid toolchain spec in {path}, must be a mapping with "
+                    f"a 'type' key: {tc_data}"
+                )
+                continue
+            options = {k: v for k, v in tc_data.items() if k != 'type'}
+            toolchains.append(ToolchainSpec(
+                type=tc_data['type'],
+                options=options,
                 origin=path.resolve(),
             ))
 
@@ -231,6 +368,7 @@ class GBSConfig:
 
         return cls(
             tools=tools,
+            toolchains=toolchains,
             repositories=repositories,
             max_parallel=max_parallel,
             max_log_count=max_log_count,
@@ -270,6 +408,10 @@ class GBSConfig:
             else:
                 merged_tools.append(new_tool)  # Add
 
+        # Toolchains: extend unconditionally. Later entries override
+        # earlier ones only via the (name, variant) rule at expansion time.
+        merged_toolchains = base.toolchains + override.toolchains
+
         # Repositories: extend unconditionally
         merged_repos = base.repositories + override.repositories
 
@@ -290,6 +432,7 @@ class GBSConfig:
 
         return cls(
             tools=merged_tools,
+            toolchains=merged_toolchains,
             repositories=merged_repos,
             max_parallel=merged_max_parallel,
             max_log_count=merged_max_log_count,

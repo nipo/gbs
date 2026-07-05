@@ -167,7 +167,7 @@ class VivadoSynthesizePass(BasePass):
             VivadoDispatcher instance
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
-        vivado_tool = self.config.get("tool", "vivado")
+        vivado_tool = self.resolve_tool_identifier("vivado")
         target = self.config.get("target", {})
 
         return [VivadoDispatcher(

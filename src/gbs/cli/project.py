@@ -52,39 +52,58 @@ async def _project_load(project_file, gbs_config):
 
     return proj
     
-def _apply_tool_overrides(proj, tool_overrides):
-    """Apply --tool overrides to output group backend configs.
+def _parse_backend_kv(overrides, flag_name):
+    """Parse a list of BACKEND=VALUE strings into a list of (backend, value)."""
+    parsed = []
+    for entry in overrides:
+        if '=' not in entry:
+            raise click.ClickException(
+                f"Invalid {flag_name} format: '{entry}'. "
+                f"Expected 'backend=value'."
+            )
+        backend, value = entry.split('=', 1)
+        parsed.append((backend, value))
+    return parsed
 
-    Each override is "backend_substr=tool_identifier", e.g.
-    "quartus=quartus:prime-25.2". The backend_substr is matched
-    against backend names in backend_config using substring search.
+
+def _apply_tool_overrides(proj, tool_overrides, tool_version_overrides):
+    """Apply --tool and --tool-version overrides to output group backend configs.
+
+    --tool sets the identifier ('name' or 'name:variant'); --tool-version
+    is stored under 'tool_version'. BasePass.resolve_tool_identifier
+    combines them at plan time into 'name[:variant][@version]' before
+    handing off to GBSConfig.get_tool.
+
+    Both flags are keyed by backend-name substring; when no output group
+    already carries config for a matching backend, an empty entry is
+    inserted so the override still lands.
     """
-    if not tool_overrides:
+    if not tool_overrides and not tool_version_overrides:
         return
 
-    for override in tool_overrides:
-        if '=' not in override:
-            raise click.ClickException(
-                f"Invalid --tool format: '{override}'. "
-                f"Expected 'backend=tool:variant', e.g. 'quartus=quartus:prime'"
-            )
+    tool_pairs = _parse_backend_kv(tool_overrides, "--tool")
+    version_pairs = _parse_backend_kv(tool_version_overrides, "--tool-version")
 
-        backend_substr, tool_id = override.split('=', 1)
+    def _matching_backends(og, backend_substr):
+        matched = [name for name in og.backend_config if backend_substr in name]
+        if matched:
+            return matched
+        from ..plugins import get_plugin_registry
+        registry = get_plugin_registry()
+        for backend_name in registry.list_backends():
+            if backend_substr in backend_name and backend_name not in og.backend_config:
+                matched.append(backend_name)
+                og.backend_config[backend_name] = {}
+        return matched
 
-        for og in proj.model.output_groups:
-            matched = [name for name in og.backend_config if backend_substr in name]
-            if not matched:
-                # Also match backends that WOULD be used but aren't in backend_config yet
-                # by adding an empty config entry for matching backend names
-                from ..plugins import get_plugin_registry
-                registry = get_plugin_registry()
-                for backend_name in registry.list_backends():
-                    if backend_substr in backend_name and backend_name not in og.backend_config:
-                        matched.append(backend_name)
-                        og.backend_config[backend_name] = {}
-
-            for backend_name in matched:
+    for og in proj.model.output_groups:
+        for backend_substr, tool_id in tool_pairs:
+            for backend_name in _matching_backends(og, backend_substr):
                 og.backend_config[backend_name]["tool"] = tool_id
+
+        for backend_substr, version in version_pairs:
+            for backend_name in _matching_backends(og, backend_substr):
+                og.backend_config[backend_name]["tool_version"] = version
 
 
 @project.command()
@@ -98,11 +117,18 @@ def _apply_tool_overrides(proj, tool_overrides):
     "-t", "--tool",
     "tool_overrides",
     multiple=True,
-    metavar="BACKEND=TOOL:VARIANT",
-    help="Override tool variant for a backend (e.g. quartus=quartus:prime-25.2)"
+    metavar="BACKEND=TOOL[:VARIANT]",
+    help="Override tool for a backend (e.g. quartus=quartus:prime)"
+)
+@click.option(
+    "--tool-version",
+    "tool_version_overrides",
+    multiple=True,
+    metavar="BACKEND=VERSION",
+    help="Pin a tool version for a backend (e.g. yosys=2026-03-24)"
 )
 @click.pass_context
-async def build(ctx, jobs, tool_overrides):
+async def build(ctx, jobs, tool_overrides, tool_version_overrides):
     """Build a project"""
     logger = get_logger()
     project_file = get_project_file(ctx)
@@ -118,7 +144,7 @@ async def build(ctx, jobs, tool_overrides):
     # Apply command-line overrides
     if jobs is not None:
         proj.set_max_parallel(jobs)
-    _apply_tool_overrides(proj, tool_overrides)
+    _apply_tool_overrides(proj, tool_overrides, tool_version_overrides)
 
     try:
         await proj.build()

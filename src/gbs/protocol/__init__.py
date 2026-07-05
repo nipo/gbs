@@ -10,5 +10,6 @@ from .backend import Backend
 from .dispatcher import Dispatcher
 from .pass_ import Pass
 from .plugin import Plugin
+from .toolchain import ToolchainProvider
 
-__all__ = ["Backend", "Dispatcher", "Pass", "Plugin"]
+__all__ = ["Backend", "Dispatcher", "Pass", "Plugin", "ToolchainProvider"]

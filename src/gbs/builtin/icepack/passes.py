@@ -42,7 +42,7 @@ class IcepackPass(BasePass):
         Returns:
             IcepackDispatcher singleton
         """
-        icepack_tool = self.config.get("tool", "icepack")
+        icepack_tool = self.resolve_tool_identifier("icepack")
 
         return [IcepackDispatcher(
             context=context,

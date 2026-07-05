@@ -52,10 +52,22 @@ async def dump(ctx):
             lines.append(f"  - name: {tool.name}{origin}")
             if tool.variant is not None:
                 lines.append(f"    variant: {tool.variant}")
+            if tool.version is not None:
+                lines.append(f"    version: {tool.version}")
             if tool.config:
                 lines.append(f"    config:")
                 for k, v in tool.config.items():
                     lines.append(f"      {k}: {v}")
+
+    # Toolchains (unexpanded specs, for context)
+    if gbs_config.toolchains:
+        lines.append("")
+        lines.append("toolchains:")
+        for spec in gbs_config.toolchains:
+            origin = f"  # from {spec.origin}" if spec.origin else ""
+            lines.append(f"  - type: {spec.type}{origin}")
+            for k, v in spec.options.items():
+                lines.append(f"    {k}: {v}")
 
     # Repositories
     if gbs_config.repositories:
@@ -100,6 +112,7 @@ async def tool(ctx, name: str):
         marker = " (default)" if i == 0 else ""
         origin = f"  # from {t.origin}" if t.origin else ""
         variant = f":{t.variant}" if t.variant is not None else ""
-        click.echo(f"  {t.name}{variant}{marker}{origin}")
+        version = f"@{t.version}" if t.version is not None else ""
+        click.echo(f"  {t.name}{variant}{version}{marker}{origin}")
         for k, v in t.config.items():
             click.echo(f"    {k}: {v}")

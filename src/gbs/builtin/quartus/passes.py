@@ -52,7 +52,7 @@ class QuartusSynthesizePass(BasePass):
         self._quartus_bin = None
         target = self.config.get("target", {})
         self._part = target.get("part")
-        tool_name = self.config.get("tool", "quartus")
+        tool_name = self.resolve_tool_identifier("quartus")
 
         if self.gbs_config:
             tool_config = self.gbs_config.get_tool(tool_name)
@@ -87,7 +87,7 @@ class QuartusSynthesizePass(BasePass):
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Quartus dispatcher for execution"""
-        tool = self.config.get("tool", "quartus")
+        tool = self.resolve_tool_identifier("quartus")
         vhdl_std = self.config.get("vhdl_standard", "1993")
         target = self.config["target"]
 
