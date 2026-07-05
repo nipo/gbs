@@ -168,7 +168,8 @@ class BuildContext(UIReporter):
         file_type_version: str | None = None,
         typology: 'ResourceTypology | None' = None,
         generated_by: str | None = None,
-        metadata: dict[str, str] | None = None
+        metadata: dict[str, str] | None = None,
+        legacy_file_type: str | list[str] | None = None,
     ) -> 'Resource':
         """Get or create a Resource for a file path (singleton)
 
@@ -180,13 +181,34 @@ class BuildContext(UIReporter):
             typology: Resource typology (SOURCE, INTERMEDIATE, OUTPUT), defaults to INTERMEDIATE
             generated_by: Backend name that generated this file
             metadata: Additional backend-specific metadata
+            legacy_file_type: One or more legacy type names that
+                should also resolve to this resource. Recorded on the
+                resource so an output goal written with the old name
+                still finds this producer (with a rename warning
+                emitted by OutputCopyDispatcher).
 
         Returns:
             Resource instance (same instance for same path)
         """
         from .task import ResourceTypology
+        from .type_aliases import sibling_aliases
 
         path = path.resolve()  # Normalize path
+
+        if isinstance(legacy_file_type, str):
+            legacy_aliases: set[str] = {legacy_file_type}
+        elif legacy_file_type is not None:
+            legacy_aliases = set(legacy_file_type)
+        else:
+            legacy_aliases = set()
+
+        # Any resource whose file_type is a known terminal type
+        # automatically inherits the sibling names too — so dispatchers
+        # creating a `vivado-bitstream` resource in the old code path
+        # keep working while output goals written as `bitstream` (or
+        # any other alias) still match them.
+        if file_type is not None:
+            legacy_aliases |= sibling_aliases(file_type)
 
         # Check shared registry first (cross-output-group sharing)
         if self._resource_registry is not None:
@@ -207,6 +229,8 @@ class BuildContext(UIReporter):
                     r.generated_by = generated_by
                 if metadata:
                     r.metadata.update(metadata)
+                if legacy_aliases:
+                    r.file_type_aliases |= legacy_aliases
                 self._resources[path] = r
                 return r
 
@@ -221,7 +245,8 @@ class BuildContext(UIReporter):
                 library=library,
                 file_type_version=file_type_version,
                 typology=typology,
-                generated_by=generated_by
+                generated_by=generated_by,
+                file_type_aliases=legacy_aliases,
             )
             if metadata:
                 r.metadata.update(metadata)
@@ -245,6 +270,8 @@ class BuildContext(UIReporter):
                 r.generated_by = generated_by
             if metadata:
                 r.metadata.update(metadata)
+            if legacy_aliases:
+                r.file_type_aliases |= legacy_aliases
 
         return self._resources[path]
 
@@ -800,10 +827,18 @@ class BuildContext(UIReporter):
                 # Handle list of acceptable values
                 if isinstance(value, (list, tuple, set)):
                     if attr_value not in value:
+                        if key == "file_type":
+                            aliases = getattr(resource, "file_type_aliases", ()) or ()
+                            if any(v in aliases for v in value):
+                                continue
                         match = False
                         break
                 # Handle exact match
                 elif attr_value != value:
+                    if key == "file_type":
+                        aliases = getattr(resource, "file_type_aliases", ()) or ()
+                        if value in aliases:
+                            continue
                     match = False
                     break
 

@@ -24,8 +24,12 @@ class IseSynthesizePass(BasePass):
     """
     name = "ise-synthesize"
     input_types = {"vhdl", "verilog", "xilinx-ucf"}
-    output_types = {"ise-bitstream", "ise-timing-report", "ise-netlist",
-                     "ise-synthesis-report", "ise-pnr-report"}
+    output_types = {
+        "ise-timing-report", "ise-netlist",
+        "bitstream",        "ise-bitstream",
+        "synthesis-report", "ise-synthesis-report",
+        "pnr-report",       "ise-pnr-report",
+    }
 
     # Prefixes ISE cannot handle (7-series onwards, UltraScale,
     # UltraScale+, Versal). Anything else that starts with "xc" is

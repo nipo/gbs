@@ -108,7 +108,7 @@ class GHDLSimulatePass(BasePass):
     """
     name = "ghdl-simulate"
     input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
-    output_types = {"ghdl-simulator"}
+    output_types = {"simulator", "ghdl-simulator"}
 
     def probe(self) -> str | None:
         return self.probe_tool("ghdl")

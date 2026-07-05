@@ -585,8 +585,11 @@ class PlanRealization:
         # Register build definition files as DEFINITION resources
         self._register_definition_files()
 
-        # Add output goals to pending queue
-        # These are the desired outputs that dispatchers will work backwards from
+        # Add output goals to pending queue. get_resource() auto-aliases
+        # terminal file types (bitstream, synthesis-report, pnr-report,
+        # simulator) with their vendor-prefixed siblings, so an output
+        # written with any name in that family still matches whichever
+        # producer name the picked backend chose.
         for output in self.plan.output_group.outputs:
             output_path = output.path.resolve()
             output_resource = self.build_ctx.get_resource(

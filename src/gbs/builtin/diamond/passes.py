@@ -25,7 +25,11 @@ class DiamondEcp5Pass(BasePass):
     """
     name = "diamond-ecp5"
     input_types = {"vhdl", "verilog", "ecp5-lpf"}
-    output_types = {"ecp5-bitstream", "diamond-synthesis-report", "diamond-pnr-report"}
+    output_types = {
+        "bitstream",        "ecp5-bitstream",
+        "synthesis-report", "diamond-synthesis-report",
+        "pnr-report",       "diamond-pnr-report",
+    }
 
     def __init__(self,
                  part: DiamondPart,

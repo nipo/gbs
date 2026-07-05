@@ -357,6 +357,15 @@ class BuildPlanner(UIReporter):
         """
         candidates = []
 
+        # Expand desired_outputs with terminal-type sibling aliases so
+        # backends that only trigger on their historic vendor-prefixed
+        # names still contribute when the user (or an upstream pass)
+        # requests the canonical name.
+        from ..build.type_aliases import sibling_aliases
+        aliased_outputs = set(desired_outputs)
+        for t in desired_outputs:
+            aliased_outputs |= sibling_aliases(t)
+
         for backend in self.backends:
             # Get backend-specific config
             backend_config = output_group.backend_config.get(backend.name, {}).copy()
@@ -367,7 +376,7 @@ class BuildPlanner(UIReporter):
                 backend_config['target'] = output_group.target
 
             # Ask backend for passes it can contribute
-            passes = backend.contribute_passes(backend_config, desired_outputs, self.project_config, self.gbs_config)
+            passes = backend.contribute_passes(backend_config, aliased_outputs, self.project_config, self.gbs_config)
 
             self.debug(
                 f"Backend {backend.name} contributed passes: {passes}"

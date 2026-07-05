@@ -20,7 +20,7 @@ class EcppackPass(BasePass):
     """
     name = "ecppack"
     input_types = {"ecp5-config"}
-    output_types = {"ecp5-bit", "ecp5-bitstream"}
+    output_types = {"bitstream", "ecp5-bit", "ecp5-bitstream"}
 
     def probe(self) -> str | None:
         return self.probe_tool("ecppack")

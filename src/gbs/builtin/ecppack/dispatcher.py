@@ -53,12 +53,14 @@ class EcppackDispatcher(BaseDispatcher):
         topcell = self.context.get_topcell()
         topcell_library = self.context.get_topcell_library()
 
-        # Create output BIT file (ecp5-bitstream is an alias for ecp5-bit)
+        # Create output BIT file. file_type is the canonical
+        # "bitstream" — get_resource auto-aliases every sibling
+        # (ecp5-bit, ecp5-bitstream, …) so legacy output goals still
+        # find this producer.
         bit_path = self.context.output_path / f"{topcell}.bit"
-        # Use ecp5-bitstream as the primary type
         bit_resource = self.context.get_resource(
             bit_path,
-            file_type="ecp5-bitstream",
+            file_type="bitstream",
             library=topcell_library,
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name,

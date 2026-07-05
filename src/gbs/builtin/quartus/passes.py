@@ -35,12 +35,11 @@ class QuartusSynthesizePass(BasePass):
         "quartus-qsys", "quartus-qsys-script",
     }
     output_types = {
-        "quartus-sof",
         "quartus-jam",
-        "quartus-rbf",
-        "quartus-synthesis-report",
-        "quartus-pnr-report",
         "quartus-project",
+        "bitstream",        "quartus-sof", "quartus-rbf",
+        "synthesis-report", "quartus-synthesis-report",
+        "pnr-report",       "quartus-pnr-report",
     }
 
     def __init__(self,

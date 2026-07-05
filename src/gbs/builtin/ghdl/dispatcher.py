@@ -537,7 +537,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
             self.context.remove_pending(goal.path)
             new_goal = self.context.get_resource(
                 new_path,
-                file_type="ghdl-simulator",
+                file_type="simulator",
                 typology=ResourceTypology.OUTPUT,
                 generated_by=None,
             )
@@ -574,7 +574,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         executable_path = self.context.output_path / executable_name
         executable_resource = self.context.get_resource(
             executable_path,
-            file_type="ghdl-simulator",
+            file_type="simulator",
             library=root_library,
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name,

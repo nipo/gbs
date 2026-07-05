@@ -161,7 +161,7 @@ class NVCDispatcher(BaseDispatcher):
         executable_path = self.context.output_path / "simulator.exe"
         executable_resource = self.context.get_resource(
             executable_path,
-            file_type="nvc-simulator",
+            file_type="simulator",
             library=root_library,
             typology=ResourceTypology.INTERMEDIATE,
             generated_by=self.name,

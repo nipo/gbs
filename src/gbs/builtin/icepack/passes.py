@@ -20,7 +20,7 @@ class IcepackPass(BasePass):
     """
     name = "icepack"
     input_types = {"ice40-asc"}
-    output_types = {"ice40-bin", "ice40-bitstream"}
+    output_types = {"bitstream", "ice40-bin", "ice40-bitstream"}
 
     def probe(self) -> str | None:
         return self.probe_tool("icepack")

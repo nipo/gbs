@@ -145,7 +145,7 @@ class DiamondDispatcher(BaseDispatcher):
         pad_resource = intermediate(self.impl_dir / f"{base}.pad", "diamond-pad-report")
 
         bit_resource = self.context.get_resource(
-            self.impl_dir / f"{base}.bit", file_type="ecp5-bitstream",
+            self.impl_dir / f"{base}.bit", file_type="bitstream",
             typology=ResourceTypology.OUTPUT, generated_by=self.name)
 
         # Stamp file that marks "the Diamond project description is

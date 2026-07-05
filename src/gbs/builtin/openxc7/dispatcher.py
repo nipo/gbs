@@ -108,7 +108,7 @@ class Openxc7Dispatcher(BaseDispatcher):
         bit_path = self.context.output_path / f"{topcell}.bit"
         bit_resource = self.context.get_resource(
             bit_path,
-            file_type="xilinx-bitstream",
+            file_type="bitstream",
             library=topcell_library,
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name,

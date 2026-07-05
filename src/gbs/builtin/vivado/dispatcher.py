@@ -30,7 +30,10 @@ ACCEPTED_INPUT_TYPES = {
     "vivado-ip-repository",
 }
 
-# Output file types and their default filenames
+# Output file types and their default filenames. `bitstream` is the
+# canonical shared name; get_resource() auto-aliases it to
+# `vivado-bitstream`, `xilinx-bitstream`, ... so both legacy names and
+# the flattened name resolve to the file Vivado just wrote.
 OUTPUT_FILES = {
     "vivado-routing-report": "routing-report.txt",
     "vivado-timing-report": "timing-report.txt",
@@ -38,7 +41,7 @@ OUTPUT_FILES = {
     "vivado-usage-report": "usage-report.txt",
     "vivado-netlist-edif": "pnr-netlist.edif",
     "vivado-drc-report": "drc-report.txt",
-    "vivado-bitstream": "final.bit",
+    "bitstream": "final.bit",
 }
 
 

@@ -442,7 +442,8 @@ class Resource(BuildStep):
         library: str | None = None,
         file_type_version: str | None = None,
         typology: ResourceTypology = ResourceTypology.INTERMEDIATE,
-        generated_by: str | None = None
+        generated_by: str | None = None,
+        file_type_aliases: set[str] | None = None,
     ):
         """Initialize resource
 
@@ -454,6 +455,11 @@ class Resource(BuildStep):
             file_type_version: File type version
             typology: Resource typology (SOURCE, INTERMEDIATE, OUTPUT), defaults to INTERMEDIATE
             generated_by: Backend name that generated this file
+            file_type_aliases: Additional file-type names that also
+                resolve to this resource — used to keep legacy names
+                (``vivado-bitstream``, ``ecp5-bitstream``, …) matching
+                producers whose primary ``file_type`` is now the
+                canonical shared name (``bitstream``).
         """
         # Set path BEFORE calling super().__init__() because __hash__ needs it
         self.path = path
@@ -462,6 +468,7 @@ class Resource(BuildStep):
         self.file_type_version = file_type_version
         self.typology = typology
         self.generated_by = generated_by
+        self.file_type_aliases = set(file_type_aliases or ())
 
         # Custom metadata dict for additional attributes not in the standard fields
         self.metadata = {}
@@ -714,11 +721,19 @@ class Task(BuildStep):
         """
         ...
 
+    @staticmethod
+    def __type_matches(resource, requested: str) -> bool:
+        if not isinstance(resource, Resource):
+            return False
+        if resource.file_type == requested:
+            return True
+        return requested in resource.file_type_aliases
+
     def inputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.__inputs))
+        return [r for r in self.__inputs if self.__type_matches(r, type)]
 
     def outputs_of_type(self, type : str) -> List[Resource]:
-        return list(filter(lambda x: isinstance(x, Resource) and x.file_type == type, self.__outputs))
+        return [r for r in self.__outputs if self.__type_matches(r, type)]
         
 # Type for task executor function
 TaskExecutor = Callable[['BuildContext', list[Any]], Awaitable[list[Any]]]

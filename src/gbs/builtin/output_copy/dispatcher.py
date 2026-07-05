@@ -50,6 +50,14 @@ class OutputCopyDispatcher(BaseDispatcher):
                 if res.path != dest_path
             ]
 
+            # filter_pending matches via file_type OR any alias, so if
+            # the producer's primary file_type differs from what the
+            # project asked for, the user is using a legacy alias.
+            matched_via_alias = any(
+                r.file_type is not None and r.file_type != file_type
+                for r in matching
+            )
+
             if not matching:
                 self.debug(
                     f"No source files of type '{file_type}' found "
@@ -64,6 +72,13 @@ class OutputCopyDispatcher(BaseDispatcher):
                 )
 
             source_resource = matching[0]
+
+            if matched_via_alias:
+                self.warning(
+                    f"Output type {file_type!r} is a legacy alias; "
+                    f"consider renaming to {source_resource.file_type!r} "
+                    f"in your project's outputs."
+                )
 
             # Skip if source and destination are the same
             if source_resource.path.resolve() == dest_path.resolve():

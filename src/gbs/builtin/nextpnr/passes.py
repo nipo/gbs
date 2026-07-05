@@ -83,7 +83,7 @@ class NextpnrIce40Pass(NextpnrBasePass):
     default_tool = "nextpnr-ice40"
     part_prefix = ("ice40", "ice5", "up5k")
     input_types = {"ice40-netlist-json", "ice40-pcf"}
-    output_types = {"ice40-asc", "nextpnr-pnr-report"}
+    output_types = {"ice40-asc", "nextpnr-pnr-report", "pnr-report"}
 
 
 class NextpnrEcp5Pass(NextpnrBasePass):
@@ -102,7 +102,7 @@ class NextpnrEcp5Pass(NextpnrBasePass):
     default_tool = "nextpnr-ecp5"
     part_prefix = ("lfe5", "lae5")
     input_types = {"ecp5-netlist-json", "ecp5-lpf"}
-    output_types = {"ecp5-config", "nextpnr-pnr-report"}
+    output_types = {"ecp5-config", "nextpnr-pnr-report", "pnr-report"}
 
 
 class NextpnrXilinxPass(NextpnrBasePass):
@@ -121,7 +121,7 @@ class NextpnrXilinxPass(NextpnrBasePass):
     default_tool = "nextpnr-xilinx"
     part_prefix = ("xc7",)
     input_types = {"xilinx-netlist-json", "xilinx-xdc"}
-    output_types = {"nextpnr-fasm", "nextpnr-pnr-report"}
+    output_types = {"nextpnr-fasm", "nextpnr-pnr-report", "pnr-report"}
 
     def filter_vars(self) -> dict[str, Any]:
         from .. import xilinx_part

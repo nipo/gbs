@@ -56,9 +56,12 @@ class VivadoSynthesizePass(BasePass):
         "vivado-usage-report",
         "vivado-netlist-edif",
         "vivado-drc-report",
-        "vivado-bitstream",
-        "vivado-synthesis-report",
-        "vivado-pnr-report",
+        # Canonical shared names + the legacy aliases planners have
+        # been trained on. Passing both keeps existing project files
+        # working; new projects should use the canonical form.
+        "bitstream",           "vivado-bitstream",
+        "synthesis-report",    "vivado-synthesis-report",
+        "pnr-report",          "vivado-pnr-report",
     }
 
     def probe(self) -> str | None:

@@ -53,12 +53,10 @@ class IcepackDispatcher(BaseDispatcher):
         topcell = self.context.get_topcell()
         topcell_library = self.context.get_topcell_library()
 
-        # Create output BIN file (ice40-bitstream is an alias for ice40-bin)
         bin_path = self.context.output_path / f"{topcell}.bin"
-        # Use ice40-bitstream as the primary type
         bin_resource = self.context.get_resource(
             bin_path,
-            file_type="ice40-bitstream",
+            file_type="bitstream",
             library=topcell_library,
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name,

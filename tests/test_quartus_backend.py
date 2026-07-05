@@ -76,7 +76,9 @@ def test_contribute_passes_no_matching_output():
     backend = QuartusBackend()
 
     config = {"target": {"part": "10CL025YU256C8G"}}
-    output_types = {"netlist", "bitstream"}
+    # Quartus produces bitstreams and reports, never simulators or
+    # waveforms — those should get no pass contribution.
+    output_types = {"simulator", "waveform-vcd"}
 
     passes = backend.contribute_passes(config, output_types)
 

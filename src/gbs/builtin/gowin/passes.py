@@ -28,7 +28,12 @@ class GowinSynthesizePass(BasePass):
     """
     name = "gowin-synthesize"
     input_types = {"vhdl", "verilog", "gowin-cst", "gowin-sdc", "gowin-serdes-config"}
-    output_types = {"gowin-fs", "gowin-bin", "gowin-netlist", "gowin-synthesis-report", "gowin-pnr-report"}
+    output_types = {
+        "gowin-netlist",
+        "bitstream",        "gowin-fs", "gowin-bin",
+        "synthesis-report", "gowin-synthesis-report",
+        "pnr-report",       "gowin-pnr-report",
+    }
 
     def __init__(self,
                  config: dict[str, Any],

@@ -184,7 +184,7 @@ class GowinDispatcher(BaseDispatcher):
         bitstream_bin_file = self.context.output_path / "impl" / "pnr" / f"{output_base_name}.bin"
         bitstream_resource = self.context.get_resource(
             bitstream_file,
-            file_type="gowin-fs",
+            file_type="bitstream",
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name
         )

@@ -20,7 +20,7 @@ class NVCSimulatePass(BasePass):
     """
     name = "nvc-simulate"
     input_types = {"vhdl"}
-    output_types = {"nvc-simulator"}
+    output_types = {"simulator", "nvc-simulator"}
 
     def probe(self) -> str | None:
         return self.probe_tool("nvc")

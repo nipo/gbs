@@ -88,7 +88,7 @@ class YosysIce40Pass(YosysBasePass):
     Output types: ice40-netlist-json
     """
     name = "yosys-ice40"
-    output_types = {"ice40-netlist-json", "yosys-synthesis-report"}
+    output_types = {"ice40-netlist-json", "yosys-synthesis-report", "synthesis-report"}
     synth_target = "synth_ice40"
     extra_filter_vars = {"vendor": "lattice", "family": "ice40"}
     part_prefix = ("ice40", "ice5", "up5k")
@@ -107,7 +107,7 @@ class YosysEcp5Pass(YosysBasePass):
     Output types: ecp5-netlist-json
     """
     name = "yosys-ecp5"
-    output_types = {"ecp5-netlist-json", "yosys-synthesis-report"}
+    output_types = {"ecp5-netlist-json", "yosys-synthesis-report", "synthesis-report"}
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
     part_prefix = ("lfe5", "lae5")
@@ -123,7 +123,7 @@ class YosysXilinxPass(YosysBasePass):
     Output types: xilinx-netlist-json
     """
     name = "yosys-xilinx"
-    output_types = {"xilinx-netlist-json", "yosys-synthesis-report"}
+    output_types = {"xilinx-netlist-json", "yosys-synthesis-report", "synthesis-report"}
     synth_target = "synth_xilinx"
     extra_filter_vars = {"vendor": "xilinx"}
     part_prefix = ("xc7",)

@@ -20,7 +20,7 @@ class Openxc7Pass(BasePass):
     """
     name = "openxc7"
     input_types = {"nextpnr-fasm"}
-    output_types = {"xilinx-bitstream"}
+    output_types = {"bitstream", "xilinx-bitstream"}
 
     def probe(self) -> str | None:
         target = self.config.get("target") or {}
