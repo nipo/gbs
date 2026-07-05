@@ -203,11 +203,13 @@ from .repo import repo
 from .project import project
 from .suite import suite
 from .config import config
+from .openxc7 import openxc7
 
 cli.add_command(repo)
 cli.add_command(project)
 cli.add_command(suite)
 cli.add_command(config)
+cli.add_command(openxc7)
 
 
 # Add result callback to cleanup hub
