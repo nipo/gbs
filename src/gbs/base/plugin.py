@@ -5,7 +5,7 @@ Abstract base class for plugins. Subclass this to create new plugins.
 
 from __future__ import annotations
 from abc import ABC
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..protocol import Backend, Dispatcher, ToolchainProvider
@@ -94,6 +94,30 @@ class BasePlugin(ABC):
 
         Returns:
             Dict mapping toolchain type name to ToolchainProvider class
+        """
+        return {}
+
+    def transform_filter_vars(
+        self,
+        filter_vars: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Contribute extra filter variables synthesised from the
+        canonical set.
+
+        Called once per build after per-pass filter_vars have been
+        unioned into a single flat dictionary. Returned keys are
+        merged into the environment used by repository loaders, but
+        never overwrite variables already present in the canonical
+        set.
+
+        Default implementation returns an empty dict. Override to
+        contribute legacy aliases.
+
+        Args:
+            filter_vars: The current merged filter environment.
+
+        Returns:
+            Extra variables to merge in.
         """
         return {}
 

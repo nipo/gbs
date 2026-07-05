@@ -23,22 +23,14 @@ class NVCSimulatePass(BasePass):
     output_types = {"nvc-simulator"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for NVC simulation
-
-        Sets target-usage=simulation to allow conditional source filtering.
-        Also provides compiler and vhdl-version for backend-specific filtering.
-
-        Returns:
-            Dictionary with filter variables
-        """
-        # Get vhdl_standard from config, default to "1993"
+        """Contribute canonical filter variables for NVC."""
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
         return {
-            "target-usage": "simulation",
-            "compiler": "nvc",
-            "vhdl-version": vhdl_std,
-            "VHDL_VERSION": vhdl_std,
+            "purpose": "simulation",
+            "vhdl_frontend": "nvc",
+            "simulation_engine": "nvc",
+            "vhdl_std": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

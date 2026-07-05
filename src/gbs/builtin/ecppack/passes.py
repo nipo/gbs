@@ -23,14 +23,12 @@ class EcppackPass(BasePass):
     output_types = {"ecp5-bit", "ecp5-bitstream"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for ecppack
-
-        Returns:
-            Dictionary with filter variables
-        """
+        """Contribute canonical filter variables for ecppack."""
         return {
-            "target-usage": "bitstream",
-            "target": "ecp5",
+            "purpose": "synthesis",
+            "vendor": "lattice",
+            "family": "ecp5",
+            "bitstream_engine": "ecppack",
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

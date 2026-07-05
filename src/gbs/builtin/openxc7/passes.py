@@ -24,13 +24,14 @@ class Openxc7Pass(BasePass):
 
     def filter_vars(self) -> dict[str, Any]:
         ret: dict[str, Any] = {
-            "target-usage": "bitstream",
+            "purpose": "synthesis",
             "vendor": "xilinx",
-            "hwdep": "xilinx",
+            "bitstream_engine": "openxc7",
         }
         target = self.config.get("target", {})
         part = target.get("part")
         if part:
+            ret["part"] = part
             ret.update(xilinx_part.filter_vars(part))
         return ret
 

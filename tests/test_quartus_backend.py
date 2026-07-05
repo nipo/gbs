@@ -104,10 +104,11 @@ def test_quartus_synthesize_pass_filter_vars():
 
     filter_vars = pass_instance.filter_vars()
 
-    assert filter_vars["target-usage"] == "synthesis"
+    assert filter_vars["purpose"] == "synthesis"
     assert filter_vars["vendor"] == "altera"
-    assert filter_vars["vhdl-version"] == "2008"
-    assert filter_vars["target_part"] == "10CL025YU256C8G"
+    assert filter_vars["synthesis_engine"] == "quartus"
+    assert filter_vars["vhdl_std"] == "2008"
+    assert filter_vars["part"] == "10CL025YU256C8G"
 
 
 def test_pass_creates_dispatcher():

@@ -64,24 +64,33 @@ class QuartusSynthesizePass(BasePass):
             self._part_info = _query_part_info(self._quartus_bin, self._part)
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for Quartus synthesis"""
+        """Contribute canonical filter variables for a Quartus build.
+
+        Quartus runs synthesis, place-and-route and bitstream
+        generation in a single flow.
+        """
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
-        filter_vars = {
-            "target-usage": "synthesis",
+        filter_vars: dict[str, Any] = {
+            "purpose": "synthesis",
             "vendor": "altera",
-            "hwdep": "altera",
-            "vhdl-version": vhdl_std,
+            "vhdl_frontend": "quartus",
+            "verilog_frontend": "quartus",
+            "synthesis_engine": "quartus",
+            "pnr_engine": "quartus",
+            "bitstream_engine": "quartus",
+            "vhdl_std": vhdl_std,
         }
 
         if self._part:
-            filter_vars["target_part"] = self._part
+            filter_vars["part"] = self._part
+            filter_vars["die"] = self._part
 
         if "family" in self._part_info:
-            filter_vars["target_part_name"] = self._part_info["family"]
+            filter_vars["family"] = self._part_info["family"]
 
         if "device" in self._part_info:
-            filter_vars["target_device"] = self._part_info["device"]
+            filter_vars["die"] = self._part_info["device"]
 
         return filter_vars
 

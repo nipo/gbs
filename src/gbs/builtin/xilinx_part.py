@@ -2,8 +2,8 @@
 
 Vivado writes parts as `name-speedpackage` (e.g. `xc7a35t-1cpg236`).
 Both the vivado and openxc7 flows need to split them into
-(name, speed, package) for filter variables that repositories
-(such as nsl_hwdep) use to enumerate the right sources.
+(name, speed, package) for filter variables that repositories use to
+enumerate the right sources.
 
 nextpnr-xilinx / openxc7 additionally uses a combined `name+package`
 key (without the speed grade) as the chipdb filename.
@@ -28,8 +28,15 @@ def parse_part(part: str) -> Optional[re.Match]:
 
 
 def family_name(part: str) -> Optional[str]:
-    """Return the Xilinx family for a part name (e.g. 'artix7')."""
+    """Return the Xilinx marketing family for a part name.
+
+    Values match the vocabulary defined in doc/design/filter_vars.rst.
+    """
     p = part.lower()
+    if p.startswith("xc6slx"):
+        return "spartan6"
+    if p.startswith("xc6v"):
+        return "virtex6"
     if p.startswith("xc7a"):
         return "artix7"
     if p.startswith("xc7k"):
@@ -40,6 +47,20 @@ def family_name(part: str) -> Optional[str]:
         return "zynq7"
     if p.startswith("xc7s"):
         return "spartan7"
+    if p.startswith("xcau"):
+        return "artixusp"
+    if p.startswith("xczu"):
+        return "zynqusp"
+    if p.startswith("xcvm") or p.startswith("xcvp") or p.startswith("xcve"):
+        return "versal"
+    # UltraScale vs UltraScale+ split: '+' dies end their numeric core
+    # with a 'p' suffix (e.g. xcku3p vs xcku115).
+    m = re.match(r"^xcku(\d+)(p?)", p)
+    if m:
+        return "kintexusp" if m.group(2) == "p" else "kintexu"
+    m = re.match(r"^xcvu(\d+)(p?)", p)
+    if m:
+        return "virtexusp" if m.group(2) == "p" else "virtexu"
     return None
 
 
@@ -56,23 +77,23 @@ def chipdb_key(part: str) -> Optional[str]:
 
 
 def filter_vars(part: str) -> dict[str, str]:
-    """Extract source-enumeration filter variables from a part.
+    """Return canonical technology-stack filter variables for a part.
 
-    Same shape as the vivado backend's variables so a project already
-    targeting vivado enumerates the same sources when built via
-    openxc7.
+    Emits a subset of the canonical set: ``family``, ``die``,
+    ``speed``, ``package``. The caller adds ``vendor`` and the raw
+    ``part`` field.
     """
     result: dict[str, str] = {}
     fam = family_name(part)
     if fam:
-        result["target_part_name"] = fam
+        result["family"] = fam
     m = parse_part(part)
     if m:
-        result["target_part"] = m.group("name")
-        result["target_speed"] = m.group("speed")
-        result["target_package"] = m.group("package")
+        result["die"] = m.group("name")
+        result["speed"] = m.group("speed")
+        result["package"] = m.group("package")
     else:
-        # Fall back to the raw string so unparseable parts still filter
-        # deterministically on `target_part`.
-        result["target_part"] = part
+        # Unparseable part: still expose it as die so filters that
+        # only need a die-level prefix keep working.
+        result["die"] = part
     return result

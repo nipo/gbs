@@ -57,9 +57,14 @@ class DiamondPart:
         return cls(part, match)
 
     @property
-    def hwdep(self) -> str:
-        """NSL hwdep filter value for this part"""
-        return "lattice-ecp5"
+    def family(self) -> str:
+        """Canonical family filter value for this part."""
+        return "ecp5"
+
+    @property
+    def speed_grade(self) -> str:
+        """Canonical speed filter value, dash-prefixed."""
+        return f"-{self.speed}"
 
     def __str__(self) -> str:
         return self.part

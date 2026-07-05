@@ -118,9 +118,10 @@ def test_ghdl_simulate_pass_filter_vars():
 
     filter_vars = pass_instance.filter_vars()
 
-    assert filter_vars["target-usage"] == "simulation"
-    assert filter_vars["compiler"] == "ghdl"
-    assert filter_vars["vhdl-version"] == "2008"
+    assert filter_vars["purpose"] == "simulation"
+    assert filter_vars["simulation_engine"].startswith("ghdl_")
+    assert filter_vars["vhdl_frontend"].startswith("ghdl_")
+    assert filter_vars["vhdl_std"] == "2008"
 
 
 def test_ghdl_simulate_pass_filter_vars_default():
@@ -130,6 +131,7 @@ def test_ghdl_simulate_pass_filter_vars_default():
 
     filter_vars = pass_instance.filter_vars()
 
-    assert filter_vars["target-usage"] == "simulation"
-    assert filter_vars["compiler"] == "ghdl"
-    assert filter_vars["vhdl-version"] == "1993"  # Default
+    assert filter_vars["purpose"] == "simulation"
+    assert filter_vars["simulation_engine"].startswith("ghdl_")
+    assert filter_vars["vhdl_frontend"].startswith("ghdl_")
+    assert filter_vars["vhdl_std"] == "1993"

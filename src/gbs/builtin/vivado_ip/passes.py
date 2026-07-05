@@ -42,18 +42,21 @@ class VivadoIpPackagePass(BasePass):
     }
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for IP packaging
+        """Contribute canonical filter variables for IP packaging.
 
-        Uses target-usage=synthesis since IP packaging needs
-        synthesizable HDL.
+        Packaging needs synthesizable HDL, so ``purpose`` is set to
+        ``synthesis`` and the frontends and synthesis engine point to
+        Vivado.
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
         return {
-            "target-usage": "synthesis",
+            "purpose": "synthesis",
             "vendor": "xilinx",
-            "hwdep": "xilinx",
-            "vhdl-version": vhdl_std,
+            "vhdl_frontend": "vivado",
+            "verilog_frontend": "vivado",
+            "synthesis_engine": "vivado",
+            "vhdl_std": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

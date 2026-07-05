@@ -17,7 +17,7 @@ output:
     topcell: boundary
     filter_vars:
       vendor: gowin
-      target: synthesis
+      purpose: synthesis
     target:
       part: GW5AT-LV60PG484AC1/I0
       use_as_gpio:

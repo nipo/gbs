@@ -46,17 +46,25 @@ class DiamondEcp5Pass(BasePass):
             raise ValueError(f"Diamond synthesis engine must be lse or synplify, not {self.synthesis}")
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for Diamond synthesis
+        """Contribute canonical filter variables for a Diamond build.
 
-        Returns:
-            Dictionary with filter variables
+        The synthesis engine (LSE or Synplify) also drives the VHDL
+        frontend; Diamond then runs its own PnR and bitstream stages.
         """
         return {
-            "target-usage": "synthesis",
+            "purpose": "synthesis",
             "vendor": "lattice",
-            "hwdep": self.part.hwdep,
-            "target_part": self.part.part,
-            "vhdl-version": self.vhdl_std,
+            "family": self.part.family,
+            "part": self.part.part,
+            "die": self.part.device,
+            "speed": self.part.speed_grade,
+            "package": self.part.package_code,
+            "vhdl_frontend": self.synthesis,
+            "verilog_frontend": self.synthesis,
+            "synthesis_engine": self.synthesis,
+            "pnr_engine": "diamond",
+            "bitstream_engine": "diamond",
+            "vhdl_std": self.vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

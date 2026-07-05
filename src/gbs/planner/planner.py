@@ -363,7 +363,10 @@ class BuildPlanner(UIReporter):
         """Combine filter variables from output group and all passes
 
         Filter variables from passes are merged with output_group.filter_vars.
-        Later variables override earlier ones.
+        Later variables override earlier ones. After that, every
+        registered plugin's ``transform_filter_vars`` hook is invoked
+        and its output is merged in, but only for keys not already
+        present in the canonical set.
 
         Args:
             output_group: Output group with base filter_vars
@@ -383,5 +386,25 @@ class BuildPlanner(UIReporter):
                     f"Pass {pass_meta.name} contributed filter_vars: "
                     f"{pass_meta.filter_vars}"
                 )
+
+        from ..plugins import get_plugin_registry
+        registry = get_plugin_registry()
+        for plugin in registry.get_all_plugins():
+            extras = plugin.transform_filter_vars(combined)
+            if not extras:
+                continue
+            self.debug(
+                f"Plugin {plugin.name} contributed extra filter_vars: "
+                f"{extras}"
+            )
+            for key, value in extras.items():
+                if key in combined:
+                    self.debug(
+                        f"Plugin {plugin.name} tried to overwrite "
+                        f"canonical {key}={combined[key]!r} with {value!r}; "
+                        f"canonical value kept"
+                    )
+                    continue
+                combined[key] = value
 
         return combined

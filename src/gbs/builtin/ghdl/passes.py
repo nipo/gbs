@@ -57,20 +57,18 @@ class GHDLAnalyzePass(BasePass):
     output_types = {"ghdl-cf"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for GHDL analysis
+        """Contribute canonical filter variables for GHDL analysis.
 
-        Returns:
-            Dictionary with filter variables
+        Analysis is a shared front stage: it can feed a simulator or a
+        yosys+ghdl synthesis flow. The pass therefore does not own
+        ``purpose`` or ``simulation_engine`` — the terminal pass in
+        the plan sets those.
         """
-        # Get vhdl_standard from config, default to "1993"
         vhdl_std = self.config.get("vhdl_standard", "1993")
-
+        flavor = _GhdlFlavorProbe.flavor(self.config, self.gbs_config)
         return {
-            "target-usage": "simulation",
-            "tool": "ghdl",
-            "compiler": "ghdl",
-            "vhdl-version": vhdl_std,
-            "ghdl-flavor": _GhdlFlavorProbe.flavor(self.config, self.gbs_config),
+            "vhdl_frontend": f"ghdl_{flavor}",
+            "vhdl_std": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
@@ -110,22 +108,15 @@ class GHDLSimulatePass(BasePass):
     output_types = {"ghdl-simulator"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for GHDL simulation
-
-        Sets target-usage=simulation to allow conditional source filtering.
-
-        Returns:
-            Dictionary with filter variables
-        """
-        # Get vhdl_standard from config, default to "1993"
+        """Contribute canonical filter variables for GHDL simulation."""
         vhdl_std = self.config.get("vhdl_standard", "1993")
-
+        flavor = _GhdlFlavorProbe.flavor(self.config, self.gbs_config)
+        engine = f"ghdl_{flavor}"
         return {
-            "target-usage": "simulation",
-            "tool": "ghdl",
-            "compiler": "ghdl",
-            "vhdl-version": vhdl_std,
-            "ghdl-flavor": _GhdlFlavorProbe.flavor(self.config, self.gbs_config),
+            "purpose": "simulation",
+            "vhdl_frontend": engine,
+            "simulation_engine": engine,
+            "vhdl_std": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

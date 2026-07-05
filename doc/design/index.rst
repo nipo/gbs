@@ -13,6 +13,7 @@ GBS follows a layered architecture with clear separation between:
 
    configuration
    repositories
+   filter_vars
    build_system
    plugins
    suite
@@ -116,12 +117,13 @@ The planner works backwards from desired outputs:
 3. If not, recursively find passes that produce the missing types
 4. Return the shortest pass chain (iterative deepening)
 
-**Filter Variables**
+**Filter Variables** (:doc:`filter_vars`)
 
 Filter variables control source selection. They come from:
 
 1. OutputGroup configuration (user-specified)
-2. Passes (e.g., ``target-usage: simulation``)
+2. Passes (e.g., ``purpose: simulation``)
 
 Combined variables are used to evaluate conditional groups in partitions,
-selecting the appropriate sources and dependencies.
+selecting the appropriate sources and dependencies. See
+:doc:`filter_vars` for the canonical variable set and value vocabulary.

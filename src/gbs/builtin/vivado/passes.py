@@ -62,100 +62,39 @@ class VivadoSynthesizePass(BasePass):
     }
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for Vivado synthesis
+        """Contribute canonical filter variables for a Vivado build.
 
-        Sets target-usage=synthesis to allow conditional source filtering.
-
-        Returns:
-            Dictionary with filter variables
+        Vivado runs synthesis, place-and-route and bitstream generation
+        in a single pass, so all three engine variables are set.
         """
-        # Get vhdl_standard from config, default to "1993"
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
-        filter_vars = {
-            "target-usage": "synthesis",
+        filter_vars: dict[str, Any] = {
+            "purpose": "synthesis",
             "vendor": "xilinx",
-            "hwdep": "xilinx",
-            "vhdl-version": vhdl_std,
+            "vhdl_frontend": "vivado",
+            "verilog_frontend": "vivado",
+            "synthesis_engine": "vivado",
+            "pnr_engine": "vivado",
+            "bitstream_engine": "vivado",
+            "vhdl_std": vhdl_std,
         }
 
-        # Get device from backend config (populated from output group's target)
+        from .. import xilinx_part
         target = self.config.get("target", {})
         device = target.get("part")
         if device:
-            filter_vars["target_part"] = device
-
-            # Extract family from part name (e.g., "xc7a35tcsg324-1" -> "artix7")
-            part_family = self._extract_family(device)
-            if part_family:
-                filter_vars["target_part_name"] = part_family
-
-            # Extract speed grade and package from part number
-            # Vivado format: xc7a50t-1fgg484 (name+speed+package)
-            import re
-            m = re.match(
-                r"^(?P<name>xc[^-]+?)(?P<speed>-\d)(?P<package>[a-z]+\d+)$",
-                device, re.I,
-            )
-            if m:
-                filter_vars["target_part"] = m.group("name")
-                filter_vars["target_speed"] = m.group("speed")
-                filter_vars["target_package"] = m.group("package")
-            else:
+            filter_vars["part"] = device
+            filter_vars.update(xilinx_part.filter_vars(device))
+            if not xilinx_part.parse_part(device):
                 import logging
                 logger = logging.getLogger("gbs.builtin.vivado.passes")
-                logger.warning(f"Cannot parse device <{device}>, should be <part><-speed><package>")
+                logger.warning(
+                    f"Cannot parse device <{device}>, should be "
+                    f"<part><-speed><package>"
+                )
 
         return filter_vars
-
-    def _extract_family(self, part: str) -> str | None:
-        """Extract FPGA family from part number
-
-        Args:
-            part: Xilinx part number (e.g., "xc7a35tcsg324-1")
-
-        Returns:
-            Family name (e.g., "artix7") or None
-        """
-        part_lower = part.lower()
-
-        # 7-series
-        if part_lower.startswith("xc7a"):
-            return "artix7"
-        elif part_lower.startswith("xc7k"):
-            return "kintex7"
-        elif part_lower.startswith("xc7v"):
-            return "virtex7"
-        elif part_lower.startswith("xc7z"):
-            return "zynq7"
-        elif part_lower.startswith("xc7s"):
-            return "spartan7"
-
-        # UltraScale
-        elif part_lower.startswith("xcku"):
-            return "kintexu"
-        elif part_lower.startswith("xcvu"):
-            return "virtexu"
-
-        # UltraScale+
-        elif part_lower.startswith("xczu"):
-            return "zynquplus"
-        elif part_lower.startswith("xcau"):
-            return "artixuplus"
-        elif part_lower.startswith("xckup"):
-            return "kintexuplus"
-        elif part_lower.startswith("xcvup"):
-            return "virtexuplus"
-
-        # Versal
-        elif part_lower.startswith("xcvm"):
-            return "versal"
-        elif part_lower.startswith("xcvp"):
-            return "versal"
-        elif part_lower.startswith("xcve"):
-            return "versal"
-
-        return None
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Vivado dispatcher for execution

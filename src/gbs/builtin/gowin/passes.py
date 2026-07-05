@@ -53,24 +53,26 @@ class GowinSynthesizePass(BasePass):
             self.device_info = get_device_info(self.gowin_path, self.device)
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for Gowin synthesis
+        """Contribute canonical filter variables for a Gowin build.
 
-        Sets target-usage=synthesis to allow conditional source filtering.
-        Also provides device characteristics if device is configured.
-
-        Returns:
-            Dictionary with filter variables
+        Gowin IDE runs synthesis, place-and-route and bitstream
+        generation as a single flow.
         """
-        filter_vars = {
-            "target-usage": "synthesis",
+        filter_vars: dict[str, Any] = {
+            "purpose": "synthesis",
             "vendor": "gowin",
-            "hwdep": "gowin",
-            "vhdl-version": self.vhdl_std,
+            "vhdl_frontend": "gowin_synth",
+            "verilog_frontend": "gowin_synth",
+            "synthesis_engine": "gowin_synth",
+            "pnr_engine": "gowin_pnr",
+            "bitstream_engine": "gowin_bit",
+            "vhdl_std": self.vhdl_std,
         }
 
         if self.device_info:
-            filter_vars["target_part"] = self.device_info.part
-            filter_vars["target_part_name"] = self.device_info.family
+            filter_vars["part"] = self.device_info.part
+            filter_vars["die"] = self.device_info.part
+            filter_vars["family"] = self.device_info.family
 
         return filter_vars
 

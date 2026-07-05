@@ -25,14 +25,10 @@ class NextpnrBasePass(BasePass):
     default_tool: str = None
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for nextpnr
-
-        Returns:
-            Dictionary with filter variables
-        """
+        """Contribute canonical filter variables for nextpnr PnR."""
         return {
-            "target-usage": "pnr",
-            "target": self.target,
+            "purpose": "synthesis",
+            "pnr_engine": "nextpnr",
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:
@@ -115,10 +111,10 @@ class NextpnrXilinxPass(NextpnrBasePass):
         from .. import xilinx_part
         ret = super().filter_vars()
         ret["vendor"] = "xilinx"
-        ret["hwdep"] = "xilinx"
         target = self.config.get("target", {})
         part = target.get("part")
         if part:
+            ret["part"] = part
             ret.update(xilinx_part.filter_vars(part))
         return ret
 

@@ -28,17 +28,15 @@ class QuestaSimulatePass(BasePass):
     output_types = {"questa-project", "questa-gui-launcher"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for QuestaSim simulation
-
-        Returns:
-            Dictionary with filter variables
-        """
+        """Contribute canonical filter variables for QuestaSim."""
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
         return {
-            "target-usage": "simulation",
-            "compiler": "questa",
-            "vhdl-version": vhdl_std,
+            "purpose": "simulation",
+            "vhdl_frontend": "questa",
+            "verilog_frontend": "questa",
+            "simulation_engine": "questa",
+            "vhdl_std": vhdl_std,
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

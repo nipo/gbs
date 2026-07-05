@@ -141,11 +141,14 @@ Examples:
    # Select by vendor
    expression: vendor = "xilinx"
 
-   # Select by target usage
-   expression: target-usage = "simulation"
+   # Select by build purpose
+   expression: purpose = "simulation"
 
    # Default fallback
    expression: default
+
+See :doc:`filter_vars` for the full canonical variable set and
+allowed values.
 
 Conditional Dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -170,7 +173,7 @@ Conditional Dependencies
            deps:
              - nsl_hwdep.xilinx_clock
 
-         - expression: target-usage = "simulation"
+         - expression: purpose = "simulation"
            deps:
              - nsl_hwdep.generic_clock
 
@@ -190,7 +193,7 @@ Conditional Sources
    groups:
      - name: implementation
        conditions:
-         - expression: target-usage = "simulation"
+         - expression: purpose = "simulation"
            sources:
              - file_type: vhdl
                files:
@@ -261,11 +264,18 @@ Filter variables control conditional selection. They come from two sources:
 
       def filter_vars(self):
           return {
-              "target-usage": "simulation",
-              "compiler": "ghdl",
+              "purpose": "simulation",
+              "simulation_engine": "ghdl_llvm",
+              "vhdl_frontend": "ghdl_llvm",
+              "vhdl_std": "2008",
           }
 
-Variables from both sources are merged, with OutputGroup taking precedence.
+Variables from both sources are merged, with OutputGroup taking
+precedence. Plugins may additionally contribute synthetic variables
+(typically legacy aliases) via
+:py:meth:`Plugin.transform_filter_vars`.
+
+See :doc:`filter_vars` for the full canonical variable set.
 
 Dependency Resolution
 ---------------------

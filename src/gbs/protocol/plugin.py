@@ -6,7 +6,7 @@ gbs.base.BasePlugin instead.
 """
 
 from __future__ import annotations
-from typing import Protocol, runtime_checkable, TYPE_CHECKING
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .backend import Backend
@@ -86,5 +86,30 @@ class Plugin(Protocol):
 
         Returns:
             Dict mapping toolchain type name to ToolchainProvider class
+        """
+        ...
+
+    def transform_filter_vars(
+        self,
+        filter_vars: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Contribute extra filter variables synthesised from the
+        canonical set.
+
+        Called once per build after per-pass filter_vars have been
+        unioned into a single flat dictionary. Returned keys are
+        merged into the environment used by repository loaders.
+
+        The canonical set (contributed by builtin backends) takes
+        precedence: a plugin cannot overwrite a canonical variable
+        already set by a pass. This method exists so out-of-tree
+        consumers can synthesise legacy variable aliases without
+        forking GBS.
+
+        Args:
+            filter_vars: The current merged filter environment.
+
+        Returns:
+            Extra variables to merge in (typically legacy aliases).
         """
         ...

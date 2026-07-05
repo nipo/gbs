@@ -23,14 +23,12 @@ class IcepackPass(BasePass):
     output_types = {"ice40-bin", "ice40-bitstream"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for icepack
-
-        Returns:
-            Dictionary with filter variables
-        """
+        """Contribute canonical filter variables for icepack."""
         return {
-            "target-usage": "bitstream",
-            "target": "ice40",
+            "purpose": "synthesis",
+            "vendor": "lattice",
+            "family": "ice40",
+            "bitstream_engine": "icepack",
         }
 
     def dispatchers(self, context) -> list[Dispatcher]:

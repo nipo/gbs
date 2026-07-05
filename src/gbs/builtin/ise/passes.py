@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 from typing import Any
-import re
 from ...base import BasePass
 from ...protocol import Dispatcher
+from .. import xilinx_part
 from .dispatcher import IseDispatcher
 
 
@@ -28,38 +28,32 @@ class IseSynthesizePass(BasePass):
                      "ise-synthesis-report", "ise-pnr-report"}
 
     def filter_vars(self) -> dict[str, Any]:
-        """Contribute filter variables for ISE synthesis
-
-        Sets target-usage=synthesis to allow conditional source filtering.
-
-        Returns:
-            Dictionary with filter variables
-        """
-
-        # Get device from backend config (populated from output group's target)
+        """Contribute canonical filter variables for an ISE build."""
         target = self.config.get("target", {})
         part = target.get("part")
         if not part:
             raise ValueError("No target part")
-        m = re.match(f"^(?P<name>xc[^-]+)(?P<speed>-[0-9])(?P<package>[a-z0-9]+)$", part)
+        if not xilinx_part.parse_part(part):
+            raise ValueError(
+                f"Cannot parse ISE target part {part!r}, "
+                f"expected <die><-speed><package>"
+            )
 
-        if not m:
-            raise ValueError("Must supply target part in backend configuration")
-
-        # Get vhdl_standard from config, default to "1993"
         vhdl_std = self.config.get("vhdl_standard", "1993")
 
-        return {
-            "target-usage": "synthesis",
+        ret: dict[str, Any] = {
+            "purpose": "synthesis",
             "vendor": "xilinx",
-            "hwdep": "xilinx",
-            "target_part": part,
-            "part_name": m.group("name"),
-            "part_speed": m.group("speed"),
-            "target_speed": m.group("speed").lstrip("-"),
-            "part_package": m.group("package"),
-            "vhdl-version": vhdl_std,
+            "vhdl_frontend": "ise",
+            "verilog_frontend": "ise",
+            "synthesis_engine": "ise",
+            "pnr_engine": "ise",
+            "bitstream_engine": "ise",
+            "vhdl_std": vhdl_std,
+            "part": part,
         }
+        ret.update(xilinx_part.filter_vars(part))
+        return ret
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create ISE dispatcher for execution
