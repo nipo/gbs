@@ -5,7 +5,7 @@ from typing import Any
 
 from ...base import BaseBackend
 from ...base import BasePass
-from .passes import YosysIce40Pass, YosysEcp5Pass
+from .passes import YosysIce40Pass, YosysEcp5Pass, YosysXilinxPass
 
 
 class YosysBackend(BaseBackend):
@@ -51,5 +51,9 @@ class YosysBackend(BaseBackend):
         # Contribute ecp5 synthesis pass if ecp5 netlist is needed
         if "ecp5-netlist-json" in output_types:
             passes.append(YosysEcp5Pass(config, project_config, gbs_config))
+
+        # Contribute xilinx (7-series via nextpnr-xilinx/openxc7) synthesis pass
+        if "xilinx-netlist-json" in output_types:
+            passes.append(YosysXilinxPass(config, project_config, gbs_config))
 
         return passes

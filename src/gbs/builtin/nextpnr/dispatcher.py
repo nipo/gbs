@@ -13,8 +13,15 @@ from . import task
 
 @dataclass
 class NextpnrTargetConfig:
-    """Configuration for a specific nextpnr target"""
-    name: str                    # Target name (e.g., "ice40", "ecp5")
+    """Configuration for a specific nextpnr target.
+
+    Two device-family styles exist. Lattice targets (ice40, ecp5)
+    take `--<part> --package <pkg>` on the command line. Xilinx uses
+    a pre-generated chipdb binary and takes `--chipdb <path>` instead
+    - the part+package are baked into the chipdb, so `part_flag` is
+    None for xilinx and the dispatcher supplies the chipdb path.
+    """
+    name: str                    # Target name (e.g., "ice40", "ecp5", "xilinx")
     default_executable: str      # Default executable name
     netlist_type: str            # Input netlist file type
     output_type: str             # Output file type
@@ -22,6 +29,7 @@ class NextpnrTargetConfig:
     output_flag: str             # Command-line flag for output file
     constraint_type: str         # Constraint file type
     constraint_flag: str         # Command-line flag for constraint file
+    use_chipdb: bool = False     # True for --chipdb style targets (xilinx)
 
 
 # Target configurations
@@ -45,6 +53,17 @@ NEXTPNR_TARGETS = {
         output_flag="--textcfg",
         constraint_type="ecp5-lpf",
         constraint_flag="--lpf",
+    ),
+    "xilinx": NextpnrTargetConfig(
+        name="xilinx",
+        default_executable="nextpnr-xilinx",
+        netlist_type="xilinx-netlist-json",
+        output_type="nextpnr-fasm",
+        output_extension=".fasm",
+        output_flag="--fasm",
+        constraint_type="xilinx-xdc",
+        constraint_flag="--xdc",
+        use_chipdb=True,
     ),
 }
 
@@ -84,6 +103,42 @@ class NextpnrDispatcher(BaseDispatcher):
             self.debug(f"Using nextpnr executable: {self._nextpnr_executable}")
 
         return self._nextpnr_executable
+
+    def get_chipdb_path(self) -> Path:
+        """Resolve the --chipdb binary path for xilinx targets.
+
+        Combines `chipdb_root` (a directory from tool config, populated
+        by the apio provider) with the chipdb key derived from `part`.
+        The chipdb file is named `<name><package>.bin` - speed grade
+        is baked into the prjxray part.json rather than the chipdb.
+
+        Raises:
+            BuildError: If chipdb_root is unset, the part cannot be parsed,
+                or the .bin file does not exist.
+        """
+        from ...build.task import BuildError
+        from .. import xilinx_part
+        chipdb_root = self.get_tool_option("chipdb_root", None)
+        if chipdb_root is None:
+            raise BuildError(
+                f"nextpnr-xilinx needs a 'chipdb_root' in its tool config; "
+                f"install openxc7 via apio, or set it explicitly on "
+                f"tools:{self.tool_name}."
+            )
+        key = xilinx_part.chipdb_key(self.part)
+        if key is None:
+            raise BuildError(
+                f"Cannot derive chipdb name from part '{self.part}'; "
+                f"expected the vivado-style xc<name>-<speed><package> form."
+            )
+        chipdb_path = expand_path(chipdb_root) / f"{key}.bin"
+        if not chipdb_path.is_file():
+            raise BuildError(
+                f"chipdb {chipdb_path} not found; the openxc7 install "
+                f"ships a limited set of pre-generated chipdbs, extra "
+                f"parts need to be built with bbasm."
+            )
+        return chipdb_path
 
     async def process(self) -> None:
         """Run place-and-route using nextpnr"""

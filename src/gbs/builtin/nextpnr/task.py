@@ -78,12 +78,19 @@ class PlaceAndRoute(Task):
         topcell = self.dispatcher.context.get_topcell()
         cmd = [
             self.dispatcher._get_nextpnr_executable(),
-            f"--{self.dispatcher.part}",
-            "--package", self.dispatcher.package,
-            "--json", str(netlist_rsrc.path),
-            tc.output_flag, str(output_path),
-            "--top", topcell,
         ]
+        if tc.use_chipdb:
+            # Xilinx: chipdb encodes both part and package; top module
+            # is read from the JSON netlist so no --top flag is passed.
+            cmd += ["--chipdb", str(self.dispatcher.get_chipdb_path())]
+            cmd += ["--json", str(netlist_rsrc.path),
+                    tc.output_flag, str(output_path)]
+        else:
+            cmd += [f"--{self.dispatcher.part}",
+                    "--package", self.dispatcher.package,
+                    "--json", str(netlist_rsrc.path),
+                    tc.output_flag, str(output_path),
+                    "--top", topcell]
 
         # Always generate log file
         log_outputs = self.outputs_of_type("nextpnr-log")
@@ -94,7 +101,9 @@ class PlaceAndRoute(Task):
         constraints = self.inputs_of_type(tc.constraint_type)
         for constraint_res in constraints:
             cmd.extend([tc.constraint_flag, str(constraint_res.path)])
-        if not constraints:
+        if not constraints and tc.name == "ice40":
+            # Only ice40 supports this permissive flag; xilinx and ecp5
+            # will hard-error if no constraint file is provided.
             cmd.append("--pcf-allow-unconstrained")
 
         # Run nextpnr

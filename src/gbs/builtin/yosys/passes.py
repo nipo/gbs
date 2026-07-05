@@ -93,3 +93,30 @@ class YosysEcp5Pass(YosysBasePass):
     output_types = {"ecp5-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_ecp5"
     extra_filter_vars = {"hwdep": "lattice-ecp5"}
+
+
+class YosysXilinxPass(YosysBasePass):
+    """Pass that synthesizes VHDL to a Xilinx netlist using Yosys.
+
+    Emits a JSON netlist that nextpnr-xilinx (via openxc7) can
+    ingest. `synth_xilinx` defaults to xc7 in the shipped yosys.
+
+    Input types: ghdl-cf
+    Output types: xilinx-netlist-json
+    """
+    name = "yosys-xilinx"
+    output_types = {"xilinx-netlist-json", "yosys-synthesis-report"}
+    synth_target = "synth_xilinx"
+    extra_filter_vars = {"hwdep": "xilinx", "vendor": "xilinx"}
+
+    def filter_vars(self) -> dict[str, Any]:
+        """Match the vivado backend's filter shape so a project builds
+        the same sources under either flow.
+        """
+        from .. import xilinx_part
+        ret = super().filter_vars()
+        target = self.config.get("target", {})
+        part = target.get("part")
+        if part:
+            ret.update(xilinx_part.filter_vars(part))
+        return ret

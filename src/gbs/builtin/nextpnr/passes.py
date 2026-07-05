@@ -92,3 +92,45 @@ class NextpnrEcp5Pass(NextpnrBasePass):
     default_tool = "nextpnr-ecp5"
     input_types = {"ecp5-netlist-json", "ecp5-lpf"}
     output_types = {"ecp5-config", "nextpnr-pnr-report"}
+
+
+class NextpnrXilinxPass(NextpnrBasePass):
+    """Pass that performs place-and-route for Xilinx Series-7 using
+    nextpnr-xilinx (openxc7 fork).
+
+    Input types: xilinx-netlist-json, xilinx-xdc
+    Output types: nextpnr-fasm
+
+    The chipdb binary is resolved by the dispatcher from the tool's
+    `chipdb_root` config key (populated by the apio provider from an
+    openxc7 install).
+    """
+    name = "nextpnr-xilinx"
+    target = "xilinx"
+    default_tool = "nextpnr-xilinx"
+    input_types = {"xilinx-netlist-json", "xilinx-xdc"}
+    output_types = {"nextpnr-fasm", "nextpnr-pnr-report"}
+
+    def filter_vars(self) -> dict[str, Any]:
+        from .. import xilinx_part
+        ret = super().filter_vars()
+        ret["vendor"] = "xilinx"
+        ret["hwdep"] = "xilinx"
+        target = self.config.get("target", {})
+        part = target.get("part")
+        if part:
+            ret.update(xilinx_part.filter_vars(part))
+        return ret
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Xilinx target has no `package` field: the chipdb encodes it."""
+        nextpnr_tool = self.resolve_tool_identifier(self.default_tool)
+        target = self.config.get("target", {})
+        part = target["part"]
+        return [NextpnrDispatcher(
+            context=context,
+            target=self.target,
+            nextpnr_tool=nextpnr_tool,
+            part=part,
+            package="",
+        )]

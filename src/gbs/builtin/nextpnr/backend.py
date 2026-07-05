@@ -5,7 +5,7 @@ from typing import Any
 
 from ...base import BaseBackend
 from ...base import BasePass
-from .passes import NextpnrIce40Pass, NextpnrEcp5Pass
+from .passes import NextpnrIce40Pass, NextpnrEcp5Pass, NextpnrXilinxPass
 
 
 class NextpnrBackend(BaseBackend):
@@ -53,5 +53,9 @@ class NextpnrBackend(BaseBackend):
         # Contribute ecp5 PnR pass if ecp5 config is needed
         if "ecp5-config" in output_types:
             passes.append(NextpnrEcp5Pass(config, project_config, gbs_config))
+
+        # Contribute xilinx PnR pass if a FASM output is needed (openxc7)
+        if "nextpnr-fasm" in output_types:
+            passes.append(NextpnrXilinxPass(config, project_config, gbs_config))
 
         return passes
