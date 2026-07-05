@@ -138,16 +138,22 @@ class YosysDispatcher(BaseDispatcher):
 
         if not self.intermediate:
             prev = self.vhdl_ingress_stamp
-            for i, step in enumerate(self.steps):
-                output = self.context.get_stamp(f"yosys_intermediate_{i}.stamp")
-                t = task.RawCommand(self,
-                                    name = f"yosys_intermediate_{i}",
-                                    description = f"Yosys Command '{step}'",
-                                    command = step,
-                                    inputs = [prev],
-                                    outputs = [output])
-                self.intermediate.append(output)
-                prev = self.intermediate[-1]
+        else:
+            prev = self.intermediate[-1]
+
+        for i, step in enumerate(self.steps):
+            if len(self.intermediate) >= i:
+                continue
+            output = self.context.get_stamp(f"yosys_intermediate_{i}.stamp")
+            t = task.RawCommand(self,
+                                name = f"yosys_intermediate_{i}",
+                                description = f"Yosys Command '{step}'",
+                                command = step,
+                                inputs = [prev],
+                                outputs = [output])
+            self.intermediate.append(output)
+            prev = self.intermediate[-1]
+
         self.write_netlist.add_input(prev)
 
         # Get libraries in dependency order and process VHDL sources
