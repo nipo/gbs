@@ -98,7 +98,7 @@ DEFAULT_MAX_LOG_COUNT = 10
 @click.option(
     "--log-dir",
     type=click.Path(path_type=Path),
-    help="Custom directory for log files (default: .gbs/logs)"
+    help="Custom directory for log files (default: gbs-build/logs)"
 )
 @click.pass_context
 async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):

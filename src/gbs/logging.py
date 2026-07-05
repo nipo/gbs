@@ -82,7 +82,7 @@ class GBSLogger:
 
         Args:
             name: Logger name
-            log_dir: Directory for log files (default: .gbs/logs in current directory)
+            log_dir: Directory for log files (default: gbs-build/logs in current directory)
             console_level: Logging level for console output
             file_level: Logging level for file output (always more verbose)
         """
@@ -95,7 +95,7 @@ class GBSLogger:
 
         # Set up log directory
         if log_dir is None:
-            log_dir = Path.cwd() / ".gbs" / "logs"
+            log_dir = Path.cwd() / "gbs-build" / "logs"
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -252,15 +252,18 @@ def get_logger(name: str = "gbs") -> logging.Logger:
     Returns:
         Logger instance
     """
-    if _logger_instance is None:
-        # Auto-initialize with defaults if not set up
-        setup_logging()
-
     if name == "gbs":
+        if _logger_instance is None:
+            # Auto-initialize with defaults if not set up
+            setup_logging()
         return _logger_instance.logger
-    else:
-        # Create child logger
-        return logging.getLogger(f"gbs.{name}")
+
+    # Child logger: return by-name reference; the "gbs" root logger will
+    # be configured by setup_logging() and child records propagate up.
+    # Not auto-initializing here avoids creating a stray log file when
+    # modules do `logger = get_logger(__name__)` at import time before
+    # the CLI has processed -C/--directory.
+    return logging.getLogger(f"gbs.{name}")
 
 
 def get_log_file() -> Optional[Path]:

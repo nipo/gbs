@@ -16,18 +16,18 @@ General Options
      -v, --verbose              Enable verbose output (INFO level)
      -d, --debug                Enable debug output (DEBUG level)
      -P, --no-progress          Disable progress bars
-     --log-dir PATH             Custom directory for log files (default: .gbs/logs)
+     --log-dir PATH             Custom directory for log files (default: gbs-build/logs)
      --help                     Show help and exit
 
 ``-C, --directory DIRECTORY``
     Change to the specified directory before executing the command. All relative
     paths (project files, logs, etc.) will be resolved relative to this directory.
-    Logs are written to ``<directory>/.gbs/logs/``.
+    Logs are written to ``<directory>/gbs-build/logs/``.
 
 ``-P, --no-progress``
     Disable progress bars in terminal output.
 
-Log files are written to ``.gbs/logs/`` by default. Use ``--verbose`` or
+Log files are written to ``gbs-build/logs/`` by default. Use ``--verbose`` or
 ``--debug`` for console output; otherwise only errors are shown.
 
 Project Commands
@@ -319,7 +319,7 @@ Environment Variables
 Logging
 -------
 
-GBS writes detailed logs to ``.gbs/logs/`` in the current directory:
+GBS writes detailed logs to ``gbs-build/logs/`` in the current directory:
 
 - ``gbs.log``: Current session log
 - ``gbs.TIMESTAMP.log``: Archived logs

@@ -246,7 +246,7 @@ or project). Later levels override earlier ones.
       max_parallel: 4
 
 ``max_log_count``
-   Maximum number of log files to keep in ``.gbs/logs/``. Old logs are
+   Maximum number of log files to keep in ``gbs-build/logs/``. Old logs are
    automatically removed at startup, keeping only the most recent ones.
    Set to ``0`` to disable cleanup and keep all logs. Default is ``10``.
 
