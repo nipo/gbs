@@ -156,6 +156,14 @@ class BuildPlanner(UIReporter):
         self.backends = backends
         self.project_config = project_config or {}
         self.gbs_config = gbs_config
+        # Rejection log keyed by "backend.name/pass.name" -> reason. Populated
+        # by _query_backends when a pass's probe() returns a reason.
+        # Used only by the plan-failure diagnostic.
+        self._rejected_passes: dict[str, str] = {}
+        # Every candidate chain the planner considered; kept so the
+        # diagnostic can print the full search when no viable chain
+        # remains.
+        self._considered_chains: list[list[str]] = []
 
         # Compute available source file types
         self.available_source_types = set()
@@ -222,9 +230,19 @@ class BuildPlanner(UIReporter):
                                    acceptable = output_types,
                                    passes = [])
 
+        # Reset per-plan diagnostic state so each plan() call reports
+        # only its own search.
+        self._rejected_passes = {}
+        self._considered_chains = []
+
         possibilities = self._progress_to_sources(output_group, source_types, initial_plan)
 
         self.debug(f"-> {possibilities}")
+
+        # Record every full candidate the search enumerated, before
+        # user filters kick in — the diagnostic lists these too.
+        for pp in possibilities:
+            self._considered_chains.append([p.name for p in pp.passes])
 
         selected = []
         for pp in possibilities:
@@ -248,10 +266,21 @@ class BuildPlanner(UIReporter):
                     if not any(other < pass_sets[i] for other in pass_sets)]
 
         if not selected:
-            raise PlanningError(f"Cannot find passes from {source_types} to {output_types}")
+            raise PlanningError(self._format_plan_failure(
+                output_group,
+                source_types,
+                output_types,
+                "Cannot find passes",
+            ))
 
         if len(selected) != 1:
-            raise PlanningError(f"Too many possibilities from {source_types} to {output_types}: {selected}")
+            raise PlanningError(self._format_plan_failure(
+                output_group,
+                source_types,
+                output_types,
+                f"{len(selected)} viable plans remain",
+                surviving=[[p.name for p in pp.passes] for pp in selected],
+            ))
 
         # Collect union of all types_with_library from all passes
         types_with_library = set()
@@ -344,8 +373,15 @@ class BuildPlanner(UIReporter):
                 f"Backend {backend.name} contributed passes: {passes}"
             )
 
-            # Wrap in PassMetadata
+            # Wrap in PassMetadata, running each pass's probe() to
+            # keep unusable candidates out of the pool.
             for pass_obj in passes:
+                key = f"{backend.name}/{pass_obj.name}"
+                reason = pass_obj.probe()
+                if reason:
+                    self._rejected_passes[key] = reason
+                    self.debug(f"Probe rejected {key}: {reason}")
+                    continue
                 metadata = PassMetadata(
                     pass_obj=pass_obj,
                     config=backend_config,
@@ -354,6 +390,48 @@ class BuildPlanner(UIReporter):
                 candidates.append(metadata)
 
         return candidates
+
+    def _format_plan_failure(
+        self,
+        output_group: OutputGroup,
+        source_types: set,
+        output_types: set,
+        headline: str,
+        surviving: list[list[str]] | None = None,
+    ) -> str:
+        """Assemble a diagnostic for the plan-failure exception.
+
+        Lists every candidate chain the search enumerated and every
+        pass a probe dropped, so the user can tell whether the plan
+        failed because no chain exists, because a needed backend was
+        filtered out, or because two backends both applied.
+        """
+        lines = [
+            f"{headline} from {sorted(source_types)} "
+            f"to {sorted(output_types)} for output group "
+            f"{output_group.name!r}."
+        ]
+
+        if surviving:
+            lines.append("")
+            lines.append("Surviving plans (disambiguate with require_backends "
+                         "or require_passes):")
+            for chain in surviving:
+                lines.append(f"  - {' -> '.join(chain)}")
+
+        if self._considered_chains:
+            lines.append("")
+            lines.append("Considered chains:")
+            for chain in self._considered_chains:
+                lines.append(f"  - {' -> '.join(chain)}")
+
+        if self._rejected_passes:
+            lines.append("")
+            lines.append("Passes dropped by probe():")
+            for key, reason in sorted(self._rejected_passes.items()):
+                lines.append(f"  - {key}: {reason}")
+
+        return "\n".join(lines)
 
     def _combine_filter_vars(
         self,

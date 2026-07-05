@@ -110,6 +110,31 @@ class BasePass:
         """
         return {}
 
+    def probe(self) -> str | None:
+        """Report whether this pass is a viable candidate for the
+        current build.
+
+        Called by the planner right after the pass is instantiated,
+        before it enters the candidate pool. A ``None`` return keeps
+        the pass in play; any non-empty string drops it and is stored
+        as the rejection reason for the plan-failure diagnostic.
+
+        Only two kinds of check belong here:
+
+        - The declared target part is outside the family the backend
+          supports (e.g. Vivado refusing xc6* parts).
+        - The tool the pass would invoke is not resolvable in the
+          user's ``gbs_config`` or its executable does not exist on
+          disk (respecting CLI overrides).
+
+        Broken-at-runtime tools — missing shared libraries, missing
+        licences, crashes — are not a probe concern and must stay as
+        build-time failures so the user gets the real error.
+
+        Default: accept.
+        """
+        return None
+
     def dispatchers(self, context: BuildContext) -> list[Dispatcher]:
         """Create dispatchers for executing this pass transformations
 

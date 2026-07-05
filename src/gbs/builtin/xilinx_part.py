@@ -10,8 +10,11 @@ key (without the speed grade) as the chipdb filename.
 """
 
 from __future__ import annotations
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["parse_part", "family_name", "chipdb_key", "filter_vars"]
 
@@ -133,6 +136,15 @@ def filter_vars(part: str) -> dict[str, str]:
         result["package"] = m.group("package")
     else:
         # Unparseable part: still expose it as die so filters that
-        # only need a die-level prefix keep working.
+        # only need a die-level prefix keep working. Warn loudly so
+        # the user notices missing speed/package downstream (NSL
+        # Makefiles interpolate speed into filenames — an empty
+        # value silently expands to `xc7_config_artix7_.vhd`).
+        logger.warning(
+            "Xilinx part %r does not match either "
+            "<die>-<speed><package> or <die><package>-<speed>; "
+            "speed and package filter variables will be unset.",
+            part,
+        )
         result["die"] = part
     return result

@@ -81,3 +81,13 @@ class Pass(Protocol):
             Dispatcher instance list
         """
         ...
+
+    def probe(self) -> str | None:
+        """Report whether this pass is a viable candidate.
+
+        ``None`` keeps the pass in the planner's candidate pool; a
+        non-empty string drops it and is stored as the rejection
+        reason for the plan-failure diagnostic. See BasePass.probe
+        for what belongs in this check.
+        """
+        ...
