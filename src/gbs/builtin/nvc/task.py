@@ -133,7 +133,10 @@ class Analyze(Task):
             await self.add_message_obj(msg)
 
         if analyze_process.returncode != 0:
-            raise BuildError(f"nvc -a failed for {self.library_name}: {analyze_process.returncode}")
+            raise analyze_process.failure(
+                tool="nvc",
+                message=f"nvc -a failed for {self.library_name}: exit code {analyze_process.returncode}",
+            )
 
 
 class Elaborate(Task):
@@ -210,7 +213,10 @@ class Elaborate(Task):
             await self.add_message_obj(msg)
 
         if elab_process.returncode != 0:
-            raise BuildError(f"nvc -e failed for {self.topcell}: {elab_process.returncode}")
+            raise elab_process.failure(
+                tool="nvc",
+                message=f"nvc -e failed for {self.topcell}: exit code {elab_process.returncode}",
+            )
 
         # Create run script wrapper
         # NVC creates an executable in the work directory, we create a wrapper script

@@ -113,7 +113,12 @@ class PlaceAndRoute(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise BuildError(f"nextpnr failed with exit code {process.returncode}")
+            log_path = log_outputs[0].path if log_outputs else None
+            raise process.failure(
+                tool="nextpnr",
+                message=f"nextpnr failed with exit code {process.returncode}",
+                log_path=log_path,
+            )
 
         self.info("Place-and-route complete")
 

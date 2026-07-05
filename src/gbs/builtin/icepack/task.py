@@ -84,6 +84,9 @@ class Pack(Task):
             # icepack still creates an empty file in case of
             # error... delete it.
             output_path.unlink(missing_ok = True)
-            raise BuildError(f"icepack failed with exit code {process.returncode}")
+            raise process.failure(
+                tool="icepack",
+                message=f"icepack failed with exit code {process.returncode}",
+            )
 
         self.info("Bitstream generation complete")

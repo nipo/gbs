@@ -85,6 +85,9 @@ class Pack(Task):
         if process.returncode != 0:
             # ecppack may create an empty file in case of error... delete it.
             output_path.unlink(missing_ok=True)
-            raise BuildError(f"ecppack failed with exit code {process.returncode}")
+            raise process.failure(
+                tool="ecppack",
+                message=f"ecppack failed with exit code {process.returncode}",
+            )
 
         self.info("Bitstream generation complete")

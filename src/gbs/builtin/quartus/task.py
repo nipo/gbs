@@ -116,8 +116,9 @@ class QuartusTask(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"{self.executable} failed with return code {process.returncode}"
+            raise process.failure(
+                tool=self.executable,
+                message=f"{self.executable} failed with return code {process.returncode}",
             )
 
         self.info(f"{self.executable} complete")
@@ -213,8 +214,9 @@ class QsysGenerate(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"qsys-generate failed with return code {process.returncode}"
+            raise process.failure(
+                tool="qsys-generate",
+                message=f"qsys-generate failed with return code {process.returncode}",
             )
 
         self.info("qsys-generate complete")
@@ -313,8 +315,9 @@ class QsysScript(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"qsys-script failed with return code {process.returncode}"
+            raise process.failure(
+                tool="qsys-script",
+                message=f"qsys-script failed with return code {process.returncode}",
             )
 
         self.info("qsys-script complete")
@@ -557,8 +560,9 @@ class QuartusPfgConvert(Task):
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
-            raise RuntimeError(
-                f"{self.executable} failed with return code {process.returncode}"
+            raise process.failure(
+                tool=self.executable,
+                message=f"{self.executable} failed with return code {process.returncode}",
             )
 
         self.info(f"{self.executable} complete")

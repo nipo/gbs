@@ -76,7 +76,10 @@ class Fasm2Frames(Task):
             await self.add_message_obj(msg)
         if proc.returncode != 0:
             output.path.unlink(missing_ok=True)
-            raise BuildError(f"fasm2frames failed with exit code {proc.returncode}")
+            raise proc.failure(
+                tool="fasm2frames",
+                message=f"fasm2frames failed with exit code {proc.returncode}",
+            )
         self.info("FASM to frames complete")
 
 
@@ -123,5 +126,8 @@ class Frames2Bit(Task):
             await self.add_message_obj(msg)
         if proc.returncode != 0:
             output.path.unlink(missing_ok=True)
-            raise BuildError(f"xc7frames2bit failed with exit code {proc.returncode}")
+            raise proc.failure(
+                tool="xc7frames2bit",
+                message=f"xc7frames2bit failed with exit code {proc.returncode}",
+            )
         self.info("Frames to bitstream complete")
