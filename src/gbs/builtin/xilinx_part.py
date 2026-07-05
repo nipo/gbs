@@ -1,11 +1,11 @@
 """Xilinx part-number parsing shared by vivado and openxc7 backends.
 
-Vivado writes parts as `name-speedpackage` (e.g. `xc7a35t-1cpg236`).
-Both the vivado and openxc7 flows need to split them into
-(name, speed, package) for filter variables that repositories use to
+Vivado accepts both `die-speedpackage` (e.g. `xc7a35t-1cpg236`) and
+`diepackage-speed` (e.g. `xc7a35tcsg324-1`); both need to split into
+(die, speed, package) for filter variables that repositories use to
 enumerate the right sources.
 
-nextpnr-xilinx / openxc7 additionally uses a combined `name+package`
+nextpnr-xilinx / openxc7 additionally uses a combined `die+package`
 key (without the speed grade) as the chipdb filename.
 """
 
@@ -16,15 +16,54 @@ from typing import Optional
 __all__ = ["parse_part", "family_name", "chipdb_key", "filter_vars"]
 
 
-_PART_RE = re.compile(
-    r"^(?P<name>xc[^-]+?)(?P<speed>-\d)(?P<package>[a-z]+\d+)$",
+# Speed grades: -1, -2, -3, plus optional letter suffix (-1L, -2LI, -1LE).
+_SPEED = r"-\d[a-z]{0,3}"
+
+# Known Xilinx package prefixes across 7-series, UltraScale(+) and
+# Versal. Restricting the package start to this set disambiguates a
+# possible die-suffix letter ("t", "s", "i", "l") from the package's
+# first letter (e.g. `xc7s25csga324-1L` splits as die `xc7s25`,
+# package `csga324` — not die `xc7s25c`, package `sga324`).
+# Sorted longest first so the alternation prefers 4-letter prefixes
+# over their 3-letter substrings.
+_PACKAGE_PREFIXES = (
+    # 5 letters
+    "wlcsp",
+    "eflga", "eflgb",
+    # 4 letters
+    "cpga", "csga", "ftga", "ftgb",
+    "sbva", "sbvb", "sbvc", "sbvd",
+    "ffvb", "ffvc", "ffvd", "ffve", "ffvf", "ffvg",
+    "sfva", "sfvb", "sfvc", "sfvd",
+    "vsva", "vsvb", "vsvc", "vsvd", "vsve", "vsvh",
+    "lfva", "lfvb", "lfvc",
+    # 3 letters
+    "cpg", "csg", "clg",
+    "ftg", "fgg", "fbg", "ffg", "flg", "ffv",
+    "sbg", "sbv",
+    "tqg",
+    "sfv", "vsv", "lfv",
+)
+_PACKAGE = rf"(?:{'|'.join(_PACKAGE_PREFIXES)})\d+"
+
+# Middle-dash form: die-<speed><package>
+_PART_RE_MIDDLE = re.compile(
+    rf"^(?P<name>xc[a-z0-9]+)(?P<speed>{_SPEED})(?P<package>{_PACKAGE})$",
+    re.IGNORECASE,
+)
+# Trailing-dash form: die<package>-<speed>. The `[a-z0-9]+` on die is
+# greedy so the regex engine backtracks the die/package split from the
+# longest die down; that way `xc7a35tcsg324-1` splits at `xc7a35t` +
+# `csg324` (not the shorter `xc7a35` + `tcsg324`).
+_PART_RE_TRAILING = re.compile(
+    rf"^(?P<name>xc[a-z0-9]+)(?P<package>{_PACKAGE})(?P<speed>{_SPEED})$",
     re.IGNORECASE,
 )
 
 
 def parse_part(part: str) -> Optional[re.Match]:
-    """Match the `xc<name>-<speed><package>` form; None on mismatch."""
-    return _PART_RE.match(part)
+    """Match either Vivado part-number form; None on mismatch."""
+    return _PART_RE_MIDDLE.match(part) or _PART_RE_TRAILING.match(part)
 
 
 def family_name(part: str) -> Optional[str]:
