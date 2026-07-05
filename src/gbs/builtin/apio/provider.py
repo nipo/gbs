@@ -48,13 +48,16 @@ PACKAGES: dict[str, list[ApioToolSpec]] = {
         ApioToolSpec("nvc", None, "bin/nvc"),
         ApioToolSpec("verilator", None, "bin/verilator"),
     ],
-    # openXC7 xilinx flow. Layout follows the toolchain-nix / apio
-    # release tarballs; missing binaries are silently skipped so the
-    # entry stays valid across releases.
-    "tools-openxc7": [
+    # openXC7 xilinx flow. Missing binaries are silently skipped so
+    # the entry stays valid across releases.
+    "openxc7": [
         ApioToolSpec("nextpnr-xilinx", None, "bin/nextpnr-xilinx"),
         ApioToolSpec("xc7frames2bit", None, "bin/xc7frames2bit"),
-        ApioToolSpec("fasm2frames", None, "bin/fasm2frames.py"),
+        ApioToolSpec("fasm2frames", None, "bin/fasm2frames"),
+        ApioToolSpec("fasm", None, "bin/fasm"),
+        ApioToolSpec("bit2fasm", None, "bin/bit2fasm"),
+        ApioToolSpec("bitread", None, "bin/bitread"),
+        ApioToolSpec("xc7patch", None, "bin/xc7patch"),
         ApioToolSpec("bbasm", None, "bin/bbasm"),
     ],
 }
@@ -101,6 +104,8 @@ class ApioToolchainProvider(BaseToolchainProvider):
             )
             declared_variant = None
 
+        manifest = self._load_installed_manifest(root)
+
         tools: list[ToolConfig] = []
         for package_name, specs in PACKAGES.items():
             if wanted_set is not None and package_name not in wanted_set:
@@ -110,7 +115,7 @@ class ApioToolchainProvider(BaseToolchainProvider):
                 logger.debug(f"Apio package {package_name!r} not installed at {package_root}")
                 continue
 
-            version = self._detect_package_version(package_root)
+            version = self._detect_package_version(package_root, manifest.get(package_name))
 
             for spec in specs:
                 executable = package_root / spec.relative_path
@@ -132,24 +137,67 @@ class ApioToolchainProvider(BaseToolchainProvider):
         return tools
 
     @staticmethod
-    def _detect_package_version(package_root: Path) -> Optional[str]:
-        """Extract a version tag from a package's install metadata.
+    def _load_installed_manifest(root: Path) -> dict[str, dict]:
+        """Read `<root>/installed_packages.json`.
 
-        Currently reads BUILD-INFO.json (present in oss-cad-suite and
-        FPGAwars-built tarballs) and returns its `release-tag` field.
-        Silently returns None if the file is missing or malformed - the
-        provider must still emit tools without a version tag.
+        Apio writes this file when it installs a package; the top-level
+        keys are canonical package names (also directory names) and
+        each value has at least a `version` field. Returns an empty
+        dict when the file is missing or malformed - callers fall back
+        to per-package metadata.
         """
-        info_path = package_root / "BUILD-INFO.json"
-        if not info_path.is_file():
-            return None
+        path = root / "installed_packages.json"
+        if not path.is_file():
+            return {}
         try:
-            with info_path.open("r", encoding="utf-8") as f:
+            with path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            logger.debug(f"Failed to parse {info_path}: {e}")
-            return None
-        tag = data.get("release-tag")
-        if isinstance(tag, str) and tag:
-            return tag
+            logger.debug(f"Failed to parse {path}: {e}")
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {k: v for k, v in data.items() if isinstance(v, dict)}
+
+    @staticmethod
+    def _detect_package_version(package_root: Path, manifest_entry: Optional[dict]) -> Optional[str]:
+        """Extract a version tag for one package.
+
+        Preference order:
+        1. `version` field in `installed_packages.json` (uniform across
+           packages, written by apio itself).
+        2. `release-tag` field in `BUILD-INFO.json` (FPGAwars oss-cad-suite
+           tarballs).
+        3. Plain `VERSION` file (openxc7 layout).
+
+        Returns None when nothing yields a usable string; the provider
+        still emits tools untagged in that case.
+        """
+        if manifest_entry:
+            version = manifest_entry.get("version")
+            if isinstance(version, str) and version:
+                return version
+
+        info_path = package_root / "BUILD-INFO.json"
+        if info_path.is_file():
+            try:
+                with info_path.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.debug(f"Failed to parse {info_path}: {e}")
+            else:
+                tag = data.get("release-tag")
+                if isinstance(tag, str) and tag:
+                    return tag
+
+        version_path = package_root / "VERSION"
+        if version_path.is_file():
+            try:
+                content = version_path.read_text(encoding="utf-8").strip()
+            except OSError as e:
+                logger.debug(f"Failed to read {version_path}: {e}")
+            else:
+                if content:
+                    return content
+
         return None

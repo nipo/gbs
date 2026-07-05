@@ -232,7 +232,7 @@ def test_resolve_tool_identifier_helper():
 
 
 def test_apio_provider_detects_build_info_version(tmp_path):
-    """Feed the provider a synthetic apio tree and check version detection."""
+    """When no installed_packages.json is present, fall back to BUILD-INFO.json."""
     import json
     from gbs.builtin.apio.provider import ApioToolchainProvider
 
@@ -246,6 +246,42 @@ def test_apio_provider_detects_build_info_version(tmp_path):
     tools = provider.enumerate_tools()
     yosys = next(t for t in tools if t.name == "yosys")
     assert yosys.version == "2025-01-15"
+
+
+def test_apio_provider_prefers_installed_manifest(tmp_path):
+    """installed_packages.json wins over BUILD-INFO.json / VERSION."""
+    import json
+    from gbs.builtin.apio.provider import ApioToolchainProvider
+
+    pkg = tmp_path / "oss-cad-suite"
+    (pkg / "bin").mkdir(parents=True)
+    (pkg / "bin" / "yosys").write_text("#!/bin/sh\n")
+    (pkg / "bin" / "yosys").chmod(0o755)
+    (pkg / "BUILD-INFO.json").write_text(json.dumps({"release-tag": "stale-value"}))
+    (tmp_path / "installed_packages.json").write_text(json.dumps({
+        "oss-cad-suite": {"version": "2026.03.24"},
+    }))
+
+    provider = ApioToolchainProvider({"root": str(tmp_path)}, origin=None)
+    tools = provider.enumerate_tools()
+    yosys = next(t for t in tools if t.name == "yosys")
+    assert yosys.version == "2026.03.24"
+
+
+def test_apio_provider_reads_version_file(tmp_path):
+    """When neither manifest nor BUILD-INFO.json exists, read VERSION file."""
+    from gbs.builtin.apio.provider import ApioToolchainProvider
+
+    pkg = tmp_path / "openxc7"
+    (pkg / "bin").mkdir(parents=True)
+    (pkg / "bin" / "nextpnr-xilinx").write_text("#!/bin/sh\n")
+    (pkg / "bin" / "nextpnr-xilinx").chmod(0o755)
+    (pkg / "VERSION").write_text("20260620\n")
+
+    provider = ApioToolchainProvider({"root": str(tmp_path)}, origin=None)
+    tools = provider.enumerate_tools()
+    nx = next(t for t in tools if t.name == "nextpnr-xilinx")
+    assert nx.version == "20260620"
 
 
 def test_toolchain_spec_identifier():
