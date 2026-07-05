@@ -6,7 +6,7 @@ The Yosys backend provides open-source FPGA synthesis using Yosys.
 Overview
 --------
 
-Yosys is an open-source RTL synthesis framework supporting Verilog and VHDL (via GHDL plugin). GBS uses Yosys for synthesizing designs to various FPGA targets, with built-in support for Lattice iCE40 devices.
+Yosys is an open-source RTL synthesis framework supporting Verilog and VHDL (via GHDL plugin). GBS uses Yosys for synthesizing designs to various FPGA targets: Lattice iCE40, Lattice ECP5, and Xilinx Series-7 (targeting the openxc7 flow).
 
 Supported Inputs
 ----------------
@@ -19,18 +19,32 @@ Supported Outputs
 -----------------
 
 - ``ice40-netlist-json``: JSON netlist for Lattice iCE40 FPGAs
+- ``ecp5-netlist-json``: JSON netlist for Lattice ECP5 FPGAs
+- ``xilinx-netlist-json``: JSON netlist for Xilinx Series-7 FPGAs (for nextpnr-xilinx)
 - ``yosys-synthesis-report``: Synthesis report (resource usage, warnings)
 
 FPGA Targets
 ------------
 
-Currently Supported:
-~~~~~~~~~~~~~~~~~~~~
-
 **Lattice iCE40**
   - Pass: ``yosys-ice40``
   - Synthesis command: ``synth_ice40``
   - Output: JSON netlist for use with nextpnr-ice40
+
+**Lattice ECP5**
+  - Pass: ``yosys-ecp5``
+  - Synthesis command: ``synth_ecp5``
+  - Output: JSON netlist for use with nextpnr-ecp5
+
+**Xilinx Series-7** (openxc7 flow)
+  - Pass: ``yosys-xilinx``
+  - Synthesis command: ``synth_xilinx``
+  - Output: JSON netlist for use with nextpnr-xilinx
+  - Sets vivado-style filter variables (``target_part``,
+    ``target_part_name``, ``target_speed``, ``target_package``) parsed
+    from the vivado-form part name, so a repository (nsl_hwdep, etc.)
+    enumerates the same sources whether the project is built via
+    vivado or the openxc7 flow.
 
 Configuration
 -------------
@@ -108,7 +122,13 @@ The Yosys backend contributes the following filter variables for conditional sou
 - ``target-usage``: Set to ``synthesis``
 - ``vhdl-version``: VHDL standard from configuration
 - ``compiler``: Set to ``yosys``
-- ``hwdep``: Device-specific (e.g., ``lattice-ice40`` for iCE40 pass)
+- ``hwdep``: Device-specific (e.g., ``lattice-ice40`` for iCE40,
+  ``lattice-ecp5`` for ECP5, ``xilinx`` for Xilinx Series-7)
+
+For the Xilinx target only, the additional filter variables
+``vendor=xilinx``, ``target_part``, ``target_part_name`` (e.g.
+``artix7``), ``target_speed``, and ``target_package`` are set from
+the vivado-style part in the output group's ``target:`` block.
 
 Synthesis Flow
 --------------
@@ -135,4 +155,5 @@ See Also
 - GHDL Yosys plugin: https://github.com/ghdl/ghdl-yosys-plugin
 - :doc:`nextpnr` - Place-and-route backend
 - :doc:`icepack` - Bitstream packer for iCE40
+- :doc:`openxc7` - Series-7 bitstream backend
 - :doc:`ghdl` - VHDL analyzer

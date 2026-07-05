@@ -45,6 +45,7 @@ Utilities
    :maxdepth: 1
 
    icepack
+   openxc7
    compress
    output_copy
 

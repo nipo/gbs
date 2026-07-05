@@ -265,14 +265,35 @@ Built-in providers:
 
 ``apio``
    Scans ``~/.apio/packages`` (or the ``root:`` option) for known
-   package directories (``oss-cad-suite``, ``tools-openxc7``). Emits
-   one ``ToolConfig`` per binary that actually exists in each
-   package; missing binaries are silently skipped. Reads the
-   package's ``BUILD-INFO.json`` for ``release-tag`` and stamps every
-   emitted tool with it as ``version``. An optional ``variant:`` key
-   on the toolchain entry is stamped on every tool (overriding the
-   per-tool default variant, which is otherwise used when the tool
-   binary is a specific flavour, e.g. ``ghdl:llvm``).
+   package directories: ``oss-cad-suite`` (yosys, nextpnr-ice40/ecp5,
+   ecppack, icepack, gowin_pack, ghdl, verilator, ...) and
+   ``openxc7`` (nextpnr-xilinx, fasm2frames, xc7frames2bit, bit2fasm,
+   bitread, xc7patch, bbasm). Emits one ``ToolConfig`` per binary
+   that actually exists in the tree; missing binaries are silently
+   skipped so partial installs still yield partial toolchains.
+
+   Version detection reads ``installed_packages.json`` at the apio
+   root first (apio writes this manifest with a uniform ``version``
+   field for every package), then falls back to a package's
+   ``BUILD-INFO.json`` (``release-tag`` field, oss-cad-suite tarball
+   convention) and finally a plain ``VERSION`` file (openxc7 layout).
+
+   An optional ``variant:`` key on the toolchain entry is stamped on
+   every emitted tool, overriding any per-tool default variant. This
+   is the escape hatch for keeping two apio installs distinguishable
+   side-by-side: give each entry a different ``variant:``.
+
+   Beyond the ``executable`` path, some tools also carry package-
+   relative data directories the backends need:
+
+   - ``nextpnr-xilinx`` gets ``chipdb_root`` pointing at
+     ``<openxc7>/chipdb``; the nextpnr Xilinx target reads this to
+     resolve ``--chipdb <name><package>.bin``.
+   - ``fasm2frames`` and ``xc7frames2bit`` both get
+     ``prjxray_db_root`` pointing at
+     ``<openxc7>/share/nextpnr/external/prjxray-db``; the openxc7
+     backend joins it with the target part's family and speed grade
+     to reach ``part.yaml``.
 
 External plugins can register additional provider types by returning
 them from ``Plugin.enumerate_toolchain_providers()``.
