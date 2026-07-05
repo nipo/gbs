@@ -21,9 +21,9 @@ output:
     backend_config:
       gbs.builtin.vivado: {}
     outputs:
-      - type: vivado-bitstream
+      - type: bitstream
         path: pwm_in_bd.bit
-      - type: vivado-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: vivado-pnr-report
+      - type: pnr-report
         path: pnr-report.html

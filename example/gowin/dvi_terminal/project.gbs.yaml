@@ -61,5 +61,5 @@ output:
         - ready
         - cpu
     outputs:
-      - type: gowin-fs
+      - type: bitstream
         path: dvi_terminal.fs

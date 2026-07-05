@@ -22,11 +22,11 @@ output:
       gbs.builtin.quartus:
         tool: quartus-prime
     outputs:
-      - type: quartus-sof
+      - type: bitstream
         path: design.sof
       - type: quartus-jam
         path: design.jam
-      - type: quartus-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: quartus-pnr-report
+      - type: pnr-report
         path: pnr-report.html

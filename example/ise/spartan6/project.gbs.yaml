@@ -20,9 +20,9 @@ output:
     backend_config:
       gbs.builtin.ise: {}
     outputs:
-      - type: ise-bitstream
+      - type: bitstream
         path: blink.bit
-      - type: ise-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: ise-pnr-report
+      - type: pnr-report
         path: pnr-report.html

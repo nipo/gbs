@@ -18,9 +18,9 @@ output:
     target:
       part: xc7a35t-2csg324
     outputs:
-      - type: xilinx-bitstream
+      - type: bitstream
         path: blink.bit
-      - type: yosys-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: nextpnr-pnr-report
+      - type: pnr-report
         path: pnr-report.html

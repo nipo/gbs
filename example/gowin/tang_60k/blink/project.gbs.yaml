@@ -26,9 +26,9 @@ output:
     backend_config:
       gbs.backend.gowin: {}
     outputs:
-      - type: gowin-fs
+      - type: bitstream
         path: blink.fs
-      - type: gowin-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: gowin-pnr-report
+      - type: pnr-report
         path: pnr-report.html

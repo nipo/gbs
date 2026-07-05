@@ -28,6 +28,6 @@ output:
         vhdl_standard: "1993"
         tool: "ghdl:system"
     outputs:
-      - type: ghdl-simulator
+      - type: simulator
         path: build/tb
 

@@ -26,6 +26,6 @@ output:
       gbs.backend.nvc:
         vhdl_standard: "1993"
     outputs:
-      - type: nvc-simulator
+      - type: simulator
         path: simulator
 

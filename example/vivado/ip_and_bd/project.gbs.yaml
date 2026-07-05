@@ -59,9 +59,9 @@ output:
       gbs.builtin.vivado:
         tool: vivado
     outputs:
-      - type: vivado-bitstream
+      - type: bitstream
         path: build/pwm_in_bd.bit
-      - type: vivado-synthesis-report
+      - type: synthesis-report
         path: build/synthesis-report.html
-      - type: vivado-pnr-report
+      - type: pnr-report
         path: build/pnr-report.html

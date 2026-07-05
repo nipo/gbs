@@ -19,5 +19,5 @@ output:
         vhdl_standard: "1993"
         tool: "nvc"
     outputs:
-      - type: nvc-simulator
+      - type: simulator
         path: build/top

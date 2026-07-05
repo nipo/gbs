@@ -22,9 +22,9 @@ output:
     target:
       part: LFE5U-25F-6BG256C
     outputs:
-      - type: ecp5-bitstream
+      - type: bitstream
         path: blink.bit
-      - type: diamond-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: diamond-pnr-report
+      - type: pnr-report
         path: pnr-report.html

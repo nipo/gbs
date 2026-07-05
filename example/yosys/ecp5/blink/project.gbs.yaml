@@ -32,6 +32,6 @@ output:
       gbs.builtin.ecppack:
         tool: "ecppack"
     outputs:
-      - type: ecp5-bitstream
+      - type: bitstream
         path: blink.bin
 

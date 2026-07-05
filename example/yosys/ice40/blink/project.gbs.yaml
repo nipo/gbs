@@ -32,9 +32,9 @@ output:
       gbs.builtin.icepack:
         tool: "icepack"
     outputs:
-      - type: ice40-bitstream
+      - type: bitstream
         path: blink.bin
-      - type: yosys-synthesis-report
+      - type: synthesis-report
         path: synthesis-report.html
-      - type: nextpnr-pnr-report
+      - type: pnr-report
         path: pnr-report.html
