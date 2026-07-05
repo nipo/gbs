@@ -40,7 +40,19 @@ Build a project.
 
 .. code-block:: bash
 
-   gbs project [-f FILE] build [OPTIONS]
+   gbs project [-f FILE] build [OPTIONS] [OUTPUT_GROUP...]
+
+**Positional arguments:**
+
+``OUTPUT_GROUP...``
+    Restrict the build to these output groups by name. With no
+    argument the command builds every group declared in the project.
+    Unknown names fail up front with the list of known groups.
+
+    Useful when a project declares parallel groups for different
+    toolchains — say a ``vivado`` and an ``openxc7`` group for the
+    same Xilinx target — and only one of them is installed on the
+    current machine.
 
 **Options:**
 
@@ -70,6 +82,12 @@ Build a project.
 
    # Build with auto-discovered project file
    gbs project build
+
+   # Build only the "openxc7" output group
+   gbs project build openxc7
+
+   # Build several groups explicitly
+   gbs project build simulation bitstream
 
    # Build specific project file
    gbs project -f my_project.gbs.yaml build

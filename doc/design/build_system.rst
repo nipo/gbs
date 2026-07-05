@@ -109,31 +109,78 @@ Pass Methods
                vhdl_std=self.config.get("vhdl_standard", "1993"),
            )]
 
+**probe()**
+    Report whether the pass is a viable candidate for the current
+    build. Return ``None`` to stay in the candidate pool, or a
+    non-empty string to drop out — the string is stored as the
+    rejection reason for the plan-failure diagnostic (see below).
+
+    Called right after the pass is instantiated, before it enters
+    the planner's candidate pool. Only two kinds of check belong
+    here:
+
+    - The declared target part is outside the family the backend
+      supports (e.g. Vivado refusing xc6* parts).
+    - The primary tool the pass would invoke is not resolvable in
+      ``gbs_config`` or its executable does not exist on disk
+      (respecting CLI ``--tool`` / ``--tool-version`` overrides).
+
+    Broken-at-runtime tools — missing shared libraries, missing
+    licences, crashes — are **not** a probe concern. They must stay
+    as build-time failures so the user gets the real error.
+
+    .. code-block:: python
+
+       def probe(self) -> str | None:
+           target = self.config.get("target") or {}
+           part = (target.get("part") or "").lower()
+           if not part.startswith("xc"):
+               return f"target part {part!r} is not a Xilinx device"
+           if part.startswith("xc6"):
+               return (
+                   f"target part {part!r} is pre-7-series; "
+                   f"Vivado only handles 7-series and later"
+               )
+           return self.probe_tool("vivado")
+
+    ``BasePass.probe_tool(default_name)`` is a shared helper that
+    resolves the identifier (honouring CLI overrides), looks it up
+    in ``gbs_config``, and asserts the executable or install-path
+    exists on disk. Backends whose primary tool needs a stronger
+    check (e.g. Gowin needs the ``path`` install root, not just an
+    ``executable``) override ``probe()`` and layer their own check
+    on top.
+
 Pass Example
 ~~~~~~~~~~~~
 
 .. code-block:: python
 
-   from gbs.planner.passes import Pass
+   from gbs.base import BasePass
 
-   class GHDLSimulatePass(Pass):
+   class GHDLSimulatePass(BasePass):
        """GHDL simulation pass: VHDL → simulator executable"""
 
        name = "ghdl-simulate"
-       input_types = {"vhdl"}
-       output_types = {"ghdl-simulator", "simulator"}
+       input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
+       output_types = {"simulator", "ghdl-simulator"}
+
+       def probe(self) -> str | None:
+           return self.probe_tool("ghdl")
 
        def filter_vars(self):
-           vhdl_std = self.config.get("vhdl_standard", "1993")
+           flavor = _GhdlFlavorProbe.flavor(self.config, self.gbs_config)
+           engine = f"ghdl_{flavor}"
            return {
-               "target-usage": "simulation",
-               "compiler": "ghdl",
-               "vhdl-version": vhdl_std,
+               "purpose": "simulation",
+               "vhdl_frontend": engine,
+               "simulation_engine": engine,
+               "vhdl_std": self.config.get("vhdl_standard", "1993"),
            }
 
        def dispatchers(self, context):
-           from .dispatcher import GHDLDispatcher
-           return [GHDLDispatcher(
+           from .dispatcher import GHDLSimulateDispatcher
+           return [GHDLSimulateDispatcher(
                context=context,
                vhdl_std=self.config.get("vhdl_standard", "1993"),
                tool_name=self.resolve_tool_identifier("ghdl"),
@@ -150,25 +197,99 @@ Planning Algorithm
 
 1. Collect available source types from repositories
 2. Collect desired output types from OutputGroups
-3. Query backends for passes that produce desired outputs
-4. For each pass, check if inputs are available
-5. If not, recursively find passes that produce missing types
-6. Select shortest path (iterative deepening)
-7. Combine filter_vars from all selected passes
+3. Expand desired output types with sibling aliases from the
+   terminal-type registry (see below)
+4. Query backends for passes that produce desired outputs
+5. For each pass, run :py:meth:`Pass.probe` — passes returning a
+   rejection reason drop out and are logged for the diagnostic
+6. For every surviving pass, check if inputs are available
+7. If not, recursively find passes that produce missing types
+8. Apply the OutputGroup's ``require_backends`` / ``exclude_backends``
+   / ``require_passes`` / ``exclude_passes`` filters
+9. Prune non-minimal plans (a plan whose pass set strictly contains
+   another's is dropped)
+10. Fail if 0 plans remain (nothing satisfies the outputs) or if >1
+    plans remain (ambiguous — user must add ``require_backends``)
+11. Combine filter_vars from all selected passes
 
 Example Planning
 ~~~~~~~~~~~~~~~~
 
 Given:
 - Sources: ``{vhdl}``
-- Desired outputs: ``{ghdl-simulator}``
+- Desired outputs: ``{simulator}``
 
 Planner queries backends:
 
-1. GHDLBackend contributes ``GHDLSimulatePass``
-2. Pass declares: ``input_types = {vhdl}``, ``output_types = {ghdl-simulator}``
-3. Available sources include ``vhdl`` → inputs satisfied
-4. Pass selected for build plan
+1. GHDLBackend contributes ``GHDLAnalyzePass`` (vhdl → ghdl-cf) and
+   ``GHDLSimulatePass`` (ghdl-cf → simulator).
+2. ``GHDLSimulatePass.probe()`` returns ``None`` — ghdl is
+   configured; keeps the pass in the pool.
+3. Inputs (``ghdl-cf``) are produced by ``GHDLAnalyzePass``; both
+   pass are chained.
+4. Available sources include ``vhdl`` — chain satisfied.
+5. Chain selected for the build plan.
+
+Plan-Failure Diagnostic
+~~~~~~~~~~~~~~~~~~~~~~~
+
+When the planner cannot settle on exactly one candidate — because
+zero survive, or several do — the ``PlanningError`` message lists
+every chain the search considered and every pass a probe dropped,
+so the user can tell whether the plan failed because no chain
+exists, a needed backend was probed out, or two backends both
+applied.
+
+Example on a Xilinx 7-series project where Vivado is not installed
+but openxc7 is::
+
+  Cannot find passes from ['vhdl', 'xilinx-xdc'] to ['bitstream',
+  'pnr-report', 'synthesis-report'] for output group 'vivado'.
+
+  Passes dropped by probe():
+    - gbs.builtin.vivado/vivado-synthesize: tool 'vivado' not configured
+
+The list of considered chains and the rejection log make the
+distinction between "no chain at all" and "chain found but its
+tools are unavailable" visible up front.
+
+Terminal Output Types
+~~~~~~~~~~~~~~~~~~~~~
+
+The types a user writes in ``outputs:`` — ``bitstream``,
+``synthesis-report``, ``pnr-report``, ``simulator`` — are canonical
+shared names. Every backend that produces one of them advertises
+the canonical name alongside the historic vendor-prefixed sibling
+(``vivado-bitstream``, ``xilinx-bitstream``, ``ise-bitstream``,
+``ecp5-bitstream``, ``gowin-fs``, …). This lets a project move
+between backends without renaming its output goals.
+
+The alias registry lives in :py:mod:`gbs.build.type_aliases`. It is
+consulted in three places:
+
+- At planning time, the planner expands the requested output types
+  with sibling aliases before calling ``Backend.contribute_passes``,
+  so backends whose historic filter only triggers on a vendor-prefixed
+  name still contribute when the user asks for the canonical name.
+- :py:meth:`BuildContext.get_resource` auto-populates
+  ``file_type_aliases`` on any resource whose ``file_type`` is a
+  registered terminal type. A dispatcher that creates the file as
+  ``file_type="bitstream"`` therefore matches queries for
+  ``vivado-bitstream`` (or any other sibling) transparently.
+- :py:meth:`BuildContext.filter_pending` and
+  :py:meth:`Task.outputs_of_type` / ``inputs_of_type`` check the
+  alias set alongside the primary ``file_type``.
+
+When the user's project still writes a legacy sibling (e.g.
+``type: xilinx-bitstream``) the ``OutputCopyDispatcher`` matches it
+via alias fallback and emits a warning nudging the user to rename
+to the canonical form. Existing projects keep working; new projects
+should use the canonical vocabulary.
+
+Format-specific intermediates that are not user-facing goals
+(``xilinx-netlist-json``, ``nextpnr-fasm``, ``ecp5-config``,
+``ghdl-cf``, …) stay tool-specific — the registry only covers
+terminal outputs.
 
 Dispatcher System
 -----------------
