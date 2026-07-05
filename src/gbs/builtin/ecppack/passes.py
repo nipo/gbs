@@ -22,6 +22,9 @@ class EcppackPass(BasePass):
     input_types = {"ecp5-config"}
     output_types = {"ecp5-bit", "ecp5-bitstream"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("ecppack")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for ecppack."""
         return {

@@ -22,6 +22,9 @@ class NVCSimulatePass(BasePass):
     input_types = {"vhdl"}
     output_types = {"nvc-simulator"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("nvc")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for NVC."""
         vhdl_std = self.config.get("vhdl_standard", "1993")

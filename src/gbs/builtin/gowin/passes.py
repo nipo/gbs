@@ -52,6 +52,12 @@ class GowinSynthesizePass(BasePass):
             from .device_info import get_device_info
             self.device_info = get_device_info(self.gowin_path, self.device)
 
+    def probe(self) -> str | None:
+        part = (self.device or "").lower()
+        if not part.startswith("gw"):
+            return f"target part {self.device!r} is not a Gowin device"
+        return self.probe_tool("gowin")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for a Gowin build.
 

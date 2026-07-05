@@ -27,6 +27,26 @@ class IseSynthesizePass(BasePass):
     output_types = {"ise-bitstream", "ise-timing-report", "ise-netlist",
                      "ise-synthesis-report", "ise-pnr-report"}
 
+    # Prefixes ISE cannot handle (7-series onwards, UltraScale,
+    # UltraScale+, Versal). Anything else that starts with "xc" is
+    # assumed to be Spartan-6/Virtex-6 or earlier.
+    _POST_ISE_PREFIXES = (
+        "xc7", "xcku", "xcvu", "xcau", "xczu",
+        "xcvm", "xcvp", "xcve",
+    )
+
+    def probe(self) -> str | None:
+        target = self.config.get("target") or {}
+        part = (target.get("part") or "").lower()
+        if not part.startswith("xc"):
+            return f"target part {part!r} is not a Xilinx device"
+        if any(part.startswith(p) for p in self._POST_ISE_PREFIXES):
+            return (
+                f"target part {part!r} is 7-series or later; "
+                f"ISE only handles pre-7-series"
+            )
+        return self.probe_tool("ise")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for an ISE build."""
         target = self.config.get("target", {})

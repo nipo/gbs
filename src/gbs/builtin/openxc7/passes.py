@@ -22,6 +22,13 @@ class Openxc7Pass(BasePass):
     input_types = {"nextpnr-fasm"}
     output_types = {"xilinx-bitstream"}
 
+    def probe(self) -> str | None:
+        target = self.config.get("target") or {}
+        part = (target.get("part") or "").lower()
+        if not part.startswith("xc7"):
+            return f"target part {part!r} is not 7-series; openxc7 only supports xc7"
+        return self.probe_tool("fasm2frames")
+
     def filter_vars(self) -> dict[str, Any]:
         ret: dict[str, Any] = {
             "purpose": "synthesis",

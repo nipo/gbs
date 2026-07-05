@@ -56,6 +56,9 @@ class GHDLAnalyzePass(BasePass):
     input_types = {"vhdl"}
     output_types = {"ghdl-cf"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("ghdl")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for GHDL analysis.
 
@@ -107,6 +110,9 @@ class GHDLSimulatePass(BasePass):
     input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
     output_types = {"ghdl-simulator"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("ghdl")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for GHDL simulation."""
         vhdl_std = self.config.get("vhdl_standard", "1993")
@@ -155,6 +161,9 @@ class GHDLRunPass(BasePass):
     name = "ghdl-run"
     input_types = {"ghdl-simulator"}
     output_types = {"waveform-vcd", "waveform-ghw", "waveform-fst", "simulation-log", "simulation-success"}
+
+    def probe(self) -> str | None:
+        return self.probe_tool("ghdl")
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create GHDL run dispatcher

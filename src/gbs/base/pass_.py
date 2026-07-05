@@ -110,6 +110,34 @@ class BasePass:
         """
         return {}
 
+    def probe_tool(self, default_name: str) -> str | None:
+        """Check the pass's primary tool is usable.
+
+        Returns None when the tool identifier resolves in gbs_config
+        and its `executable` (or `path`) key exists on disk; otherwise
+        a short reason string. The CLI --tool and --tool-version
+        overrides are honoured because the identifier is built by
+        resolve_tool_identifier.
+        """
+        if self.gbs_config is None:
+            return f"no GBS config; tool {default_name!r} unresolvable"
+        identifier = self.resolve_tool_identifier(default_name)
+        tool = self.gbs_config.get_tool(identifier)
+        if tool is None:
+            return f"tool {identifier!r} not configured"
+        from ..utils import expand_path
+        for key in ("executable", "path"):
+            raw = tool.config.get(key)
+            if not raw:
+                continue
+            resolved = expand_path(raw)
+            if not resolved.exists():
+                return f"tool {identifier!r} {key} {resolved} does not exist"
+            return None
+        # Tool exists but declares no executable/path — some providers
+        # (e.g. shell fallbacks) rely on $PATH. Trust the config.
+        return None
+
     def probe(self) -> str | None:
         """Report whether this pass is a viable candidate for the
         current build.

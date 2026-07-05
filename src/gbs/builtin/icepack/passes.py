@@ -22,6 +22,9 @@ class IcepackPass(BasePass):
     input_types = {"ice40-asc"}
     output_types = {"ice40-bin", "ice40-bitstream"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("icepack")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for icepack."""
         return {

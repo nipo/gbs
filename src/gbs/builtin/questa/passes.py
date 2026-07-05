@@ -27,6 +27,9 @@ class QuestaSimulatePass(BasePass):
     input_types = {"vhdl", "verilog"}
     output_types = {"questa-project", "questa-gui-launcher"}
 
+    def probe(self) -> str | None:
+        return self.probe_tool("questa")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for QuestaSim."""
         vhdl_std = self.config.get("vhdl_standard", "1993")

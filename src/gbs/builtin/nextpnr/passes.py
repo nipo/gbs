@@ -23,6 +23,19 @@ class NextpnrBasePass(BasePass):
     # To be overridden by subclasses
     target: str = None
     default_tool: str = None
+    # Prefix on the lowercased target part that this pass supports.
+    part_prefix: tuple[str, ...] = ()
+
+    def probe(self) -> str | None:
+        if self.part_prefix:
+            target = self.config.get("target") or {}
+            part = (target.get("part") or "").lower()
+            if not any(part.startswith(p) for p in self.part_prefix):
+                return (
+                    f"target part {part!r} not in this pass's family "
+                    f"({'/'.join(self.part_prefix)})"
+                )
+        return self.probe_tool(self.default_tool)
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for nextpnr PnR."""
@@ -68,6 +81,7 @@ class NextpnrIce40Pass(NextpnrBasePass):
     name = "nextpnr-ice40"
     target = "ice40"
     default_tool = "nextpnr-ice40"
+    part_prefix = ("ice40", "ice5", "up5k")
     input_types = {"ice40-netlist-json", "ice40-pcf"}
     output_types = {"ice40-asc", "nextpnr-pnr-report"}
 
@@ -86,6 +100,7 @@ class NextpnrEcp5Pass(NextpnrBasePass):
     name = "nextpnr-ecp5"
     target = "ecp5"
     default_tool = "nextpnr-ecp5"
+    part_prefix = ("lfe5", "lae5")
     input_types = {"ecp5-netlist-json", "ecp5-lpf"}
     output_types = {"ecp5-config", "nextpnr-pnr-report"}
 
@@ -104,6 +119,7 @@ class NextpnrXilinxPass(NextpnrBasePass):
     name = "nextpnr-xilinx"
     target = "xilinx"
     default_tool = "nextpnr-xilinx"
+    part_prefix = ("xc7",)
     input_types = {"xilinx-netlist-json", "xilinx-xdc"}
     output_types = {"nextpnr-fasm", "nextpnr-pnr-report"}
 

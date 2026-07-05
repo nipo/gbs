@@ -20,8 +20,22 @@ class YosysBasePass(BasePass):
 
     # To be overridden by subclasses
     synth_target: str = None
+    # Prefix on the lowercased target part that this pass supports.
+    # Subclasses override; the base pass accepts anything.
+    part_prefix: tuple[str, ...] = ()
 
     input_types = {"vhdl", "verilog"}
+
+    def probe(self) -> str | None:
+        if self.part_prefix:
+            target = self.config.get("target") or {}
+            part = (target.get("part") or "").lower()
+            if not any(part.startswith(p) for p in self.part_prefix):
+                return (
+                    f"target part {part!r} not in this pass's family "
+                    f"({'/'.join(self.part_prefix)})"
+                )
+        return self.probe_tool("yosys")
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for Yosys synthesis.
@@ -77,6 +91,7 @@ class YosysIce40Pass(YosysBasePass):
     output_types = {"ice40-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_ice40"
     extra_filter_vars = {"vendor": "lattice", "family": "ice40"}
+    part_prefix = ("ice40", "ice5", "up5k")
 
 
 class YosysEcp5Pass(YosysBasePass):
@@ -95,6 +110,7 @@ class YosysEcp5Pass(YosysBasePass):
     output_types = {"ecp5-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
+    part_prefix = ("lfe5", "lae5")
 
 
 class YosysXilinxPass(YosysBasePass):
@@ -110,6 +126,7 @@ class YosysXilinxPass(YosysBasePass):
     output_types = {"xilinx-netlist-json", "yosys-synthesis-report"}
     synth_target = "synth_xilinx"
     extra_filter_vars = {"vendor": "xilinx"}
+    part_prefix = ("xc7",)
 
     def filter_vars(self) -> dict[str, Any]:
         """Match the vivado backend's technology-stack shape so a

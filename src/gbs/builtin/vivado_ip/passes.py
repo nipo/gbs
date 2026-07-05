@@ -41,6 +41,9 @@ class VivadoIpPackagePass(BasePass):
         "vivado-ip-dir",
     }
 
+    def probe(self) -> str | None:
+        return self.probe_tool("vivado")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for IP packaging.
 

@@ -45,6 +45,13 @@ class DiamondEcp5Pass(BasePass):
         if self.synthesis not in ("lse", "synplify"):
             raise ValueError(f"Diamond synthesis engine must be lse or synplify, not {self.synthesis}")
 
+    def probe(self) -> str | None:
+        target = self.config.get("target") or {}
+        part = target.get("part") or ""
+        if DiamondPart.ecp5_parse(part) is None:
+            return f"target part {part!r} is not an ECP5 device Diamond can parse"
+        return self.probe_tool("diamond")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for a Diamond build.
 

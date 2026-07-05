@@ -63,6 +63,17 @@ class QuartusSynthesizePass(BasePass):
         if self._part and self._quartus_bin:
             self._part_info = _query_part_info(self._quartus_bin, self._part)
 
+    def probe(self) -> str | None:
+        # Quartus is Altera/Intel-only. Common part-family prefixes: 10C
+        # (Cyclone 10), EP1/EP2/EP3/EP4 (older Cyclone/Arria/Stratix),
+        # 5C/5A/5S (Cyclone V/Arria V/Stratix V), AGF/AGI (Agilex),
+        # 10AX/10AS (Arria 10, Stratix 10), A5E (Agilex 5E).
+        prefixes = ("ep", "10a", "10c", "5a", "5c", "5s", "agf", "agi", "a5e")
+        part = (self._part or "").lower()
+        if not any(part.startswith(p) for p in prefixes):
+            return f"target part {self._part!r} is not an Altera/Intel device"
+        return self.probe_tool("quartus")
+
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for a Quartus build.
 
