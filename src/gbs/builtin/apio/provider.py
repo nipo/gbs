@@ -54,7 +54,11 @@ PACKAGES: dict[str, list[ApioToolSpec]] = {
         ApioToolSpec("nextpnr-generic", None, "bin/nextpnr-generic"),
         ApioToolSpec("icepack", None, "bin/icepack"),
         ApioToolSpec("ecppack", None, "bin/ecppack"),
-        ApioToolSpec("gowin", None, "bin/gowin_pack"),
+        # `gowin_pack` is the open bitstream packer (yosys/nextpnr-himbaechel
+        # flow), a completely different tool from the vendor's Gowin IDE.
+        # The IDE claims the bare `gowin` name (used by the builtin backend
+        # via `resolve_tool_identifier("gowin")`).
+        ApioToolSpec("gowin_pack", None, "bin/gowin_pack"),
         ApioToolSpec("ghdl", "llvm", "bin/ghdl"),
         ApioToolSpec("nvc", None, "bin/nvc"),
         ApioToolSpec("verilator", None, "bin/verilator"),

@@ -61,7 +61,24 @@ class GowinSynthesizePass(BasePass):
         part = (self.device or "").lower()
         if not part.startswith("gw"):
             return f"target part {self.device!r} is not a Gowin device"
-        return self.probe_tool("gowin")
+        reason = self.probe_tool("gowin")
+        if reason:
+            return reason
+        # The IDE-driven flow needs the install root (path). A tool
+        # registered under the same name but exposing only `executable`
+        # is a different tool (e.g. `gowin_pack`) that we cannot drive
+        # this pass with — surface that with a specific message rather
+        # than silently producing no bitstream downstream.
+        if self.gowin_path is None:
+            identifier = self.resolve_tool_identifier("gowin")
+            return (
+                f"tool {identifier!r} is configured but does not expose "
+                f"a `path` config key (the Gowin install root). Pin the "
+                f"correct variant with `tool: gowin:<variant>` if the "
+                f"registered `gowin` refers to a different binary "
+                f"(e.g. gowin_pack)."
+            )
+        return None
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute canonical filter variables for a Gowin build.
