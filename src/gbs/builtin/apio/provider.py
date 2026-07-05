@@ -26,10 +26,21 @@ class ApioToolSpec:
         default_variant: Variant to stamp when the toolchain entry
             does not declare one. `None` means "leave unset".
         relative_path: Executable location under the package root.
+        extra_paths: Optional mapping of extra config keys to paths
+            relative to the package root. Each is resolved to an
+            absolute path and added to the tool's config. Used to
+            surface data directories (chipdb, prjxray-db) that
+            backends need alongside the executable.
     """
     name: str
     default_variant: Optional[str]
     relative_path: str
+    extra_paths: Optional[dict[str, str]] = None
+
+
+# openxc7 places prjxray-db here; used by both fasm2frames and
+# xc7frames2bit. Defined once so the spec table stays readable.
+_OPENXC7_PRJXRAY_DB = "share/nextpnr/external/prjxray-db"
 
 
 PACKAGES: dict[str, list[ApioToolSpec]] = {
@@ -51,9 +62,12 @@ PACKAGES: dict[str, list[ApioToolSpec]] = {
     # openXC7 xilinx flow. Missing binaries are silently skipped so
     # the entry stays valid across releases.
     "openxc7": [
-        ApioToolSpec("nextpnr-xilinx", None, "bin/nextpnr-xilinx"),
-        ApioToolSpec("xc7frames2bit", None, "bin/xc7frames2bit"),
-        ApioToolSpec("fasm2frames", None, "bin/fasm2frames"),
+        ApioToolSpec("nextpnr-xilinx", None, "bin/nextpnr-xilinx",
+                     extra_paths={"chipdb_root": "chipdb"}),
+        ApioToolSpec("xc7frames2bit", None, "bin/xc7frames2bit",
+                     extra_paths={"prjxray_db_root": _OPENXC7_PRJXRAY_DB}),
+        ApioToolSpec("fasm2frames", None, "bin/fasm2frames",
+                     extra_paths={"prjxray_db_root": _OPENXC7_PRJXRAY_DB}),
         ApioToolSpec("fasm", None, "bin/fasm"),
         ApioToolSpec("bit2fasm", None, "bin/bit2fasm"),
         ApioToolSpec("bitread", None, "bin/bitread"),
@@ -126,11 +140,22 @@ class ApioToolchainProvider(BaseToolchainProvider):
                     )
                     continue
                 variant = declared_variant if declared_variant is not None else spec.default_variant
+                tool_config: dict[str, str] = {"executable": str(executable)}
+                if spec.extra_paths:
+                    for key, rel in spec.extra_paths.items():
+                        resolved = package_root / rel
+                        if not resolved.exists():
+                            logger.debug(
+                                f"Apio package {package_name!r}: extra path {rel} for "
+                                f"{spec.name!r} not present, omitting {key!r}"
+                            )
+                            continue
+                        tool_config[key] = str(resolved)
                 tools.append(ToolConfig(
                     name=spec.name,
                     variant=variant,
                     version=version,
-                    config={"executable": str(executable)},
+                    config=tool_config,
                     origin=self.origin,
                 ))
 
