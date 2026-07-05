@@ -1,0 +1,36 @@
+name: blink
+
+# Basys 3 blink example driving the openxc7 flow:
+#   yosys (synth_xilinx) -> nextpnr-xilinx -> fasm2frames -> xc7frames2bit
+#
+# The chipdb this uses (xc7a35tcpg236.bin) is pre-shipped with the
+# openxc7 apio package; other parts need to be built with bbasm first.
+
+root:
+  name: top
+  sources:
+    - file_type: vhdl
+      files:
+        - boundary.vhd
+    - file_type: xilinx-xdc
+      files:
+        - basys3.xdc
+
+output:
+  - name: bitstream
+    topcell: boundary
+    target:
+      part: xc7a35t-1cpg236
+    backend_config:
+      gbs.builtin.ghdl:
+        vhdl_standard: "2008"
+      gbs.builtin.yosys: {}
+      gbs.builtin.nextpnr: {}
+      gbs.builtin.openxc7: {}
+    outputs:
+      - type: xilinx-bitstream
+        path: blink.bit
+      - type: yosys-synthesis-report
+        path: synthesis-report.html
+      - type: nextpnr-pnr-report
+        path: pnr-report.html
