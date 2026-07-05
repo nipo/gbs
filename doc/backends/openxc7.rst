@@ -99,6 +99,20 @@ additional parts have to be assembled with ``bbasm`` from the
 metadata under ``share/nextpnr/external/nextpnr-xilinx-meta/`` and
 ``share/nextpnr/external/prjxray-db/``.
 
+Use ``gbs openxc7 chipdb build <part>`` to generate one on demand:
+
+.. code-block:: bash
+
+   gbs openxc7 chipdb build xc7a35t-1cpg236   # Basys 3
+   gbs openxc7 chipdb build xc7a35t-1csg324   # Arty A7-35T
+
+The command wraps ``bbaexport.py`` + ``bbasm`` and drops the ``.bin``
+into ``<install>/chipdb/`` where nextpnr-xilinx picks it up
+automatically on the next build. Expect one to a few minutes of CPU
+per part; the intermediate ``.bba`` text file is ~250 MB and is
+removed unless ``--keep-bba`` is passed. See :doc:`../cli` for the
+full option list.
+
 Example
 -------
 

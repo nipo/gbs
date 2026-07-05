@@ -282,6 +282,82 @@ expanded into.
    # A specific apio entry
    gbs config toolchain apio:apio-2026
 
+openxc7 Commands
+----------------
+
+Utilities for the Xilinx Series-7 flow (see :doc:`backends/openxc7`).
+
+.. code-block:: text
+
+   gbs openxc7 [-t TOOL] chipdb ...
+
+**Group options:**
+
+``-t, --tool IDENTIFIER``
+    Anchor tool identifier picking which openxc7 install to work
+    with. Defaults to ``bbasm``; add ``:variant`` or ``@version`` to
+    disambiguate when several apio installs are configured (e.g.
+    ``-t bbasm:apio-2026``). Follows the same
+    ``name[:variant][@version]`` syntax as ``gbs config tool``.
+
+gbs openxc7 chipdb build
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Assemble a nextpnr-xilinx chipdb ``.bin`` for a Series-7 part that
+the openxc7 apio package does not pre-ship.
+
+.. code-block:: bash
+
+   gbs openxc7 chipdb build PART [OPTIONS]
+
+**Arguments:**
+
+``PART``
+    Xilinx part in vivado form ``xc<name>-<speed><package>``, e.g.
+    ``xc7a35t-1cpg236`` (Basys 3) or ``xc7a35t-1csg324`` (Arty
+    A7-35T). Chipdb files are keyed by ``<name><package>`` alone;
+    the speed grade is used by ``bbaexport.py`` but stripped from
+    the output filename because nextpnr-xilinx looks it up without.
+
+**Options:**
+
+``--output PATH``
+    Destination for the ``.bin`` file. Defaults to
+    ``<install>/chipdb/<name><package>.bin`` so nextpnr-xilinx picks
+    it up automatically on the next project build.
+
+``--keep-bba``
+    Keep the intermediate ``.bba`` text file (roughly 250 MB per
+    part) next to the ``.bin``. Removed by default.
+
+**Behaviour:**
+
+The command runs two subprocesses sequentially, streaming their
+output to the terminal:
+
+1. ``bbaexport.py`` — reads prjxray-db and nextpnr-xilinx-meta,
+   emits a ``.bba`` text file describing the target device.
+2. ``bbasm --le`` — assembles the ``.bba`` into the little-endian
+   ``.bin`` chipdb.
+
+Expect a few minutes of CPU per part. The install root is derived
+from the anchor tool's executable path (all openxc7 binaries live at
+``<root>/bin/``), so no extra config is required beyond having the
+apio toolchain enabled.
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Build a Basys 3 chipdb next to the openxc7 install (default)
+   gbs openxc7 chipdb build xc7a35t-1cpg236
+
+   # Build an Arty A7-35T chipdb, write outside the apio tree
+   gbs openxc7 chipdb build xc7a35t-1csg324 --output /tmp/arty.bin
+
+   # Pick a specific apio install when multiple variants exist
+   gbs openxc7 -t bbasm:apio-2026 chipdb build xc7a35t-1cpg236
+
 Repository Commands
 -------------------
 
