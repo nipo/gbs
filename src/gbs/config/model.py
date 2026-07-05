@@ -53,6 +53,7 @@ class ToolConfig:
     version: Optional[str] = None
     config: dict[str, Any] = field(default_factory=dict)
     origin: Optional[Path] = None  # Config file this tool was loaded from
+    via: Optional[str] = None      # Toolchain identifier when expanded from `toolchains:`
 
     @property
     def identifier(self) -> str:
@@ -68,14 +69,30 @@ class ToolConfig:
 class ToolchainSpec:
     """A `toolchains:` config entry, prior to expansion.
 
+    The identifier of a toolchain is `type[:variant]` — the type name
+    dispatches to a provider, the optional variant lets multiple entries
+    of the same type coexist (e.g. two apio installs pinned to different
+    dates). The variant is also forwarded to the provider via `options`
+    so providers that want to stamp it on emitted tools (like the apio
+    provider) can read it as before.
+
     Attributes:
         type: Provider type name (dispatched via the plugin registry).
+        variant: Optional user-declared variant, part of the identifier.
         options: Remaining keys from the entry (root, packages, ...).
         origin: Config file this entry was declared in.
     """
     type: str
+    variant: Optional[str] = None
     options: dict[str, Any] = field(default_factory=dict)
     origin: Optional[Path] = None
+
+    @property
+    def identifier(self) -> str:
+        """Returns 'type[:variant]'."""
+        if self.variant:
+            return f"{self.type}:{self.variant}"
+        return self.type
 
 
 @dataclass
@@ -219,6 +236,12 @@ class GBSConfig:
                 continue
 
             for tool in tools:
+                # Stamp provenance so `gbs config` can explain where a
+                # tool came from. Provider-side value (if any) wins so
+                # a provider that expands into further-nested provenance
+                # keeps its own label.
+                if tool.via is None:
+                    tool.via = spec.identifier
                 idx = self._find_tool_index(expanded, tool.name, tool.variant)
                 if idx is not None:
                     expanded[idx] = tool
@@ -307,9 +330,19 @@ class GBSConfig:
                     f"a 'type' key: {tc_data}"
                 )
                 continue
+            # Reserved top-level keys ('type', 'variant') do not go into
+            # the provider options dict twice - variant stays there for
+            # backward-compat with providers that read it from options.
             options = {k: v for k, v in tc_data.items() if k != 'type'}
+            variant = tc_data.get('variant')
+            if variant is not None and not isinstance(variant, str):
+                logger.warning(
+                    f"Toolchain 'variant' must be a string in {path}, ignoring: {variant!r}"
+                )
+                variant = None
             toolchains.append(ToolchainSpec(
                 type=tc_data['type'],
+                variant=variant,
                 options=options,
                 origin=path.resolve(),
             ))

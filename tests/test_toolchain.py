@@ -248,6 +248,65 @@ def test_apio_provider_detects_build_info_version(tmp_path):
     assert yosys.version == "2025-01-15"
 
 
+def test_toolchain_spec_identifier():
+    from gbs.config.model import ToolchainSpec
+    assert ToolchainSpec(type="apio").identifier == "apio"
+    assert ToolchainSpec(type="apio", variant="2026").identifier == "apio:2026"
+
+
+def test_toolchain_variant_parsed_from_yaml(tmp_path, monkeypatch, registry_with_fake_plugin):
+    _write_config(tmp_path, """\
+        toolchains:
+          - type: test-fake
+            variant: my-tag
+    """)
+    config = _load(tmp_path, monkeypatch)
+    assert len(config.toolchains) == 1
+    assert config.toolchains[0].variant == "my-tag"
+    assert config.toolchains[0].identifier == "test-fake:my-tag"
+
+
+def test_via_stamped_on_expanded_tools(tmp_path, monkeypatch, registry_with_fake_plugin):
+    _write_config(tmp_path, """\
+        toolchains:
+          - type: test-fake
+            variant: alpha
+    """)
+    config = _load(tmp_path, monkeypatch)
+    for tool in config.tools:
+        assert tool.via == "test-fake:alpha"
+
+
+def test_via_not_overwritten_when_provider_sets_it(tmp_path, monkeypatch, registry_with_fake_plugin):
+    """A provider that pre-stamps a more specific via must be honored."""
+    class NestedProvider(BaseToolchainProvider):
+        type = "test-nested"
+
+        def enumerate_tools(self):
+            return [ToolConfig(name="yosys", via="test-nested:inner",
+                               config={"executable": "/x"})]
+
+    class NestedPlugin(BasePlugin):
+        def __init__(self):
+            super().__init__(name="gbs.test.nested", description="", version="0.0")
+
+        def enumerate_toolchain_providers(self):
+            return {"test-nested": NestedProvider}
+
+    from gbs.plugins.loader import PluginRegistry
+    from unittest.mock import patch
+    reg = PluginRegistry()
+    reg._register_plugin(NestedPlugin())
+    _write_config(tmp_path, """\
+        toolchains:
+          - type: test-nested
+    """)
+    with patch("gbs.plugins.loader.get_plugin_registry", return_value=reg):
+        config = _load(tmp_path, monkeypatch)
+    yosys = next(t for t in config.tools if t.name == "yosys")
+    assert yosys.via == "test-nested:inner"
+
+
 def test_apio_provider_declared_variant_stamps_all(tmp_path):
     from gbs.builtin.apio.provider import ApioToolchainProvider
     pkg = tmp_path / "oss-cad-suite"
