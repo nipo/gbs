@@ -69,11 +69,7 @@ def test_contribute_passes_no_matching_output():
 
 def test_pass_creates_dispatcher():
     """Test that pass creates dispatcher correctly"""
-    config = {
-        "vhdl_standard": "2008",
-        "output_dir": "build/ghdl",
-        "ghdl_tool": "ghdl"
-    }
+    config = {"vhdl_standard": "2008"}
 
     pass_obj = GHDLSimulatePass(config)
     ctx = BuildContext()
@@ -82,10 +78,9 @@ def test_pass_creates_dispatcher():
     assert len(dispatchers) == 1
     dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
-    assert dispatcher.name == "ghdl"
-    # output_dir is no longer a dispatcher attribute - it's handled via BuildContext
+    assert dispatcher.name == "ghdl-simulate"
     assert dispatcher.vhdl_std == "2008"
-    assert dispatcher.ghdl_tool == "ghdl"
+    assert dispatcher.tool_name == "ghdl"
 
 
 def test_pass_creates_dispatcher_with_defaults():
@@ -99,15 +94,14 @@ def test_pass_creates_dispatcher_with_defaults():
     assert len(dispatchers) == 1
     dispatcher = dispatchers[0]
     assert isinstance(dispatcher, Dispatcher)
-    # output_dir is no longer a dispatcher attribute - it's handled via BuildContext
     assert dispatcher.vhdl_std == "1993"
-    assert dispatcher.ghdl_tool == "ghdl"
+    assert dispatcher.tool_name == "ghdl"
 
 
 def test_ghdl_simulate_pass_metadata():
     """Test GHDLSimulatePass metadata"""
     assert GHDLSimulatePass.name == "ghdl-simulate"
-    assert "vhdl" in GHDLSimulatePass.input_types
+    assert "ghdl-cf" in GHDLSimulatePass.input_types
     assert "ghdl-simulator" in GHDLSimulatePass.output_types
 
 
