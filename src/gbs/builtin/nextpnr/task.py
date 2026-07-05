@@ -114,9 +114,24 @@ class PlaceAndRoute(Task):
 
         if process.returncode != 0:
             log_path = log_outputs[0].path if log_outputs else None
+            # nextpnr's XDC/PCF/LPF errors say "on line N" without the
+            # file — each --xdc argument starts a fresh line counter
+            # and the parser never mentions which one it was reading.
+            # Include the ordered constraint list so the user can grep
+            # the referenced line themselves.
+            message = f"nextpnr failed with exit code {process.returncode}"
+            if constraints:
+                constraint_list = "\n".join(
+                    f"  {i + 1}. {c.path}" for i, c in enumerate(constraints)
+                )
+                message += (
+                    f"\nConstraint files passed to nextpnr, "
+                    f"in the order --{tc.constraint_flag.lstrip('-')} was given:\n"
+                    f"{constraint_list}"
+                )
             raise process.failure(
                 tool="nextpnr",
-                message=f"nextpnr failed with exit code {process.returncode}",
+                message=message,
                 log_path=log_path,
             )
 

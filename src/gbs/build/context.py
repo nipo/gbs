@@ -527,7 +527,9 @@ class BuildContext(UIReporter):
         if isinstance(exc, ToolFailure):
             click.echo(click.style(f"{indent}Tool '{exc.tool}' failed", fg="red"))
             if exc.message and exc.message != f"{exc.tool} failed":
-                click.echo(f"{indent}  {exc.message}")
+                for i, line in enumerate(exc.message.splitlines() or [""]):
+                    prefix = f"{indent}  " if i == 0 else f"{indent}    "
+                    click.echo(f"{prefix}{line}")
             cmd = " ".join(shlex.quote(str(a)) for a in exc.argv)
             click.echo(f"{indent}  Command: {cmd}")
             if exc.cwd is not None:
