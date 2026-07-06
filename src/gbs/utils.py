@@ -42,7 +42,14 @@ def expand_path(path_str: str) -> Path:
 
 
 def clean_paths(paths: set[Path], dry_run: bool = False, echo_func=None) -> set[Path]:
-    """Clean a set of paths (files or directories)
+    """Clean a set of paths (files or directories).
+
+    Anything that resolves outside the current working directory is
+    left alone — a build may declare an output path that intentionally
+    escapes the project tree (e.g. copying a firmware artifact into a
+    sibling project), and ``project clean`` should not chase it there.
+    Skipped paths are reported through ``echo_func`` so the user
+    sees which artifacts remain.
 
     Args:
         paths: Set of paths to clean
@@ -61,11 +68,23 @@ def clean_paths(paths: set[Path], dry_run: bool = False, echo_func=None) -> set[
         if not path.exists():
             continue
 
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+
+        if not resolved.is_relative_to(cwd):
+            if echo_func is not None:
+                echo_func(
+                    f"Skipping out-of-tree output {path} "
+                    f"(resolves to {resolved}, outside {cwd})"
+                )
+            continue
+
         if dry_run:
             echo_func(f"Would remove: {path}")
             continue
 
-        assert path.resolve().is_relative_to(cwd)
         if path.is_dir():
             shutil.rmtree(path)
         else:
