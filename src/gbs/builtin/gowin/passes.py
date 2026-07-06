@@ -53,10 +53,6 @@ class GowinSynthesizePass(BasePass):
                 from ...utils import expand_path
                 self.gowin_path = expand_path(_tool_config.config["path"])
 
-        if self.device and self.gowin_path:
-            from .device_info import get_device_info
-            self.device_info = get_device_info(self.gowin_path, self.device)
-
     def probe(self) -> str | None:
         part = (self.device or "").lower()
         if not part.startswith("gw"):
@@ -78,6 +74,17 @@ class GowinSynthesizePass(BasePass):
                 f"registered `gowin` refers to a different binary "
                 f"(e.g. gowin_pack)."
             )
+        # Resolve the device now that we know the target really is a
+        # Gowin part and the IDE install root is known. If Gowin's own
+        # device CSV rejects the string, surface that as a probe
+        # rejection so the plan-failure diagnostic can list us
+        # alongside every other backend's reason instead of crashing
+        # the whole planner.
+        from .device_info import get_device_info
+        try:
+            self.device_info = get_device_info(self.gowin_path, self.device)
+        except ValueError as e:
+            return f"Gowin device CSV rejected part {self.device!r}: {e}"
         return None
 
     def filter_vars(self) -> dict[str, Any]:
