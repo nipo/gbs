@@ -322,10 +322,13 @@ class BuildStep(UIReporter, asyncio.Future):
         return self.task
 
     async def __worker(self):
-        # Initialize progress
-        await self.update_progress(0.0, f"{self.pretty_name} waiting")
-
-        # Wait for all dependencies if any
+        # Wait for all dependencies if any. Deliberately NO progress
+        # emission here — every not-yet-runnable task showing up as a
+        # "waiting" row in the progress display drowns the tasks that
+        # are actually doing work. update_progress lazily creates the
+        # progress entry, so a task first appears in the UI when it
+        # starts (or when it is marked failed because its prereqs
+        # failed).
         deps_failed = None
         pending = self.depends_on
         failing = []
