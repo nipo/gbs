@@ -117,6 +117,31 @@ class GBSConfig:
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
     file_url_template: str = DEFAULT_FILE_URL_TEMPLATE  # Template for OSC 8 file URLs
     loaded_files: list[Path] = field(default_factory=list)  # Config files that were loaded
+    # CLI-driven overrides captured at gbs top-level. `-t/--tool` and
+    # `--tool-version` pairs are (backend_substring, value); the planner
+    # applies matching entries to each backend's per-output-group
+    # config before instantiating passes, so every command that goes
+    # through planning honours them uniformly.
+    tool_overrides: list[tuple[str, str]] = field(default_factory=list)
+    tool_version_overrides: list[tuple[str, str]] = field(default_factory=list)
+
+    def apply_backend_overrides(self, backend_name: str, backend_config: dict) -> dict:
+        """Return a copy of ``backend_config`` with CLI overrides applied.
+
+        Each ``(substring, value)`` in :attr:`tool_overrides` /
+        :attr:`tool_version_overrides` that matches ``backend_name``
+        sets the corresponding key. If neither list has a match the
+        original dict is returned unchanged (still a fresh copy so the
+        caller can mutate freely).
+        """
+        result = dict(backend_config)
+        for substring, tool_id in self.tool_overrides:
+            if substring in backend_name:
+                result["tool"] = tool_id
+        for substring, version in self.tool_version_overrides:
+            if substring in backend_name:
+                result["tool_version"] = version
+        return result
 
     def get_tool(self, identifier: str) -> Optional[ToolConfig]:
         """Lookup tool by 'name[:variant][@version]'.

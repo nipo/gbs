@@ -375,6 +375,17 @@ class BuildPlanner(UIReporter):
             if output_group.target:
                 backend_config['target'] = output_group.target
 
+            # Apply -t/--tool and --tool-version overrides captured at
+            # the top-level CLI onto this backend's config, right
+            # before it reaches the pass. Overrides are keyed by
+            # backend-name substring so `-t vivado=...` matches
+            # gbs.builtin.vivado without the user typing the full
+            # module path.
+            if self.gbs_config is not None:
+                backend_config = self.gbs_config.apply_backend_overrides(
+                    backend.name, backend_config
+                )
+
             # Ask backend for passes it can contribute
             passes = backend.contribute_passes(backend_config, aliased_outputs, self.project_config, self.gbs_config)
 

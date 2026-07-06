@@ -100,8 +100,24 @@ DEFAULT_MAX_LOG_COUNT = 10
     type=click.Path(path_type=Path),
     help="Custom directory for log files (default: gbs-build/logs)"
 )
+@click.option(
+    "-t", "--tool",
+    "tool_overrides",
+    multiple=True,
+    metavar="BACKEND=TOOL[:VARIANT]",
+    help="Override tool for a backend (e.g. quartus=quartus:prime). "
+         "May be given multiple times."
+)
+@click.option(
+    "--tool-version",
+    "tool_version_overrides",
+    multiple=True,
+    metavar="BACKEND=VERSION",
+    help="Pin a tool version for a backend (e.g. yosys=2026-03-24). "
+         "May be given multiple times."
+)
 @click.pass_context
-async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None):
+async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None, tool_overrides, tool_version_overrides):
     """GBS: Gateware Build System
 
     A build system for gateware projects.
@@ -184,6 +200,15 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
 
     # Set as global hub
     set_global_hub(hub)
+
+    # Parse the tool overrides once here and store them on the
+    # gbs_config object. Every command that goes through the planner
+    # picks them up transparently — no per-command threading needed.
+    from ._tool_overrides import parse_backend_kv
+    gbs_config.tool_overrides = parse_backend_kv(tool_overrides, "--tool")
+    gbs_config.tool_version_overrides = parse_backend_kv(
+        tool_version_overrides, "--tool-version"
+    )
 
     # Store in context for subcommands
     ctx.ensure_object(dict)

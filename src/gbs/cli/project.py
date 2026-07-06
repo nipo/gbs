@@ -28,6 +28,12 @@ async def project(ctx, project_file: Path | None):
 
 
 async def _project_load(project_file, gbs_config):
+    """Load a project.
+
+    Tool overrides given on the root ``gbs`` group ride along on
+    ``gbs_config``; the planner applies them per backend, so no
+    per-project mutation is needed here.
+    """
     from ..project import Project, LoadError
     logger = get_logger()
 
@@ -51,59 +57,6 @@ async def _project_load(project_file, gbs_config):
         sys.exit(1)
 
     return proj
-    
-def _parse_backend_kv(overrides, flag_name):
-    """Parse a list of BACKEND=VALUE strings into a list of (backend, value)."""
-    parsed = []
-    for entry in overrides:
-        if '=' not in entry:
-            raise click.ClickException(
-                f"Invalid {flag_name} format: '{entry}'. "
-                f"Expected 'backend=value'."
-            )
-        backend, value = entry.split('=', 1)
-        parsed.append((backend, value))
-    return parsed
-
-
-def _apply_tool_overrides(proj, tool_overrides, tool_version_overrides):
-    """Apply --tool and --tool-version overrides to output group backend configs.
-
-    --tool sets the identifier ('name' or 'name:variant'); --tool-version
-    is stored under 'tool_version'. BasePass.resolve_tool_identifier
-    combines them at plan time into 'name[:variant][@version]' before
-    handing off to GBSConfig.get_tool.
-
-    Both flags are keyed by backend-name substring; when no output group
-    already carries config for a matching backend, an empty entry is
-    inserted so the override still lands.
-    """
-    if not tool_overrides and not tool_version_overrides:
-        return
-
-    tool_pairs = _parse_backend_kv(tool_overrides, "--tool")
-    version_pairs = _parse_backend_kv(tool_version_overrides, "--tool-version")
-
-    def _matching_backends(og, backend_substr):
-        matched = [name for name in og.backend_config if backend_substr in name]
-        if matched:
-            return matched
-        from ..plugins import get_plugin_registry
-        registry = get_plugin_registry()
-        for backend_name in registry.list_backends():
-            if backend_substr in backend_name and backend_name not in og.backend_config:
-                matched.append(backend_name)
-                og.backend_config[backend_name] = {}
-        return matched
-
-    for og in proj.model.output_groups:
-        for backend_substr, tool_id in tool_pairs:
-            for backend_name in _matching_backends(og, backend_substr):
-                og.backend_config[backend_name]["tool"] = tool_id
-
-        for backend_substr, version in version_pairs:
-            for backend_name in _matching_backends(og, backend_substr):
-                og.backend_config[backend_name]["tool_version"] = version
 
 
 @project.command()
@@ -113,23 +66,9 @@ def _apply_tool_overrides(proj, tool_overrides, tool_version_overrides):
     metavar="N",
     help="Maximum number of parallel tasks (overrides config files)"
 )
-@click.option(
-    "-t", "--tool",
-    "tool_overrides",
-    multiple=True,
-    metavar="BACKEND=TOOL[:VARIANT]",
-    help="Override tool for a backend (e.g. quartus=quartus:prime)"
-)
-@click.option(
-    "--tool-version",
-    "tool_version_overrides",
-    multiple=True,
-    metavar="BACKEND=VERSION",
-    help="Pin a tool version for a backend (e.g. yosys=2026-03-24)"
-)
 @click.argument("output_groups", nargs=-1, metavar="[OUTPUT_GROUP...]")
 @click.pass_context
-async def build(ctx, jobs, tool_overrides, tool_version_overrides, output_groups):
+async def build(ctx, jobs, output_groups):
     """Build a project.
 
     With no OUTPUT_GROUP arguments, every output group declared in the
@@ -151,7 +90,6 @@ async def build(ctx, jobs, tool_overrides, tool_version_overrides, output_groups
     # Apply command-line overrides
     if jobs is not None:
         proj.set_max_parallel(jobs)
-    _apply_tool_overrides(proj, tool_overrides, tool_version_overrides)
 
     selected = list(output_groups) if output_groups else None
 

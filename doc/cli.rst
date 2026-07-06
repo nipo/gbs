@@ -11,13 +11,15 @@ General Options
    gbs [OPTIONS] COMMAND [ARGS]...
 
    Options:
-     --version                  Show version and exit
-     -C, --directory DIRECTORY  Change to directory before executing command
-     -v, --verbose              Enable verbose output (INFO level)
-     -d, --debug                Enable debug output (DEBUG level)
-     -P, --no-progress          Disable progress bars
-     --log-dir PATH             Custom directory for log files (default: gbs-build/logs)
-     --help                     Show help and exit
+     --version                          Show version and exit
+     -C, --directory DIRECTORY          Change to directory before executing command
+     -v, --verbose                      Enable verbose output (INFO level)
+     -d, --debug                        Enable debug output (DEBUG level)
+     -P, --no-progress                  Disable progress bars
+     --log-dir PATH                     Custom directory for log files
+     -t, --tool BACKEND=TOOL[:VARIANT]  Override tool identifier for a backend
+     --tool-version BACKEND=VERSION     Pin a tool version for a backend
+     --help                             Show help and exit
 
 ``-C, --directory DIRECTORY``
     Change to the specified directory before executing the command. All relative
@@ -26,6 +28,25 @@ General Options
 
 ``-P, --no-progress``
     Disable progress bars in terminal output.
+
+``-t, --tool BACKEND=TOOL[:VARIANT]``
+    Override tool identifier for a backend. ``BACKEND`` is a substring
+    match against backend names (e.g. ``vivado`` matches
+    ``gbs.builtin.vivado``). ``TOOL`` follows the tool identifier
+    syntax ``name[:variant][@version]`` (see ``gbs config tool``
+    below). May be given multiple times.
+
+    Applies to every command that loads a project: ``project build``,
+    ``project show``, ``project outputs``, ``project clean``,
+    ``suite build`` (propagated to every project in the suite),
+    ``suite list``, ``suite clean``. Must appear **before** the
+    subcommand: ``gbs -t vivado=vivado:sim project build``.
+
+``--tool-version BACKEND=VERSION``
+    Pin a tool version for a backend without changing the tool
+    identifier. Combined with ``--tool`` (or the backend's default
+    tool) at plan time as ``name[:variant]@version``. May be given
+    multiple times. Same command coverage as ``--tool``.
 
 Log files are written to ``gbs-build/logs/`` by default. Use ``--verbose`` or
 ``--debug`` for console output; otherwise only errors are shown.

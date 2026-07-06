@@ -167,7 +167,9 @@ async def build(
             changed_files.update(SuiteExecutor.load_changed_files_from_list(filter_files))
             suite_def.settings.filter.enabled = True
 
-        # Create executor with filtering options
+        # Create executor with filtering options. Tool overrides live
+        # on gbs_config and are applied per-backend by the planner —
+        # no need to thread them through here.
         executor = SuiteExecutor(
             suite_def,
             gbs_config=gbs_config,
