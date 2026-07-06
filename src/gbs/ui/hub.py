@@ -116,6 +116,21 @@ class FeedbackHub:
 
         self._started = False
 
+    async def pause_progress(self):
+        """Ask every backend to tear down any live progress display.
+
+        Called by the build failure summary path so the summary
+        lands on a clean cursor at the bottom of the terminal
+        instead of racing with Rich's Live redraw. After this call
+        every backend suppresses further progress-related messages
+        so a late ProgressStart / ProgressUpdate can't
+        re-materialise the display.
+        """
+        if not self._started:
+            return
+        for backend in self._backends:
+            await backend.pause_progress()
+
     async def _process_messages(self):
         """Single task that processes all feedback messages
 
@@ -259,6 +274,10 @@ class NullHub:
 
     def emit(self, msg):
         """No-op emit"""
+        pass
+
+    async def pause_progress(self):
+        """No-op pause"""
         pass
 
     @asynccontextmanager

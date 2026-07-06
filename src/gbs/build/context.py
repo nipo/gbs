@@ -515,11 +515,16 @@ class BuildContext(UIReporter):
         # still active — the last couple of lines of the ToolFailure
         # detail (log tail and Full output path) would silently
         # disappear from the terminal (though the log file still had
-        # them). Once the progress display is done, click.echo has a
-        # clean cursor at the bottom of the terminal.
+        # them). ``end_progress`` on its own only closes this
+        # BuildContext's outer bar, not the individual task bars that
+        # are still alive in the Rich Progress registry, so we also
+        # ask the hub to pause every backend's live display.
         self.end_progress(success=not self.build_failed)
-
         if failed_steps:
+            from ..ui.hub import get_global_hub
+            hub = get_global_hub()
+            if hub is not None:
+                await hub.pause_progress()
             self._print_failure_summary(failed_steps)
 
     def _print_failure_detail(self, exc: Exception, indent: str = "    ") -> None:
