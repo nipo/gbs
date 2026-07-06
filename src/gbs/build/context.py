@@ -563,12 +563,12 @@ class BuildContext(UIReporter):
         """
         from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError, ToolFailure
 
-        # First, print all warnings (not just from failed steps)
-        warnings = self.messages_get(severity=MessageSeverity.WARNING)
-        if warnings:
-            click.echo("\n" + click.style("Build Warnings:", fg="yellow", bold=True))
-            for m in warnings:
-                m.pprint()
+        # Warnings were already streamed to the terminal as they were
+        # emitted; repeating the accumulated list here would drown the
+        # actual failure message under a wall of yellow text every
+        # time. Skip the replay and go straight to the failure
+        # summary — the user still has the live stream above and the
+        # full record in the log file.
 
         # Print failure summary
         click.echo("\n" + click.style("Build Failed!", fg="red", bold=True))
