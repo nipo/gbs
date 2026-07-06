@@ -13,7 +13,7 @@ from datetime import datetime
 
 from .base import FeedbackBackend
 from ..messages import (
-    ToolMessage, LogMessage, ProgressStart, ProgressUpdate,
+    ToolMessage, LogMessage, ProgressStart, ProgressUpdate, SummaryLine,
     ProgressEnd, BuildStatus, MessageSeverity, LogLevel
 )
 
@@ -133,6 +133,8 @@ class FileBackend(FeedbackBackend):
             await self._render_progress_end(msg)
         elif isinstance(msg, BuildStatus):
             await self._render_build_status(msg)
+        elif isinstance(msg, SummaryLine):
+            await self._render_summary_line(msg)
         else:
             # Unknown message type - log it anyway
             if self.format == 'json':
@@ -143,6 +145,19 @@ class FileBackend(FeedbackBackend):
                 })
             else:
                 self._write_line(f"[UNKNOWN] {msg}")
+
+    async def _render_summary_line(self, msg: SummaryLine):
+        """Record a summary line in the log file (no ANSI styling)."""
+        if self.format == 'json':
+            self._write_json({
+                'type': 'summary',
+                'timestamp': msg.timestamp.isoformat(),
+                'text': msg.text,
+                'fg': msg.fg,
+                'bold': msg.bold,
+            })
+        else:
+            self._write_line(msg.text)
 
     async def _render_tool_message(self, msg: ToolMessage):
         """Render a tool message"""

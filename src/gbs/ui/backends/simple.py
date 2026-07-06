@@ -15,7 +15,7 @@ from typing import TextIO, Optional
 
 from .base import FeedbackBackend
 from ..messages import (
-    ToolMessage, LogMessage, ProgressStart, ProgressUpdate,
+    ToolMessage, LogMessage, ProgressStart, ProgressUpdate, SummaryLine,
     ProgressEnd, BuildStatus, MessageSeverity, LogLevel
 )
 
@@ -107,6 +107,8 @@ class SimpleBackend(FeedbackBackend):
             await self._render_progress_end(msg)
         elif isinstance(msg, BuildStatus):
             await self._render_build_status(msg)
+        elif isinstance(msg, SummaryLine):
+            await self._render_summary_line(msg)
         else:
             # Fallback: just str() the message
             self.output.write(str(msg) + "\n")
@@ -193,6 +195,17 @@ class SimpleBackend(FeedbackBackend):
         label = description or msg.message or "Done"
         suffix = f": {msg.message}" if msg.message and msg.message != description else ""
         self.output.write(f"{indent}{status} {label}{suffix}\n")
+        self.output.flush()
+
+    async def _render_summary_line(self, msg: SummaryLine):
+        """Render a summary line as plain text.
+
+        SimpleBackend is used when Rich isn't available or when
+        --no-progress is set; keep it plain rather than embedding
+        ANSI escapes so its output stays clean in files, pipes and
+        CI logs.
+        """
+        self.output.write(msg.text + "\n")
         self.output.flush()
 
     async def _render_build_status(self, msg: BuildStatus):

@@ -8,7 +8,6 @@ from ..ui import get_global_hub
 from ..ui.reporter import UIReporter
 from ..ui.messages import MessageSeverity, ToolMessage
 from .task import VirtualResource, Resource, Stamp
-import asyncclick as click
 import asyncio
 
 class BuildContext(UIReporter):
@@ -509,72 +508,94 @@ class BuildContext(UIReporter):
 
         self.build_failed = bool(failed_steps)
 
-        # Tear the progress display down *before* printing the failure
-        # summary. Rich's Live area redraws on every tick and can
-        # overwrite the tail of anything click.echo emits while it's
-        # still active — the last couple of lines of the ToolFailure
-        # detail (log tail and Full output path) would silently
-        # disappear from the terminal (though the log file still had
-        # them). ``end_progress`` on its own only closes this
-        # BuildContext's outer bar, not the individual task bars that
-        # are still alive in the Rich Progress registry, so we also
-        # ask the hub to pause every backend's live display.
-        self.end_progress(success=not self.build_failed)
         if failed_steps:
+            # Emit the failure summary through the hub. Rich composes
+            # SummaryLine messages above its live progress area
+            # cleanly; SimpleBackend and FileBackend write plain
+            # lines; any future GUI backend gets structured messages.
+            self._print_failure_summary(failed_steps)
+
+        self.end_progress(success=not self.build_failed)
+
+        if failed_steps:
+            # Wait for the hub's processor to drain every message we
+            # just enqueued. Necessary because the CLI raises
+            # SystemExit on BuildError, which bypasses Click's async
+            # result_callback (the normal hub shutdown path) — without
+            # this drain the summary lines would sit in the queue
+            # unrendered.
             from ..ui.hub import get_global_hub
             hub = get_global_hub()
             if hub is not None:
-                await hub.pause_progress()
-            self._print_failure_summary(failed_steps)
+                await hub.flush()
 
     def _print_failure_detail(self, exc: Exception, indent: str = "    ") -> None:
-        """Render an exception in structured form on the console.
+        """Emit a structured failure diagnostic through the feedback hub.
 
         ToolFailure expands into command/cwd/exit code/output tail.
-        MissingToolError prints with a configuration hint.
-        Any other BuildError shows just its message.
+        MissingToolError prints with a configuration hint. Any other
+        BuildError shows just its message. Every line goes through
+        :meth:`FeedbackHub.summary` so the same rendering shows up
+        on every registered backend (Rich composes above the live
+        progress area, SimpleBackend and FileBackend get plain text,
+        a future GUI backend receives structured SummaryLine objects
+        it can lay out).
         """
         from .task import ToolFailure, MissingToolError
+        from ..ui.hub import get_global_hub
         import shlex
 
+        hub = get_global_hub()
+        emit = hub.summary if hub is not None else lambda *a, **k: None
+
         if isinstance(exc, ToolFailure):
-            click.echo(click.style(f"{indent}Tool '{exc.tool}' failed", fg="red"))
+            emit(f"{indent}Tool '{exc.tool}' failed", fg="red")
             if exc.message and exc.message != f"{exc.tool} failed":
                 for i, line in enumerate(exc.message.splitlines() or [""]):
                     prefix = f"{indent}  " if i == 0 else f"{indent}    "
-                    click.echo(f"{prefix}{line}")
+                    emit(f"{prefix}{line}")
             cmd = " ".join(shlex.quote(str(a)) for a in exc.argv)
-            click.echo(f"{indent}  Command: {cmd}")
+            emit(f"{indent}  Command: {cmd}")
             if exc.cwd is not None:
-                click.echo(f"{indent}  In: {exc.cwd}")
+                emit(f"{indent}  In: {exc.cwd}")
             if exc.returncode is not None:
-                click.echo(f"{indent}  Exit code: {exc.returncode}")
+                emit(f"{indent}  Exit code: {exc.returncode}")
             if exc.env_extra:
-                click.echo(f"{indent}  Env: {', '.join(f'{k}={v}' for k, v in exc.env_extra.items())}")
+                emit(f"{indent}  Env: {', '.join(f'{k}={v}' for k, v in exc.env_extra.items())}")
             if exc.log_tail:
-                click.echo(click.style(f"{indent}  Last output lines:", fg="yellow"))
+                emit(f"{indent}  Last output lines:", fg="yellow")
                 for line in exc.log_tail:
-                    click.echo(f"{indent}    {line}")
+                    emit(f"{indent}    {line}")
             if exc.log_path is not None:
-                click.echo(click.style(f"{indent}  Full output: {exc.log_path}", fg="blue"))
+                emit(f"{indent}  Full output: {exc.log_path}", fg="blue")
             return
 
         if isinstance(exc, MissingToolError):
-            click.echo(click.style(f"{indent}Reason: {exc}", fg="red"))
-            click.echo(click.style(f"{indent}Hint: Check tool configuration", fg="yellow"))
+            emit(f"{indent}Reason: {exc}", fg="red")
+            emit(f"{indent}Hint: Check tool configuration", fg="yellow")
             return
 
         exc_msg = str(exc)
         if exc_msg:
-            click.echo(click.style(f"{indent}Reason: {exc_msg}", fg="red"))
+            emit(f"{indent}Reason: {exc_msg}", fg="red")
 
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
+
+        Every line is emitted through :meth:`FeedbackHub.summary` so
+        the same rendering reaches Rich, SimpleBackend, FileBackend
+        and any future GUI backend uniformly. Rich composes summary
+        lines above its live progress area natively — no pause /
+        teardown of the progress display is required.
 
         Args:
             failed_steps: List of (BuildStep, Exception) tuples for failed steps
         """
         from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError, ToolFailure
+        from ..ui.hub import get_global_hub
+
+        hub = get_global_hub()
+        emit = hub.summary if hub is not None else lambda *a, **k: None
 
         # Warnings were already streamed to the terminal as they were
         # emitted; repeating the accumulated list here would drown the
@@ -582,10 +603,9 @@ class BuildContext(UIReporter):
         # time. Skip the replay and go straight to the failure
         # summary — the user still has the live stream above and the
         # full record in the log file.
-
-        # Print failure summary
-        click.echo("\n" + click.style("Build Failed!", fg="red", bold=True))
-        click.echo()
+        emit("")
+        emit("Build Failed!", fg="red", bold=True)
+        emit("")
 
         # Find root cause failures (not dependency failures)
         root_causes = []
@@ -648,22 +668,22 @@ class BuildContext(UIReporter):
 
         # Print root cause failures
         if root_causes or tasks_with_messages:
-            click.echo(click.style("Root Cause Failures:", fg="red", bold=True))
-            click.echo()
+            emit("Root Cause Failures:", fg="red", bold=True)
+            emit("")
 
             # First show Tasks that have messages
             for task, messages in tasks_with_messages.items():
-                click.echo(click.style(f"  ✗ {task.name}", fg="red", bold=True))
+                emit(f"  ✗ {task.name}", fg="red", bold=True)
 
                 if task.description and task.description != task.name:
-                    click.echo(f"    {task.description}")
+                    emit(f"    {task.description}")
 
                 # Show outputs that failed
                 failed_outputs = [step for step, exc in root_causes
                                 if isinstance(step, Resource) and step in task.expected_by]
                 if failed_outputs:
-                    click.echo(f"    Failed outputs: {', '.join(str(o.name) for o in failed_outputs[:3])}" +
-                             (f" (+{len(failed_outputs)-3} more)" if len(failed_outputs) > 3 else ""))
+                    emit(f"    Failed outputs: {', '.join(str(o.name) for o in failed_outputs[:3])}" +
+                         (f" (+{len(failed_outputs)-3} more)" if len(failed_outputs) > 3 else ""))
 
                 # Render structured failure detail (command, exit code, tail
                 # for ToolFailure; reason text for plain BuildError).
@@ -671,13 +691,13 @@ class BuildContext(UIReporter):
                     self._print_failure_detail(task_to_exc[task])
 
                 # Show all warnings and errors from this task
-                click.echo(click.style(f"    Messages:", fg="yellow"))
+                emit(f"    Messages:", fg="yellow")
                 for msg in messages[:10]:  # Limit to 10 messages
                     for line in str(msg).split('\n'):
-                        click.echo(f"      {line}")
+                        emit(f"      {line}")
                 if len(messages) > 10:
-                    click.echo(f"      ... and {len(messages) - 10} more messages")
-                click.echo()
+                    emit(f"      ... and {len(messages) - 10} more messages")
+                emit("")
 
             # Show other root cause failures that aren't covered above
             shown_resources = set()
@@ -693,10 +713,10 @@ class BuildContext(UIReporter):
                     continue
 
                 if isinstance(step, Task):
-                    click.echo(click.style(f"  ✗ {step.name}", fg="red", bold=True))
+                    emit(f"  ✗ {step.name}", fg="red", bold=True)
 
                     if step.description and step.description != step.name:
-                        click.echo(f"    {step.description}")
+                        emit(f"    {step.description}")
 
                     self._print_failure_detail(exc)
 
@@ -704,18 +724,18 @@ class BuildContext(UIReporter):
                     task_messages = [m for m in self.__messages
                                    if m.origin == step and m.severity in (MessageSeverity.WARNING, MessageSeverity.ERROR, MessageSeverity.FATAL)]
                     if task_messages:
-                        click.echo(click.style(f"    Messages:", fg="yellow"))
+                        emit(f"    Messages:", fg="yellow")
                         for msg in task_messages[:10]:
                             for line in str(msg).split('\n'):
-                                click.echo(f"      {line}")
+                                emit(f"      {line}")
                         if len(task_messages) > 10:
-                            click.echo(f"      ... and {len(task_messages) - 10} more messages")
-                    click.echo()
+                            emit(f"      ... and {len(task_messages) - 10} more messages")
+                    emit("")
 
         # Show log file location
         log_file = get_log_file()
         if log_file:
-            click.echo(click.style(f"Full build log: {log_file}", fg="blue"))
+            emit(f"Full build log: {log_file}", fg="blue")
 
     # ========================================================================
     # Pending Work Queue Methods (merged from BuildFileSet)

@@ -35,16 +35,6 @@ class FeedbackBackend(ABC):
         """
         pass
 
-    async def pause_progress(self):
-        """Tear down any live progress display without shutting down.
-
-        Used by BuildContext right before it prints its failure
-        summary: on backends that maintain a live-redraw region
-        (Rich), the summary would otherwise race with the redraw and
-        the last few lines get overwritten. Default: no-op.
-        """
-        pass
-
     @abstractmethod
     async def render(self, msg: Any):
         """Render a message

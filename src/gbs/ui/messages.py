@@ -20,6 +20,7 @@ __all__ = [
     "ProgressUpdate",
     "ProgressEnd",
     "BuildStatus",
+    "SummaryLine",
 ]
 
 
@@ -241,3 +242,23 @@ class BuildStatus:
         if self.message:
             parts.append(f"- {self.message}")
         return " ".join(parts)
+
+
+@dataclass
+class SummaryLine:
+    """A single line of structured report output.
+
+    Used for the failure summary (and any other end-of-run report)
+    that needs to reach the user through whatever backend is active.
+    Carrying style hints as separate fields — rather than embedding
+    ANSI codes in ``text`` — lets each backend format the line in
+    its native idiom: Rich uses console.print with markup and
+    composes cleanly above any Live area; SimpleBackend applies
+    ANSI colouring; FileBackend strips styling; a future GUI
+    backend can append it to a summary widget with the right
+    colour.
+    """
+    text: str
+    fg: Optional[str] = None  # "red", "yellow", "blue", "green", "cyan"
+    bold: bool = False
+    timestamp: datetime = field(default_factory=datetime.now)

@@ -14,7 +14,7 @@ from pathlib import Path
 from .base import FeedbackBackend
 from ..messages import (
     ToolMessage, LogMessage, ProgressStart, ProgressUpdate,
-    ProgressEnd, BuildStatus, MessageSeverity, LogLevel
+    ProgressEnd, BuildStatus, SummaryLine, MessageSeverity, LogLevel
 )
 
 __all__ = ["RichBackend", "is_rich_available"]
@@ -98,11 +98,6 @@ class RichBackend(FeedbackBackend):
         self._progress_tasks: Dict[str, int] = {}  # task_id -> rich task_id
         self._progress_transient: Dict[str, bool] = {}  # task_id -> is_transient
         self._progress_started = False
-        # Once pause_progress() has been called we drop every further
-        # progress-related message so a late ProgressStart or
-        # ProgressUpdate cannot re-materialise the live display over
-        # the failure summary.
-        self._progress_paused = False
 
         # Register atexit handler to restore terminal state (cursor visibility)
         # in case of abnormal exit while progress bars are active
@@ -125,22 +120,6 @@ class RichBackend(FeedbackBackend):
             self._progress_started = False
         atexit.unregister(self._restore_terminal)
 
-    async def pause_progress(self):
-        """Tear down the live progress display so subsequent
-        console.print / click.echo calls land on a clean cursor at
-        the bottom of the terminal instead of being overwritten by
-        Rich's redraw loop.
-
-        Once paused, subsequent ProgressStart / ProgressUpdate /
-        ProgressEnd messages are dropped so a late update from a
-        still-running task can't re-materialise the display.
-        """
-        self._progress_paused = True
-        if self._progress_started:
-            self.progress.stop()
-            self._progress_started = False
-        self._progress_tasks.clear()
-        self._progress_transient.clear()
 
     async def render(self, msg):
         """Render a message with Rich formatting
@@ -161,6 +140,8 @@ class RichBackend(FeedbackBackend):
             await self._render_progress_end(msg)
         elif isinstance(msg, BuildStatus):
             await self._render_build_status(msg)
+        elif isinstance(msg, SummaryLine):
+            await self._render_summary_line(msg)
         else:
             # Fallback: just print
             self.console.print(str(msg))
@@ -268,7 +249,7 @@ class RichBackend(FeedbackBackend):
 
     async def _render_progress_start(self, msg: ProgressStart):
         """Start a progress task"""
-        if not self.show_progress or self._progress_paused:
+        if not self.show_progress:
             return
 
         # Start progress display if not already started
@@ -313,9 +294,7 @@ class RichBackend(FeedbackBackend):
 
     async def _render_progress_update(self, msg: ProgressUpdate):
         """Update progress task"""
-        if not self.show_progress or self._progress_paused:
-            return
-        if msg.task_id not in self._progress_tasks:
+        if not self.show_progress or msg.task_id not in self._progress_tasks:
             return
 
         rich_task_id = self._progress_tasks[msg.task_id]
@@ -332,9 +311,7 @@ class RichBackend(FeedbackBackend):
 
     async def _render_progress_end(self, msg: ProgressEnd):
         """Complete progress task"""
-        if not self.show_progress or self._progress_paused:
-            return
-        if msg.task_id not in self._progress_tasks:
+        if not self.show_progress or msg.task_id not in self._progress_tasks:
             return
 
         rich_task_id = self._progress_tasks.pop(msg.task_id)
@@ -363,6 +340,28 @@ class RichBackend(FeedbackBackend):
                 self.console.print(f"[red][FAILED] {task_description}: {msg.message}[/red]")
             elif not msg.success:
                 self.console.print(f"[red][FAILED] {task_description}[/red]")
+
+    async def _render_summary_line(self, msg: SummaryLine):
+        """Render a single line of the build failure summary.
+
+        Uses Rich's Console.print, which composes above any active
+        Live region (the task progress bars) without racing the
+        redraw. Style hints from the message map to Rich's inline
+        markup — Rich handles ANSI translation for the terminal
+        while a future GUI backend can read fg/bold off the message
+        directly.
+        """
+        text = msg.text
+        styles = []
+        if msg.fg:
+            styles.append(msg.fg)
+        if msg.bold:
+            styles.append("bold")
+        style = " ".join(styles) if styles else None
+        # escape() so any user-supplied text (paths, error strings)
+        # containing Rich markup like '[foo]' does not get parsed.
+        from rich.markup import escape
+        self.console.print(escape(text), style=style)
 
     async def _render_build_status(self, msg: BuildStatus):
         """Render build status with colors"""

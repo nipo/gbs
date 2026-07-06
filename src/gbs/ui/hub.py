@@ -24,7 +24,7 @@ from typing import Optional, TYPE_CHECKING
 
 from .messages import (
     ProgressStart, ProgressUpdate, ProgressEnd,
-    LogMessage, ToolMessage, BuildStatus
+    LogMessage, ToolMessage, BuildStatus, SummaryLine,
 )
 
 if TYPE_CHECKING:
@@ -116,21 +116,6 @@ class FeedbackHub:
 
         self._started = False
 
-    async def pause_progress(self):
-        """Ask every backend to tear down any live progress display.
-
-        Called by the build failure summary path so the summary
-        lands on a clean cursor at the bottom of the terminal
-        instead of racing with Rich's Live redraw. After this call
-        every backend suppresses further progress-related messages
-        so a late ProgressStart / ProgressUpdate can't
-        re-materialise the display.
-        """
-        if not self._started:
-            return
-        for backend in self._backends:
-            await backend.pause_progress()
-
     async def _process_messages(self):
         """Single task that processes all feedback messages
 
@@ -140,19 +125,36 @@ class FeedbackHub:
         while True:
             msg = await self._queue.get()
 
-            # None is sentinel for shutdown
-            if msg is None:
-                break
+            try:
+                # None is sentinel for shutdown
+                if msg is None:
+                    break
 
-            # Track progress task lifecycle
-            if isinstance(msg, ProgressStart):
-                self._active_tasks[msg.task_id] = msg
-            elif isinstance(msg, ProgressEnd):
-                self._active_tasks.pop(msg.task_id, None)
+                # Track progress task lifecycle
+                if isinstance(msg, ProgressStart):
+                    self._active_tasks[msg.task_id] = msg
+                elif isinstance(msg, ProgressEnd):
+                    self._active_tasks.pop(msg.task_id, None)
 
-            # Render message via all backends
-            for backend in self._backends:
-                await backend.render(msg)
+                # Render message via all backends
+                for backend in self._backends:
+                    await backend.render(msg)
+            finally:
+                self._queue.task_done()
+
+    async def flush(self):
+        """Wait until every queued message has been rendered.
+
+        Callers that are about to raise SystemExit — most CLI error
+        paths do that after a build failure — need this so the hub's
+        background processor has time to drain the summary lines it
+        just enqueued. Without it, the messages sit in the queue and
+        Click's async result_callback (which normally flushes on
+        shutdown) never runs.
+        """
+        if not self._started or not self._queue:
+            return
+        await self._queue.join()
 
     def emit(self, msg):
         """Emit a message to be rendered
@@ -264,6 +266,18 @@ class FeedbackHub:
             **kwargs
         ))
 
+    def summary(self, text: str = "", fg: Optional[str] = None, bold: bool = False):
+        """Convenience for emitting a SummaryLine.
+
+        See :class:`gbs.ui.messages.SummaryLine` for the rendering
+        contract each backend follows. Any code that used to reach
+        for ``click.echo(click.style(...))`` on a build-summary line
+        should route through here instead so the message reaches
+        every registered backend (Rich, Simple, File, or a future
+        GUI panel).
+        """
+        self.emit(SummaryLine(text=text, fg=fg, bold=bold))
+
 
 class NullHub:
     """No-op hub for when no real hub is active
@@ -276,8 +290,12 @@ class NullHub:
         """No-op emit"""
         pass
 
-    async def pause_progress(self):
-        """No-op pause"""
+    def summary(self, text: str = "", fg: Optional[str] = None, bold: bool = False):
+        """No-op summary"""
+        pass
+
+    async def flush(self):
+        """No-op flush"""
         pass
 
     @asynccontextmanager
