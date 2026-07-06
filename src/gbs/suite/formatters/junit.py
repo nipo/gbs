@@ -40,7 +40,10 @@ def write_junit_xml(result: SuiteResult, output_path: Path) -> None:
         testsuite.set('tests', '1')
         testsuite.set('time', f'{project_result.duration:.3f}')
 
-        # Count failures/errors/skips for this project
+        # Count failures/errors/skips for this project. Unplannable
+        # projects (no viable build plan on this host) are treated as
+        # skipped rather than failed — they're a configuration miss
+        # for the current environment, not a real build regression.
         if project_result.status == ProjectStatus.FAILURE:
             testsuite.set('failures', '1')
             testsuite.set('errors', '0')
@@ -49,7 +52,10 @@ def write_junit_xml(result: SuiteResult, output_path: Path) -> None:
             testsuite.set('failures', '0')
             testsuite.set('errors', '1')
             testsuite.set('skipped', '0')
-        elif project_result.status == ProjectStatus.SKIPPED:
+        elif project_result.status in (
+            ProjectStatus.SKIPPED,
+            ProjectStatus.UNPLANNABLE,
+        ):
             testsuite.set('failures', '0')
             testsuite.set('errors', '0')
             testsuite.set('skipped', '1')
@@ -104,6 +110,10 @@ def write_junit_xml(result: SuiteResult, output_path: Path) -> None:
         elif project_result.status == ProjectStatus.SKIPPED:
             skipped = ET.SubElement(testcase, 'skipped')
             skipped.set('message', project_result.error_message or 'Skipped')
+
+        elif project_result.status == ProjectStatus.UNPLANNABLE:
+            skipped = ET.SubElement(testcase, 'skipped')
+            skipped.set('message', 'No viable build plan on this host')
 
         # Add system-out with log file reference if available
         if project_result.log_file:

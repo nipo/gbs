@@ -34,7 +34,8 @@ def write_summary_json(result: SuiteResult, output_path: Path) -> None:
             'successful': result.successful,
             'failed': result.failed,
             'errors': result.errors,
-            'skipped': result.skipped
+            'skipped': result.skipped,
+            'unplannable': result.unplannable,
         },
         'projects': []
     }

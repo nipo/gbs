@@ -208,6 +208,7 @@ class SimpleBackend(FeedbackBackend):
             "failure": "[FAILED]",
             "error": "[FAILED]",
             "skipped": "[SKIPPED]",
+            "unplannable": "[UNPLANNABLE]",
         }
         if msg.status == "started":
             return

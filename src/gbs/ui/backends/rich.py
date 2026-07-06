@@ -347,6 +347,7 @@ class RichBackend(FeedbackBackend):
             "failure": "red",
             "error": "bold red",
             "skipped": "dim",
+            "unplannable": "dim",
         }
         style = status_styles.get(msg.status, "")
 

@@ -23,6 +23,12 @@ class ProjectStatus(Enum):
     FAILURE = "failure"
     ERROR = "error"
     SKIPPED = "skipped"
+    # Planning could not settle on a single build plan for this
+    # project (0 or >1 viable candidates). Not treated as a build
+    # failure at the suite level — the details are left to a targeted
+    # `gbs project build <name>` invocation. Typically means the
+    # required backend / tool is not installed on this machine.
+    UNPLANNABLE = "unplannable"
 
 
 @dataclass
@@ -159,6 +165,9 @@ class SuiteResult:
         failed: Number of failed projects
         errors: Number of projects with errors
         skipped: Number of skipped projects
+        unplannable: Number of projects with no viable build plan
+            (typically a missing backend / tool on this machine).
+            Not counted as a build failure at the suite level.
     """
     suite: Suite
     status: SuiteStatus
@@ -169,6 +178,7 @@ class SuiteResult:
     failed: int = 0
     errors: int = 0
     skipped: int = 0
+    unplannable: int = 0
 
 
 __all__ = [

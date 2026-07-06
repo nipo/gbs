@@ -206,6 +206,8 @@ async def build(
         click.echo(f"  Failed: {result.failed}")
         click.echo(f"  Errors: {result.errors}")
         click.echo(f"  Skipped: {result.skipped}")
+        if result.unplannable:
+            click.echo(f"  Unplannable: {result.unplannable}")
 
         # Print project details
         if result.project_results:
@@ -216,12 +218,20 @@ async def build(
                     "success": "✓",
                     "failure": "✗",
                     "error": "✗",
-                    "skipped": "-"
+                    "skipped": "-",
+                    "unplannable": "·",
                 }.get(proj_result.status.value, "?")
 
                 click.echo(f"  {status_icon} {proj_result.project.name} ({proj_result.duration:.1f}s)")
 
-                if proj_result.error_message:
+                # Unplannable projects intentionally don't get their
+                # (long) rejection diagnostic dumped in the suite
+                # summary — the user can rerun `gbs project build
+                # <name>` to see the per-backend reasons.
+                if (
+                    proj_result.error_message
+                    and proj_result.status.value != "unplannable"
+                ):
                     click.echo(f"      Error: {proj_result.error_message}")
 
         # Exit with error if suite failed

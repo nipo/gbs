@@ -196,22 +196,32 @@ class SuiteExecutor(UIReporter):
         failed = sum(1 for r in project_results if r.status == ProjectStatus.FAILURE)
         errors = sum(1 for r in project_results if r.status == ProjectStatus.ERROR)
         skipped = sum(1 for r in project_results if r.status == ProjectStatus.SKIPPED)
+        unplannable = sum(1 for r in project_results if r.status == ProjectStatus.UNPLANNABLE)
 
-        # Determine overall suite status
+        # Determine overall suite status. Unplannable projects do NOT
+        # push the suite into FAILURE — they mean the current host
+        # cannot even attempt them, not that a build regressed.
+        # However, if *no* project actually ran (everything was
+        # skipped or unplannable), the suite is reported as SKIPPED
+        # rather than SUCCESS.
         if errors > 0:
             overall_status = SuiteStatus.ERROR
         elif failed > 0:
             overall_status = SuiteStatus.FAILURE
-        elif skipped == total_projects:
+        elif (skipped + unplannable) == total_projects:
             overall_status = SuiteStatus.SKIPPED
         else:
             overall_status = SuiteStatus.SUCCESS
 
         # End progress reporting
         success = overall_status == SuiteStatus.SUCCESS
+        message_parts = [f"{successful} successful", f"{failed} failed",
+                         f"{errors} errors", f"{skipped} skipped"]
+        if unplannable:
+            message_parts.append(f"{unplannable} unplannable")
         self.end_progress(
             success=success,
-            message=f"{successful} successful, {failed} failed, {errors} errors, {skipped} skipped"
+            message=", ".join(message_parts),
         )
 
         return SuiteResult(
@@ -223,7 +233,8 @@ class SuiteExecutor(UIReporter):
             successful=successful,
             failed=failed,
             errors=errors,
-            skipped=skipped
+            skipped=skipped,
+            unplannable=unplannable,
         )
 
     async def _build_project_with_semaphore(
@@ -323,6 +334,41 @@ class SuiteExecutor(UIReporter):
         except Exception as e:
             duration = time.time() - start_time
             error_msg = str(e)
+
+            # PlanningError means the planner rejected the project up
+            # front (typically because the required backend or tool
+            # isn't installed on this machine). It is not a build
+            # failure. Categorise it as UNPLANNABLE so the suite
+            # summary reports it separately and doesn't spam the
+            # full multi-backend rejection diagnostic — the user
+            # can rerun `gbs project build <name>` if they want the
+            # details.
+            from ..planner.planner import PlanningError
+            if isinstance(e, PlanningError):
+                logger.info(
+                    f"Project '{proj_ref.name}' has no viable build plan; "
+                    f"see log for the full probe diagnostic"
+                )
+                logger.debug(
+                    f"PlanningError for '{proj_ref.name}':\n{error_msg}"
+                )
+                self.info(
+                    f"· No viable plan for '{proj_ref.name}' "
+                    f"(rerun `gbs project build {proj_ref.name}` for details)"
+                )
+                self.emit_build_status(
+                    status="unplannable",
+                    target=proj_ref.name,
+                    duration=duration,
+                    message="no viable build plan",
+                )
+                return ProjectResult(
+                    project=proj_ref,
+                    status=ProjectStatus.UNPLANNABLE,
+                    duration=duration,
+                    error_message="no viable build plan",
+                )
+
             # Log the full traceback to the log file so the user can
             # diagnose the failure; the terminal still gets the short
             # one-line summary via self.error below.
