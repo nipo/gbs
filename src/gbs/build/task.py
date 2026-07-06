@@ -722,17 +722,30 @@ class Task(BuildStep):
         ...
 
     @staticmethod
-    def __type_matches(resource, requested: str) -> bool:
+    def __type_matches(resource, requested) -> bool:
+        """Return True when ``resource`` matches ``requested``.
+
+        ``requested`` may be a single type name or any iterable of
+        candidate names — both the resource's primary ``file_type``
+        and its ``file_type_aliases`` are consulted.
+        """
         if not isinstance(resource, Resource):
             return False
-        if resource.file_type == requested:
-            return True
-        return requested in resource.file_type_aliases
+        if isinstance(requested, str):
+            candidates = (requested,)
+        else:
+            candidates = tuple(requested)
+        for candidate in candidates:
+            if resource.file_type == candidate:
+                return True
+            if candidate in resource.file_type_aliases:
+                return True
+        return False
 
-    def inputs_of_type(self, type : str) -> List[Resource]:
+    def inputs_of_type(self, type) -> List[Resource]:
         return [r for r in self.__inputs if self.__type_matches(r, type)]
 
-    def outputs_of_type(self, type : str) -> List[Resource]:
+    def outputs_of_type(self, type) -> List[Resource]:
         return [r for r in self.__outputs if self.__type_matches(r, type)]
         
 # Type for task executor function

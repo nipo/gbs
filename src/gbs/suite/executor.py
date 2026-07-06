@@ -323,6 +323,12 @@ class SuiteExecutor(UIReporter):
         except Exception as e:
             duration = time.time() - start_time
             error_msg = str(e)
+            # Log the full traceback to the log file so the user can
+            # diagnose the failure; the terminal still gets the short
+            # one-line summary via self.error below.
+            logger.exception(
+                f"Project '{proj_ref.name}' build failed with {type(e).__name__}"
+            )
 
             self.error(f"✗ Failed to build project '{proj_ref.name}': {error_msg}")
 
