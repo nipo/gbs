@@ -507,12 +507,20 @@ class BuildContext(UIReporter):
             except Exception as e:
                 self.debug(f"Error closing dispatcher {dispatcher.name}: {e}")
 
-        if failed_steps:
-            self._print_failure_summary(failed_steps)
-
         self.build_failed = bool(failed_steps)
 
+        # Tear the progress display down *before* printing the failure
+        # summary. Rich's Live area redraws on every tick and can
+        # overwrite the tail of anything click.echo emits while it's
+        # still active — the last couple of lines of the ToolFailure
+        # detail (log tail and Full output path) would silently
+        # disappear from the terminal (though the log file still had
+        # them). Once the progress display is done, click.echo has a
+        # clean cursor at the bottom of the terminal.
         self.end_progress(success=not self.build_failed)
+
+        if failed_steps:
+            self._print_failure_summary(failed_steps)
 
     def _print_failure_detail(self, exc: Exception, indent: str = "    ") -> None:
         """Render an exception in structured form on the console.
