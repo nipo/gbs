@@ -44,6 +44,10 @@ class DiamondPart:
     def ecp5_parse(cls, part: str) -> DiamondPart | None:
         """Parse an ECP5 part number, return None if it is not one
 
+        Matching is case-insensitive; the canonical uppercase form is
+        stored on the returned instance regardless of how the user
+        wrote the part in the project file.
+
         Args:
             part: Part number string from target configuration
 
@@ -51,10 +55,11 @@ class DiamondPart:
             DiamondPart instance, or None when the string is not an
             ECP5 Diamond part number
         """
-        match = cls._ecp5_re.match(part)
+        canonical = part.upper()
+        match = cls._ecp5_re.match(canonical)
         if not match:
             return None
-        return cls(part, match)
+        return cls(canonical, match)
 
     @property
     def family(self) -> str:
