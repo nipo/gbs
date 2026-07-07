@@ -17,8 +17,12 @@ class YosysBackend(BaseBackend):
     - ECP5 (via synth_ecp5)
 
     Configuration options:
-        - yosys_tool: Tool identifier for lookup (default: "yosys")
-        - steps: List of intermediate transformation commands (optional)
+        - tool: Tool identifier for lookup (default: "yosys")
+        - steps: List of intermediate transformation commands. When
+          unset, the per-target pass supplies its default_steps. When
+          set (including to an empty list), fully replaces the default.
+        - synth_args: Extra arguments appended to the synth_<target>
+          command. Same replace-not-merge semantics as steps.
     """
 
     def __init__(self):

@@ -29,10 +29,12 @@ class YosysDispatcher(BaseDispatcher):
             vhdl_std: str = "1993",
             yosys_tool: str = "yosys",
             steps: list[str] = None,
+            synth_args: list[str] = None,
     ):
         super().__init__(context, f"yosys-{synth_target}", tool_name=yosys_tool)
         self.synth_target = synth_target
         self.steps = steps or []
+        self.synth_args = list(synth_args) if synth_args else []
         self._yosys_executable: str | None = None
         self._session: Session | None = None
 

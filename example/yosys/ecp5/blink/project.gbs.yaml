@@ -18,19 +18,6 @@ output:
     target:
       part: 25k
       package: CABGA256
-    backend_config:
-      gbs.builtin.ghdl:
-        vhdl_standard: "1993"
-      gbs.builtin.yosys:
-        tool: "yosys"
-        steps:
-          - flatten
-          - tribuf -logic
-          - deminout
-      gbs.builtin.nextpnr:
-        tool: "nextpnr-ecp5"
-      gbs.builtin.ecppack:
-        tool: "ecppack"
     outputs:
       - type: bitstream
         path: blink.bin

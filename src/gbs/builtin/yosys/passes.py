@@ -24,6 +24,12 @@ class YosysBasePass(BasePass):
     # Subclasses override; the base pass accepts anything.
     part_prefix: tuple[str, ...] = ()
 
+    # Per-target defaults, applied when the project file does not
+    # provide the matching key. User-provided values fully replace
+    # these lists (no element-level merge).
+    default_synth_args: tuple[str, ...] = ()
+    default_steps: tuple[str, ...] = ()
+
     input_types = {"vhdl", "verilog"}
 
     def probe(self) -> str | None:
@@ -65,7 +71,12 @@ class YosysBasePass(BasePass):
         """
         vhdl_std = self.config.get("vhdl_standard", "1993")
         yosys_tool = self.resolve_tool_identifier("yosys")
-        steps = self.config.get("steps", [])
+        steps = self.config.get("steps")
+        if steps is None:
+            steps = list(self.default_steps)
+        synth_args = self.config.get("synth_args")
+        if synth_args is None:
+            synth_args = list(self.default_synth_args)
 
         return [YosysDispatcher(
             context=context,
@@ -73,6 +84,7 @@ class YosysBasePass(BasePass):
             yosys_tool=yosys_tool,
             vhdl_std=vhdl_std,
             steps=steps,
+            synth_args=synth_args,
         )]
 
 class YosysIce40Pass(YosysBasePass):
@@ -92,6 +104,7 @@ class YosysIce40Pass(YosysBasePass):
     synth_target = "synth_ice40"
     extra_filter_vars = {"vendor": "lattice", "family": "ice40"}
     part_prefix = ("ice40", "ice5", "up5k")
+    default_steps = ("flatten", "tribuf -logic", "deminout")
 
 
 class YosysEcp5Pass(YosysBasePass):
@@ -111,6 +124,8 @@ class YosysEcp5Pass(YosysBasePass):
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
     part_prefix = ("lfe5", "lae5")
+    default_steps = ("flatten", "tribuf -logic", "deminout")
+    default_synth_args = ("-abc9",)
 
 
 class YosysXilinxPass(YosysBasePass):
@@ -127,6 +142,8 @@ class YosysXilinxPass(YosysBasePass):
     synth_target = "synth_xilinx"
     extra_filter_vars = {"vendor": "xilinx"}
     part_prefix = ("xc7",)
+    default_steps = ("flatten", "tribuf -logic", "deminout")
+    default_synth_args = ("-flatten", "-abc9", "-arch", "xc7")
 
     def filter_vars(self) -> dict[str, Any]:
         """Match the vivado backend's technology-stack shape so a

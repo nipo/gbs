@@ -38,11 +38,13 @@ class Synthesize(SimpleCommandTask):
     description = "Yosys Synthesis"
     
     def command_get(self) -> list[str]:
-        return [
+        argv = [
             self.dispatcher.synth_target,
             "-top",
             str(self.dispatcher.context.get_topcell()),
             ]
+        argv.extend(self.dispatcher.synth_args)
+        return argv
 
 class VhdlAnalyze(SimpleCommandTask):
     name = "yosys_ghdl"
@@ -72,7 +74,7 @@ class WriteNetlist(SimpleCommandTask):
     def command_get(self) -> list[str]:
         output, = self.outputs
         return [
-            "write_json",
+            "write_json", "-noscopeinfo",
             str(output.path.resolve()),
             ]
 
