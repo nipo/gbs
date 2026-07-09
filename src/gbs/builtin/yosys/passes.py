@@ -142,8 +142,8 @@ class YosysXilinxPass(YosysBasePass):
     synth_target = "synth_xilinx"
     extra_filter_vars = {"vendor": "xilinx"}
     part_prefix = ("xc7",)
-    default_steps = ("flatten", "tribuf -logic", "deminout")
-    default_synth_args = ("-flatten", "-abc9", "-arch", "xc7")
+    default_steps = ("tribuf -logic", "chformal -remove")
+    default_synth_args = ("-flatten", "-arch", "xc7", "-noclkbuf", "-nosrl")
 
     def filter_vars(self) -> dict[str, Any]:
         """Match the vivado backend's technology-stack shape so a
