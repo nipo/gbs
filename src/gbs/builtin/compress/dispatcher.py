@@ -1,13 +1,15 @@
 """Compression Dispatcher
 
 Compresses files in the pending work queue based on type suffixes.
-Works backwards from unsatisfied outputs: if an output needs type
-"ise-bitstream+gzip", this dispatcher creates a compressed version
-from "ise-bitstream" source.
+For every unsatisfied output whose type ends with a known transform
+(e.g. ``bitstream+gzip``), this dispatcher takes a matching base-type
+producer already in the pending queue and emits a compressed
+intermediate inside the build tree. Delivery to the user's requested
+path is left to ``OutputCopyDispatcher``.
 
-The dispatcher handles one transform at a time. For chained transforms
-like "+gzip+base64", each dispatcher iteration handles the outermost
-transform, creating intermediate goals for inner transforms.
+For chained transforms like ``+gzip+base64``, each dispatcher
+iteration peels off the outermost transform; the next iteration sees
+the produced intermediate as the base type for the following stage.
 """
 
 from __future__ import annotations
@@ -45,7 +47,6 @@ def parse_output_type(type_str: str) -> tuple[str, str | None]:
     if '+' not in type_str:
         return type_str, None
 
-    # Split off the last transform
     last_plus = type_str.rfind('+')
     base_type = type_str[:last_plus]
     transform = type_str[last_plus + 1:]
@@ -55,28 +56,27 @@ def parse_output_type(type_str: str) -> tuple[str, str | None]:
 class CompressDispatcher(BaseDispatcher):
     """Dispatcher that compresses files based on type suffixes.
 
-    It works backwards from unsatisfied outputs:
-    1. Find outputs with compression suffixes (e.g., "+gzip") that have no producer
-    2. Strip the last transform to get the source type needed
-    3. Look for source in pending queue, or create an intermediate output goal
-    4. Create compression task from source to output
+    For each unsatisfied output whose type carries a known transform
+    suffix, this dispatcher looks for a base-type producer in pending
+    and emits a compressed intermediate in the build tree tagged with
+    the same compressed type. OutputCopyDispatcher then copies that
+    intermediate to the user's specified output path.
+
+    The dispatcher does not touch the user's output resource, and
+    does not write outside ``context.output_path``.
     """
 
     def __init__(self, context: BuildContext):
         super().__init__(context, "compress", tool_name="compress")
 
     async def process(self) -> None:
-        """Create compression tasks for unsatisfied compressed outputs.
+        """Emit compressed intermediates for unsatisfied compressed outputs.
 
-        Works backwards: finds outputs needing compression, locates or
-        creates source, then creates compression task.
-
-        Uses self.context to access the build context.
+        Runs once per dispatcher iteration; caller loops until pending
+        stabilises. Idempotent: skips when a matching compressed
+        intermediate is already in pending.
         """
-        # Get outputs that need producers
-        unsatisfied = self.context.get_pending_unsatisfied_outputs()
-
-        for dest_resource in unsatisfied:
+        for dest_resource in self.context.get_pending_unsatisfied_outputs():
             base_type, transform = parse_output_type(dest_resource.file_type)
 
             if transform is None:
@@ -85,79 +85,74 @@ class CompressDispatcher(BaseDispatcher):
 
             handler_info = COMPRESSION_HANDLERS.get(transform)
             if handler_info is None:
-                # Unknown transform, skip (might be handled by another dispatcher)
+                # Unknown transform, another dispatcher may handle it
                 continue
 
             task_class, extension = handler_info
+            compressed_type = dest_resource.file_type
 
             self.debug(
-                f"Output {dest_resource.file_type} needs transform '{transform}' "
+                f"Output {compressed_type} needs transform '{transform}' "
                 f"from base type '{base_type}'"
             )
 
-            # Look for source file with base type
-            matching = self.context.filter_pending(file_type=base_type)
-
-            if not matching:
-                # Source doesn't exist yet - create an intermediate output goal
-                # This will be satisfied by another dispatcher (or previous iteration)
-                intermediate_path = self.context.output_path / self._generate_intermediate_name(
-                    dest_resource.path, extension
-                )
-
-                # Only create if not already in pending queue
-                if self.context.get_pending(intermediate_path) is None:
-                    intermediate_resource = self.context.get_resource(
-                        intermediate_path,
-                        file_type=base_type,
-                        typology=ResourceTypology.OUTPUT,  # Mark as goal
-                        generated_by=None,
-                    )
-                    self.info(
-                        f"Created intermediate goal: {base_type} at {intermediate_path}"
-                    )
+            # If a producer intermediate for this compressed type
+            # already exists in pending (from a previous iteration),
+            # output-copy will handle the delivery.
+            if self._has_producer(compressed_type):
                 continue
 
-            if len(matching) > 1:
+            # A source of the base type is any pending resource whose
+            # file_type matches, that already has a producer or is a
+            # SOURCE/INTERMEDIATE (i.e. not an unsatisfied output goal).
+            # openxc7 marks its terminal `.bit` as OUTPUT typology
+            # because it treats it as its own final artifact, so we
+            # cannot filter on typology alone — look for producers.
+            producers = [
+                r for r in self.context.filter_pending(file_type=base_type)
+                if r.depends_on or r.typology != ResourceTypology.OUTPUT
+            ]
+
+            if not producers:
+                # Wait for the base-type producer to appear on a later
+                # dispatcher iteration.
+                continue
+
+            if len(producers) > 1:
                 self.warning(
                     f"Multiple files of type '{base_type}' found, "
-                    f"using first: {matching[0].path}"
+                    f"using first: {producers[0].path}"
                 )
 
-            source_resource = matching[0]
+            source = producers[0]
 
-            # Skip if already has a producer (shouldn't happen for unsatisfied, but be safe)
-            if dest_resource.depends_on:
-                self.debug(f"Output {dest_resource.path} already has producer, skip")
-                continue
+            intermediate_path = self.context.output_path / (source.path.name + extension)
+            intermediate = self.context.get_resource(
+                intermediate_path,
+                file_type=compressed_type,
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+            )
+            self.context.add_pending(intermediate)
 
             self.info(
-                f"Compressing {base_type} -> {dest_resource.file_type}: "
-                f"{source_resource.path} -> {dest_resource.path}"
+                f"Compressing {base_type} -> {compressed_type}: "
+                f"{source.path} -> {intermediate.path}"
             )
 
-            # Create compression task
             task_class(
                 dispatcher=self,
-                source=source_resource,
-                destination=dest_resource,
+                source=source,
+                destination=intermediate,
             )
 
-            # Update the resource to reflect it now has a producer
-            dest_resource.generated_by = self.name
-
-    def _generate_intermediate_name(self, output_path: Path, extension: str) -> str:
-        """Generate name for intermediate file by removing extension.
-
-        Args:
-            output_path: Final output path (e.g., firmware.bit.gz)
-            extension: Extension added by this transform (e.g., .gz)
-
-        Returns:
-            Intermediate filename (e.g., firmware.bit)
+    def _has_producer(self, compressed_type: str) -> bool:
+        """True when a resource of ``compressed_type`` is already
+        queued with a producer attached (or is a plain intermediate),
+        i.e. not an unsatisfied output goal.
         """
-        name = output_path.name
-        if name.endswith(extension):
-            return name[:-len(extension)]
-        # Fallback: just use the name without last extension
-        return output_path.stem
+        for r in self.context.filter_pending(file_type=compressed_type):
+            if r.typology == ResourceTypology.OUTPUT and not r.depends_on:
+                continue
+            return True
+        return False
