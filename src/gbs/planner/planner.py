@@ -259,6 +259,17 @@ class BuildPlanner(UIReporter):
 
             selected.append(pp)
 
+        # Collapse plans that share the same pass set. Execution is
+        # dataflow-driven (dispatchers drain a shared pending queue until
+        # it stabilises), so two candidates that differ only in the
+        # order the search discovered a shared producer are the same
+        # plan. This arises with diamond dependencies, e.g. two passes
+        # both consuming one synthesis netlist.
+        unique: dict[frozenset[str], PartialPlan] = {}
+        for pp in selected:
+            unique.setdefault(frozenset(p.name for p in pp.passes), pp)
+        selected = list(unique.values())
+
         # Prune non-minimal plans: a plan whose pass set is a strict
         # superset of another candidate's carries redundant passes
         pass_sets = [set(p.name for p in pp.passes) for pp in selected]
