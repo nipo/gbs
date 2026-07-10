@@ -61,7 +61,7 @@ NEXTPNR_TARGETS = {
         output_type="nextpnr-fasm",
         output_extension=".fasm",
         output_flag="--fasm",
-        constraint_type="xilinx-xdc",
+        constraint_type="nextpnr-xdc",
         constraint_flag="--xdc",
         use_chipdb=True,
     ),

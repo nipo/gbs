@@ -109,8 +109,13 @@ class NextpnrXilinxPass(NextpnrBasePass):
     """Pass that performs place-and-route for Xilinx Series-7 using
     nextpnr-xilinx (openxc7 fork).
 
-    Input types: xilinx-netlist-json, xilinx-xdc
+    Input types: xilinx-netlist-json, nextpnr-xdc
     Output types: nextpnr-fasm
+
+    The Vivado ``xilinx-xdc`` sources are translated to the reduced
+    ``nextpnr-xdc`` dialect by the xdc-transpile pass; nextpnr-xilinx
+    never sees raw Vivado XDC because its constraint reader accepts only
+    a subset of it.
 
     The chipdb binary is resolved by the dispatcher from the tool's
     `chipdb_root` config key (populated by the apio provider from an
@@ -120,7 +125,7 @@ class NextpnrXilinxPass(NextpnrBasePass):
     target = "xilinx"
     default_tool = "nextpnr-xilinx"
     part_prefix = ("xc7",)
-    input_types = {"xilinx-netlist-json", "xilinx-xdc"}
+    input_types = {"xilinx-netlist-json", "nextpnr-xdc"}
     output_types = {"nextpnr-fasm", "nextpnr-pnr-report", "pnr-report"}
 
     def filter_vars(self) -> dict[str, Any]:
