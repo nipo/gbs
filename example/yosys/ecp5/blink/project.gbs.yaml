@@ -16,8 +16,7 @@ output:
   - name: pnr
     topcell: top
     target:
-      part: 25k
-      package: CABGA256
+      part: LFE5U-25F-6BG256C
     outputs:
       - type: bitstream
         path: blink.bin

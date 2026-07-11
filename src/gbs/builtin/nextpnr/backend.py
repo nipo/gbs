@@ -18,8 +18,10 @@ class NextpnrBackend(BaseBackend):
 
     Configuration options:
         - nextpnr_tool: Tool identifier for lookup (default: target-specific)
-        - part: FPGA part (e.g., "hx1k", "25k")
-        - package: FPGA package (e.g., "tq144", "CABGA256")
+        - part: FPGA part. iCE40 takes the native device name plus a
+          separate `package` (e.g. "hx1k" / "tq144"); ECP5 takes the
+          full Lattice ordering part number (e.g. "LFE5U-25F-6BG256C")
+          and derives the device flag, package and speed grade from it.
         - Constraint files: PCF for ice40, LPF for ecp5
     """
 

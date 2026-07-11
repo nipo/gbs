@@ -103,7 +103,7 @@ class YosysIce40Pass(YosysBasePass):
     output_types = {"ice40-netlist-json", "yosys-synthesis-report", "synthesis-report"}
     synth_target = "synth_ice40"
     extra_filter_vars = {"vendor": "lattice", "family": "ice40"}
-    part_prefix = ("ice40", "ice5", "up5k")
+    part_prefix = ("ice40", "ice5")
     default_steps = ("flatten", "tribuf -logic", "deminout")
 
 
@@ -124,8 +124,8 @@ class YosysEcp5Pass(YosysBasePass):
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
     part_prefix = ("lfe5", "lae5")
-    default_steps = ("flatten", "tribuf -logic", "deminout")
-    default_synth_args = ("-abc9",)
+    default_steps = ("chformal -remove",)
+    default_synth_args = ("-abc9", "-family", "ecp5", "-iopad")
 
 
 class YosysXilinxPass(YosysBasePass):

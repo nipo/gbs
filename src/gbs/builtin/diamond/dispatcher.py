@@ -5,7 +5,7 @@ from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
 from . import task
-from .device import DiamondPart
+from ..ecp5_part import Ecp5Part
 from .diamondc import Session
 
 
@@ -39,7 +39,7 @@ class DiamondDispatcher(BaseDispatcher):
         self,
             context: BuildContext,
             tool_name: str,
-            part: DiamondPart,
+            part: Ecp5Part,
             synthesis: str,
             vhdl_std: str,
             strategy: dict[str, str],

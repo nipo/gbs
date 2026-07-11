@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...base import BaseBackend
-from .device import DiamondPart
+from ..ecp5_part import Ecp5Part
 from .passes import DiamondEcp5Pass
 
 
@@ -48,7 +48,7 @@ class DiamondBackend(BaseBackend):
             self.logger.debug("Diamond backend skipped: no part selected")
             return []
 
-        part = DiamondPart.ecp5_parse(part_str)
+        part = Ecp5Part.parse(part_str)
         if not part:
             # Not a Diamond ECP5 part number; another backend
             # (e.g. nextpnr/ecppack) probably owns this target

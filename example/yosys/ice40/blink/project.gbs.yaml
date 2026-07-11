@@ -16,8 +16,7 @@ output:
   - name: pnr
     topcell: top
     target:
-      part: up5k
-      package: sg48
+      part: iCE40UP5K-SG48I
     outputs:
       - type: bitstream
         path: blink.bin

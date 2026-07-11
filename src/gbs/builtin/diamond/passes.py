@@ -5,7 +5,7 @@ from typing import Any
 
 from ...base import BasePass
 from ...protocol import Dispatcher
-from .device import DiamondPart
+from ..ecp5_part import Ecp5Part
 from .dispatcher import DiamondDispatcher
 
 
@@ -32,7 +32,7 @@ class DiamondEcp5Pass(BasePass):
     }
 
     def __init__(self,
-                 part: DiamondPart,
+                 part: Ecp5Part,
                  config: dict[str, Any],
                  project_config: dict[str, Any] | None = None,
                  gbs_config: 'GBSConfig | None' = None):
@@ -52,7 +52,7 @@ class DiamondEcp5Pass(BasePass):
     def probe(self) -> str | None:
         target = self.config.get("target") or {}
         part = target.get("part") or ""
-        if DiamondPart.ecp5_parse(part) is None:
+        if Ecp5Part.parse(part) is None:
             return f"target part {part!r} is not an ECP5 device Diamond can parse"
         return self.probe_tool("diamond")
 

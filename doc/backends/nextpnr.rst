@@ -39,12 +39,21 @@ FPGA Targets
   - Tool: ``nextpnr-ice40``
   - Input: JSON netlist from Yosys, optional PCF constraints
   - Output: ASCII bitstream (``.asc``)
+  - The target ``part`` is the full Lattice ordering part number (e.g.
+    ``iCE40UP5K-SG48I``); the pass translates it to the nextpnr device
+    flag and package (``--up5k --package sg48``). The trailing grade or
+    packing letters are ignored.
 
 **Lattice ECP5**
   - Pass: ``nextpnr-ecp5``
   - Tool: ``nextpnr-ecp5``
   - Input: JSON netlist from Yosys, optional LPF constraints
   - Output: Text config file (``.config``)
+  - The target ``part`` is the full Lattice ordering part number, the
+    same string Diamond uses (e.g. ``LFE5U-25F-6BG256C``); the pass
+    translates it to the nextpnr device flag, package and speed grade
+    (``--25k --package CABGA256 --speed 6``), so one part number drives
+    both the Diamond and the yosys/nextpnr/ecppack flows.
 
 **Xilinx Series-7** (openxc7)
   - Pass: ``nextpnr-xilinx``
@@ -90,8 +99,7 @@ In project file, specify device in the output group:
      - name: bitstream
        topcell: top_module
        target:
-         part: hx1k          # iCE40 device (e.g., hx1k, up5k, lp8k)
-         package: tq144      # Package type (e.g., tq144, sg48, cm81)
+         part: iCE40HX1K-TQ144   # Lattice ordering part number
        outputs:
          - type: ice40-asc
            path: build/design.asc
@@ -114,8 +122,7 @@ Example Project
      - name: bitstream
        topcell: top_module
        target:
-         part: up5k          # iCE40 UltraPlus 5K
-         package: sg48       # SG48 package
+         part: iCE40UP5K-SG48I   # Lattice ordering part number
        outputs:
          - type: ice40-asc
            path: build/design.asc
@@ -196,8 +203,7 @@ The complete flow in a GBS project:
      - name: bitstream
        topcell: top
        target:
-         part: up5k
-         package: sg48
+         part: iCE40UP5K-SG48I
        outputs:
          - type: ice40-bitstream  # Final binary bitstream
            path: build/design.bin

@@ -91,6 +91,8 @@ class PlaceAndRoute(Task):
                     "--json", str(netlist_rsrc.path),
                     tc.output_flag, str(output_path),
                     "--top", topcell]
+            if self.dispatcher.speed:
+                cmd += ["--speed", self.dispatcher.speed]
 
         # Always generate log file
         log_outputs = self.outputs_of_type("nextpnr-log")

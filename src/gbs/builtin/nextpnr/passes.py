@@ -44,28 +44,6 @@ class NextpnrBasePass(BasePass):
             "pnr_engine": "nextpnr",
         }
 
-    def dispatchers(self, context) -> list[Dispatcher]:
-        """Create nextpnr dispatcher
-
-        Args:
-            context: Build context to pass to dispatcher
-
-        Returns:
-            NextpnrDispatcher singleton
-        """
-        nextpnr_tool = self.resolve_tool_identifier(self.default_tool)
-        target = self.config.get("target", {})
-        part = target["part"]
-        package = target["package"]
-
-        return [NextpnrDispatcher(
-            context=context,
-            target=self.target,
-            nextpnr_tool=nextpnr_tool,
-            part=part,
-            package=package,
-        )]
-
 
 class NextpnrIce40Pass(NextpnrBasePass):
     """Pass that performs place-and-route for Ice40 using nextpnr
@@ -81,9 +59,44 @@ class NextpnrIce40Pass(NextpnrBasePass):
     name = "nextpnr-ice40"
     target = "ice40"
     default_tool = "nextpnr-ice40"
-    part_prefix = ("ice40", "ice5", "up5k")
+    part_prefix = ("ice40", "ice5")
     input_types = {"ice40-netlist-json", "ice40-pcf"}
     output_types = {"ice40-asc", "nextpnr-pnr-report", "pnr-report"}
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Create the nextpnr dispatcher for an iCE40 target.
+
+        The target ``part`` is a Lattice ordering part number (e.g.
+        ``iCE40UP5K-SG48I``); nextpnr-ice40 instead wants a device-type
+        flag and a lowercase package name, so translate it here rather
+        than pass the raw part to the command line.
+        """
+        from ...build.task import BuildError
+        from .. import ice40_part
+
+        nextpnr_tool = self.resolve_tool_identifier(self.default_tool)
+        target = self.config.get("target", {})
+        part_str = target["part"]
+
+        part = ice40_part.Ice40Part.parse(part_str)
+        if part is None:
+            raise BuildError(
+                f"nextpnr-ice40 target part {part_str!r} is not an iCE40 "
+                f"ordering part number (e.g. iCE40UP5K-SG48I)."
+            )
+        try:
+            device = part.nextpnr_device
+            package = part.nextpnr_package
+        except ValueError as exc:
+            raise BuildError(f"Cannot map part {part_str!r} to nextpnr-ice40: {exc}")
+
+        return [NextpnrDispatcher(
+            context=context,
+            target=self.target,
+            nextpnr_tool=nextpnr_tool,
+            part=device,
+            package=package,
+        )]
 
 
 class NextpnrEcp5Pass(NextpnrBasePass):
@@ -103,6 +116,42 @@ class NextpnrEcp5Pass(NextpnrBasePass):
     part_prefix = ("lfe5", "lae5")
     input_types = {"ecp5-netlist-json", "ecp5-lpf"}
     output_types = {"ecp5-config", "nextpnr-pnr-report", "pnr-report"}
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Create the nextpnr dispatcher for an ECP5 target.
+
+        The target ``part`` is a Lattice ordering part number (e.g.
+        ``LFE5U-25F-6BG256C``); nextpnr-ecp5 instead wants a device-type
+        flag, package name and speed grade, so translate it here rather
+        than pass the raw part to the command line.
+        """
+        from ...build.task import BuildError
+        from .. import ecp5_part
+
+        nextpnr_tool = self.resolve_tool_identifier(self.default_tool)
+        target = self.config.get("target", {})
+        part_str = target["part"]
+
+        part = ecp5_part.Ecp5Part.parse(part_str)
+        if part is None:
+            raise BuildError(
+                f"nextpnr-ecp5 target part {part_str!r} is not an ECP5 "
+                f"ordering part number (e.g. LFE5U-25F-6BG256C)."
+            )
+        try:
+            device = part.nextpnr_device
+            package = part.nextpnr_package
+        except ValueError as exc:
+            raise BuildError(f"Cannot map part {part_str!r} to nextpnr-ecp5: {exc}")
+
+        return [NextpnrDispatcher(
+            context=context,
+            target=self.target,
+            nextpnr_tool=nextpnr_tool,
+            part=device,
+            package=package,
+            speed=part.nextpnr_speed,
+        )]
 
 
 class NextpnrXilinxPass(NextpnrBasePass):
