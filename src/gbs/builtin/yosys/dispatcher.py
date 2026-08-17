@@ -144,7 +144,7 @@ class YosysDispatcher(BaseDispatcher):
             prev = self.intermediate[-1]
 
         for i, step in enumerate(self.steps):
-            if len(self.intermediate) >= i:
+            if len(self.intermediate) > i:
                 continue
             output = self.context.get_stamp(f"yosys_intermediate_{i}.stamp")
             t = task.RawCommand(self,
