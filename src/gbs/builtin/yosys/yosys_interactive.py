@@ -101,9 +101,9 @@ class Session(shell.Session):
                 )
                 continue
 
-            # Unstructured output - create DEBUG message
+            # Unstructured output - create warning message
             yield ToolMessage(
-                severity=MessageSeverity.DEBUG,
+                severity=MessageSeverity.WARNING,
                 message=line,
             )
             continue
