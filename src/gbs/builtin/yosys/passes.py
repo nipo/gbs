@@ -124,8 +124,8 @@ class YosysEcp5Pass(YosysBasePass):
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
     part_prefix = ("lfe5", "lae5")
-    default_steps = ("chformal -remove",)
-    default_synth_args = ("-abc9", "-family", "ecp5", "-iopad")
+    default_steps = ("chformal -remove", "tribuf -logic",)
+    default_synth_args = ("-abc9", "-family", "ecp5")
 
 
 class YosysXilinxPass(YosysBasePass):
