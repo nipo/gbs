@@ -9,6 +9,7 @@ from .dispatcher import (
     GHDLAnalyzeDispatcher,
     GHDLSimulateDispatcher,
     GHDLRunDispatcher,
+    GHDLValidateDispatcher,
     detect_ghdl_backend,
 )
 from ...protocol import Dispatcher
@@ -91,6 +92,34 @@ class GHDLAnalyzePass(BasePass):
             vhdl_std=vhdl_std,
             tool_name=tool_name
         )]
+
+
+class GHDLValidatePass(GHDLAnalyzePass):
+    """Pass that analyzes VHDL sources and reports what GHDL said about them
+
+    Same analysis as GHDLAnalyzePass — same tool, same standard, same
+    filter variables — with the aggregation that turns the per-library
+    diagnostics into a report. Validation stops there: no elaboration,
+    no simulator, no simulation.
+
+    Input types: vhdl
+    Output types: validation-report
+    """
+    name = "ghdl-validate"
+    output_types = {"validation-report"}
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Analysis dispatchers, then the report aggregator.
+
+        Order matters: the aggregator picks up the diagnostics sidecars
+        the analysis tasks declare, in the same dispatcher iteration.
+        """
+        return super().dispatchers(context) + [
+            GHDLValidateDispatcher(
+                context=context,
+                tool_name=self.resolve_tool_identifier("ghdl")
+            ),
+        ]
 
 
 class GHDLSimulatePass(BasePass):

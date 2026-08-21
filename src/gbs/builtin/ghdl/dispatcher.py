@@ -15,6 +15,10 @@ from ...logging import get_logger
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Task, ResourceTypology
+from ...validation_report import (
+    DIAGNOSTICS_FILE_TYPE,
+    VALIDATION_REPORT_FILE_TYPE,
+)
 from . import task
 
 logger = get_logger(__name__)
@@ -364,15 +368,29 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             # that context created the Import task. For downstream dispatchers
             # in this context (e.g. GHDLSimulateDispatcher building elaboration
             # -P flags via filter_pending) to see it, we must add it to this
-            # context's pending queue too.
+            # context's pending queue too. The same holds for the diagnostics
+            # sidecar the adopted task produces.
             self.context.add_pending(cf_resource)
+            for diagnostics in existing.outputs_of_type(DIAGNOSTICS_FILE_TYPE):
+                self.context.add_pending(diagnostics)
             return cf_resource, existing
+
+        # Diagnostics of the analysis that fills this cache entry, stored
+        # beside it so a later run finding the cache warm can still report
+        # what the analyzer said. No library is attached: the sidecar is
+        # not VHDL and must stay out of the library ordering graph.
+        diagnostics_resource = self.context.get_resource(
+            workdir / f"{library}-diagnostics.json",
+            file_type=DIAGNOSTICS_FILE_TYPE,
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+        )
 
         t = task.Import(
             dispatcher=self,
             library_name=library,
             inputs=[],
-            outputs=[cf_resource],
+            outputs=[cf_resource, diagnostics_resource],
         )
 
         self._library_build[library] = cf_resource, t
@@ -436,6 +454,42 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             _, task_obj = self._library_build[lib]
             for resource in lib_sources.get(lib, []):
                 task_obj.add_input(resource)
+
+
+class GHDLValidateDispatcher(BaseDispatcher):
+    """Turns the analysis diagnostics of a build into a validation report.
+
+    Collects every diagnostics sidecar the analysis tasks declare and
+    feeds them to the single task that writes the report, so the report
+    is written after all analyses and describes all of them — including
+    the ones that were served from cache and never re-ran GHDL.
+    """
+
+    def __init__(self, context: BuildContext, tool_name: str = "ghdl"):
+        super().__init__(context, "ghdl-validate", tool_name=tool_name)
+        self._report_task: Task | None = None
+
+    async def process(self) -> None:
+        if self._report_task is None:
+            goals = list(self.context.filter_pending(
+                file_type=VALIDATION_REPORT_FILE_TYPE,
+                typology=ResourceTypology.OUTPUT,
+            ))
+            if not goals:
+                return
+            if len(goals) > 1:
+                raise RuntimeError(
+                    "More than one validation report requested: "
+                    + ", ".join(str(g.path) for g in goals)
+                )
+            self._report_task = task.ValidationReportWrite(
+                dispatcher=self,
+                inputs=[],
+                outputs=goals,
+            )
+
+        for diagnostics in self.context.filter_pending(file_type=DIAGNOSTICS_FILE_TYPE):
+            self._report_task.add_input(diagnostics, consume=False)
 
 
 class GHDLSimulateDispatcher(GHDLBaseDispatcher):

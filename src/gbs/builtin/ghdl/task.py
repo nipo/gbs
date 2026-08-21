@@ -3,6 +3,11 @@ from pathlib import Path
 from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
+from ...validation_report import (
+    DIAGNOSTICS_FILE_TYPE,
+    DiagnosticsSidecar,
+    ValidationReport,
+)
 import re
 import asyncio
 import shlex
@@ -93,6 +98,11 @@ class Import(Task):
         analyze_args = list(self.dispatcher.get_tool_option("analyze_args", []))
 
         cf_out, = self.outputs_of_type("ghdl-cf")
+        diagnostics_out, = self.outputs_of_type(DIAGNOSTICS_FILE_TYPE)
+        # Everything the analysis says about this library, kept so it can
+        # be replayed from the cache by a later validation run that finds
+        # the analysis up to date and therefore never re-runs GHDL.
+        captured: list[ToolMessage] = []
         workdir = cf_out.path.parent
 
         for i in self.inputs:
@@ -114,13 +124,56 @@ class Import(Task):
             ] + analyze_args + p_flags + sources)
 
             async for msg in import_process:
+                captured.append(msg)
                 await self.add_message_obj(msg)
 
             if import_process.returncode != 0:
+                DiagnosticsSidecar.write(diagnostics_out.path, captured)
                 raise import_process.failure(
                     tool="ghdl",
                     message=f"ghdl {cmd} failed for library {self.library_name}",
                 )
+
+        DiagnosticsSidecar.write(diagnostics_out.path, captured)
+
+class ValidationReportWrite(Task):
+    """Aggregates analysis diagnostics into the validation report.
+
+    The report body is assembled by ValidationReport from the plan, the
+    resolved source file set and the diagnostics sidecars; nothing in it
+    is GHDL specific. The task exists so the report is a normal build
+    output with the analyses as its inputs, which is what orders it
+    after them.
+    """
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        inputs: list,
+        outputs: list,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name="validation_report",
+            inputs=inputs,
+            outputs=outputs,
+            description="write validation report",
+        )
+
+    def is_rebuild_needed(self) -> bool:
+        """Always rewrite.
+
+        The report describes the invocation (filter variables, plan,
+        skipped files), not just the analyzed sources, so an existing
+        report newer than every source can still describe a different
+        invocation.
+        """
+        return True
+
+    async def work(self) -> None:
+        report_out, = self.outputs
+        report = ValidationReport(self.dispatcher.context)
+        report.write(report_out.path)
 
 class VHPIDirectCompile(Task):
     """GHDL VHPIDIRECT C compilation task"""
