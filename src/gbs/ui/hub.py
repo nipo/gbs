@@ -142,6 +142,15 @@ class FeedbackHub:
             finally:
                 self._queue.task_done()
 
+    def divert_output(self, stream):
+        """Send every backend's output to `stream`.
+
+        For commands whose result is written to stdout and must be
+        parseable: messages move aside so nothing else lands there.
+        """
+        for backend in self._backends:
+            backend.divert_output(stream)
+
     async def flush(self):
         """Wait until every queued message has been rendered.
 

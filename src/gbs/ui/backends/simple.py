@@ -48,6 +48,7 @@ class SimpleBackend(FeedbackBackend):
         """
         self.output = output or self._safe_stream(sys.stdout)
         self.error = error or self._safe_stream(sys.stderr)
+        self.__replaced: list[TextIO] = []
         self.show_progress = show_progress
         self.min_severity = min_severity
         self.min_log_level = min_log_level
@@ -78,6 +79,17 @@ class SimpleBackend(FeedbackBackend):
             except Exception:
                 pass
         return stream
+
+    def divert_output(self, stream):
+        """Route both normal and error output to `stream`.
+
+        The replaced streams stay referenced: they are TextIOWrappers
+        built on top of the process streams, and dropping the last
+        reference to one closes the buffer it wraps.
+        """
+        self.__replaced.extend((self.output, self.error))
+        self.output = stream
+        self.error = stream
 
     async def start(self):
         """Initialize backend"""

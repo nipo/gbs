@@ -35,6 +35,16 @@ class FeedbackBackend(ABC):
         """
         pass
 
+    def divert_output(self, stream):
+        """Send this backend's normal output to `stream` instead.
+
+        Used by commands whose own result goes to stdout and must stay
+        machine readable: messages are moved aside so only the result
+        is on the stream the caller reads. Backends that do not write
+        to a terminal ignore it.
+        """
+        pass
+
     @abstractmethod
     async def render(self, msg: Any):
         """Render a message

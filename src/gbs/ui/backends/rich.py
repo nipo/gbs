@@ -109,6 +109,10 @@ class RichBackend(FeedbackBackend):
             self.progress.stop()
             self._progress_started = False
 
+    def divert_output(self, stream):
+        """Point the console (and with it the progress display) at `stream`."""
+        self.console.file = stream
+
     async def start(self):
         """Initialize backend"""
         pass
