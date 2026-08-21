@@ -397,6 +397,66 @@ apio toolchain enabled.
    # Pick a specific apio install when multiple variants exist
    gbs openxc7 -t bbasm:apio-2026 chipdb build xc7a35t-1cpg236
 
+Partition Commands
+------------------
+
+gbs partition validate
+~~~~~~~~~~~~~~~~~~~~~~
+
+Check dependency tracking and syntax of one partition, without building
+a project. Typical use is syntax-checking VHDL written for another
+backend with GHDL, which analyzes far faster than the target tool
+starts up.
+
+.. code-block:: bash
+
+   gbs partition validate [OPTIONS] LIBRARY.PARTITION
+
+Analysis only: nothing is elaborated, simulated or synthesized. The
+partition is looked up in the repositories declared in the GBS
+configuration and, when the current directory has one, the project
+file. A project file is optional here; the configuration repositories
+stand on their own.
+
+**Options:**
+
+``--file PATH``
+    Project file to take repositories from (auto-discovered otherwise).
+    Given on the ``partition`` group, before the subcommand.
+
+``-o, --output PATH``
+    Where the report goes. ``-`` (the default) prints it on stdout,
+    where it is the only thing written, so it can be piped into a YAML
+    parser.
+
+``-b, --backend NAME``
+    Restrict validation to one backend. Full backend name or any
+    unambiguous substring of it.
+
+``-f, --filter VAR=VALUE``
+    Filter variable for partition expansion. Outranks the variables the
+    validating pass contributes. May be given multiple times.
+
+``-c, --config KEY=VALUE``
+    Backend configuration override. Unlike ``-f`` this reaches the tool
+    invocation: ``-c vhdl_standard=2008`` both selects the 2008 sources
+    and runs the analyzer with that standard. May be given multiple
+    times.
+
+**Exit status** is 0 when the analysis succeeded, warnings included, and
+1 when it reported errors, when the dependency tree did not resolve, or
+when the partition does not exist.
+
+The YAML report lists the applied filter variables, the contributing
+backends, the dependency tree with each partition's sources, the compile
+order, the diagnostics per file, and the resolved files no validator in
+the plan reads — so a clean report never suggests more coverage than it
+has.
+
+.. code-block:: bash
+
+   gbs partition validate mylib.mypart -f vendor=xilinx -c vhdl_standard=2008
+
 Repository Commands
 -------------------
 

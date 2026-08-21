@@ -21,6 +21,20 @@ except ImportError:
     _has_rich = False
 
 
+def discover_project_files() -> list[Path]:
+    """List the candidate project files in the current directory.
+
+    Callers decide what an empty result means: most commands need a
+    project and treat it as an error, while partition validation falls
+    back to the configuration alone.
+    """
+    import glob
+    import os
+
+    # Use glob.glob to avoid asyncio issues with Path.glob
+    return [Path(f) for f in glob.glob("*.gbs.yaml", root_dir=os.getcwd())]
+
+
 def find_project_file() -> Path:
     """Find project file in current directory
 
@@ -33,11 +47,7 @@ def find_project_file() -> Path:
     Raises:
         click.ClickException: If no project file or multiple project files found
     """
-    import glob
-    import os
-
-    # Use glob.glob to avoid asyncio issues with Path.glob
-    project_files = [Path(f) for f in glob.glob("*.gbs.yaml", root_dir=os.getcwd())]
+    project_files = discover_project_files()
 
     if len(project_files) == 0:
         raise click.ClickException(
@@ -50,6 +60,26 @@ def find_project_file() -> Path:
         )
 
     return project_files[0]
+
+
+def parse_filter_vars(filter_specs: tuple[str, ...]) -> dict[str, str | int]:
+    """Parse ``var=value`` filter options into a filter-vars dict.
+
+    Values that look like integers are coerced to ``int`` so that numeric
+    filter expressions (e.g. ``sim=0``) evaluate correctly.
+    """
+    filter_vars: dict[str, str | int] = {}
+    for spec in filter_specs:
+        if "=" not in spec:
+            raise click.ClickException(
+                f"Invalid filter '{spec}', expected format: var=value"
+            )
+        var, value = spec.split("=", 1)
+        try:
+            filter_vars[var] = int(value)
+        except ValueError:
+            filter_vars[var] = value
+    return filter_vars
 
 
 def get_project_file(ctx) -> Path:
@@ -226,12 +256,14 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
 # Import and register command groups
 from .repo import repo
 from .project import project
+from .partition import partition
 from .suite import suite
 from .config import config
 from .openxc7 import openxc7
 
 cli.add_command(repo)
 cli.add_command(project)
+cli.add_command(partition)
 cli.add_command(suite)
 cli.add_command(config)
 cli.add_command(openxc7)

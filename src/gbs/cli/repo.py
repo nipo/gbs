@@ -10,27 +10,8 @@ import sys
 from ..logging import get_logger
 from ..repository.loader import load_repository, LoadError
 from ..repository.resolver import DependencyResolver, ResolutionError
+from ..cli import parse_filter_vars
 from .group import ReMatchGroup
-
-
-def _parse_filter_vars(filter_specs: tuple[str, ...]) -> dict[str, str | int]:
-    """Parse ``var=value`` filter options into a filter-vars dict.
-
-    Values that look like integers are coerced to ``int`` so that numeric
-    filter expressions (e.g. ``sim=0``) evaluate correctly.
-    """
-    filter_vars: dict[str, str | int] = {}
-    for spec in filter_specs:
-        if "=" not in spec:
-            raise click.ClickException(
-                f"Invalid filter '{spec}', expected format: var=value"
-            )
-        var, value = spec.split("=", 1)
-        try:
-            filter_vars[var] = int(value)
-        except ValueError:
-            filter_vars[var] = value
-    return filter_vars
 
 
 @click.group(cls = ReMatchGroup)
@@ -57,7 +38,7 @@ async def list(path: Path, partition: str, filter: tuple[str, ...]):
     logger = get_logger()
 
     try:
-        filter_vars = _parse_filter_vars(filter)
+        filter_vars = parse_filter_vars(filter)
 
         # Load repository
         repository = load_repository(path)
