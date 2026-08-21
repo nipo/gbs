@@ -58,6 +58,10 @@ class Project(UIReporter):
     path: Optional[Path]
     gbs_config: Optional[any]
 
+    # A build must consume every source type the repositories can
+    # offer. Subclasses that only inspect part of the sources relax it.
+    partial_source_coverage = False
+
     def __init__(self,
                  model: ProjectModel,
                  repositories: list,
@@ -243,6 +247,29 @@ class Project(UIReporter):
 
         raise LoadError(f"No project.gbs.yaml found in {start_path} or parent directories")
 
+    @property
+    def root_library_name(self) -> str:
+        """Library the root partition is built into."""
+        return self.model.root_library_name
+
+    def planner_root_template(self, output_group) -> Optional[any]:
+        """Root partition template whose file types the planner must cover."""
+        return self.model.get_root_partition_template(output_group)
+
+    def filter_vars_finalize(self, plan: 'BuildPlan') -> None:
+        """Last word on the plan's filter variables before resolution.
+
+        The planner lets pass-contributed variables override the output
+        group's. Nothing to change for a project build; subclasses whose
+        variables come from a command line override this.
+        """
+        return
+
+    def root_partitions(self, output_group, plan: 'BuildPlan') -> list:
+        """Root partitions to resolve dependencies from."""
+        template = self.model.get_root_partition_template(output_group)
+        return [template.evaluate(plan.filter_vars, self.root_library_name)]
+
     async def realizations(
         self,
         output_group_names: Optional[list[str]] = None,
@@ -281,30 +308,25 @@ class Project(UIReporter):
         cache = [] if output_group_names is None else None
 
         for output_group in output_groups:
-            # Get the root partition template for this output group
-            root_template = self.model.get_root_partition_template(output_group)
-
             planner = BuildPlanner(
                 all_repositories,
                 backends,
                 self.model.raw_config,
                 self.gbs_config,
-                root_partition_template=root_template,
-                parent_reporter=self
+                root_partition_template=self.planner_root_template(output_group),
+                parent_reporter=self,
+                partial_source_coverage=self.partial_source_coverage
             )
 
             plan = planner.plan(output_group)
+            self.filter_vars_finalize(plan)
 
-            # Evaluate root partition template with this output group's filter vars
-            root_partition = root_template.evaluate(
-                plan.filter_vars,
-                self.model.root_library_name
-            )
+            root_partitions = self.root_partitions(output_group, plan)
 
             # Resolve dependencies
             from ..repository.resolver import DependencyResolver
             resolver = DependencyResolver(plan.repositories, plan.filter_vars)
-            source_fileset = resolver.resolve([root_partition])
+            source_fileset = resolver.resolve(root_partitions)
 
             realization = PlanRealization(
                 project = self,
@@ -550,7 +572,7 @@ class PlanRealization:
         self.source_fileset = source_fileset
 
         # Use the project's shared semaphore so all output groups share parallelism limit
-        self.build_ctx = BuildContext(
+        self.build_ctx: BuildContext = BuildContext(
             project = self.project.model,
             gbs_config = self.project.gbs_config,
             semaphore = self.project.semaphore,
@@ -558,6 +580,9 @@ class PlanRealization:
             parent_reporter = self.plan,
             resource_registry = self.project._resource_registry,
             shared_cache_root = self.project.shared_cache_root)
+
+        self.build_ctx.plan = plan
+        self.build_ctx.source_fileset = source_fileset
 
         num_files = len(self.source_fileset.get_all_files())
         # Extract unique library names from partition names (library.partition format)
@@ -574,7 +599,7 @@ class PlanRealization:
         # Set topcell and library for this output group
         self.build_ctx.set_output_group_context(
             topcell = self.plan.output_group.topcell,
-            topcell_library = self.project.model.root_library_name,
+            topcell_library = self.project.root_library_name,
             output_group = self.plan.output_group
         )
 

@@ -64,6 +64,12 @@ class BuildContext(UIReporter):
         self._virtual_resources: dict[str, 'VirtualResource'] = {}
         self.project = project
         self.gbs_config = gbs_config
+        # Plan and resolved source file set of the realization driving
+        # this context. Both are assigned by the realization; dispatchers
+        # that report on the build as a whole (rather than transform
+        # files) read them.
+        self.plan = None
+        self.source_fileset = None
         self.steps = set()
         self.running = set()
         self.__messages: list[ToolMessage] = []
