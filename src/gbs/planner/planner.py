@@ -133,7 +133,8 @@ class BuildPlanner(UIReporter):
         project_config: dict[str, Any] | None = None,
         gbs_config: 'GBSConfig | None' = None,
         root_partition_template: Any = None,
-        parent_reporter: Optional['UIReporter'] = None
+        parent_reporter: Optional['UIReporter'] = None,
+        partial_source_coverage: bool = False
     ):
         """Initialize planner
 
@@ -144,6 +145,12 @@ class BuildPlanner(UIReporter):
             gbs_config: GBS configuration (tools, etc.)
             root_partition_template: Optional root partition template to include file types from
             parent_reporter: Optional parent UIReporter (typically a Project)
+            partial_source_coverage: Accept a chain that consumes only
+                part of the available source types. A build must consume
+                everything the repositories can offer, or the resulting
+                artifact would silently omit sources; a partition
+                validation only inspects what its validators can read and
+                lists the rest as skipped, so it plans in this mode.
         """
         # Initialize UIReporter
         UIReporter.__init__(
@@ -156,6 +163,7 @@ class BuildPlanner(UIReporter):
         self.backends = backends
         self.project_config = project_config or {}
         self.gbs_config = gbs_config
+        self.partial_source_coverage = partial_source_coverage
         # Rejection log keyed by "backend.name/pass.name" -> reason. Populated
         # by _query_backends when a pass's probe() returns a reason.
         # Used only by the plan-failure diagnostic.
@@ -348,10 +356,45 @@ class BuildPlanner(UIReporter):
                             required = required,
                             passes = partial_plan.passes + [p])
             for sub in self._progress_to_sources(output_group, source_types, n):
-                if (source_types & sub.acceptable) == source_types:
+                if ((source_types & sub.acceptable) == source_types
+                        or self._partial_plan_acceptable(source_types, sub)):
                     ret.append(sub)
+
+        if self._partial_plan_acceptable(source_types, partial_plan):
+            # This chain already answers the request; the caller tolerates
+            # the source types it leaves unconsumed. Candidates that
+            # extend it stay in the running, and plan() keeps whichever
+            # is minimal.
+            ret.append(partial_plan)
+
         return ret
-    
+
+    def _partial_plan_acceptable(self, source_types: set, plan: PartialPlan) -> bool:
+        """Whether a chain leaving some source types unconsumed will do.
+
+        Only in partial coverage mode, and only for a chain that:
+
+        - produces every requested output,
+        - consumes at least one type the repositories provide — a chain
+          reading nothing validates nothing,
+        - and gives every one of its passes something to read, either
+          from the sources or from another pass in the chain. Without
+          this a terminal pass alone would qualify, its producer never
+          being planned.
+        """
+        if not self.partial_source_coverage:
+            return False
+        if plan.required or not plan.passes:
+            return False
+        if not (source_types & plan.acceptable):
+            return False
+
+        produced = set()
+        for p in plan.passes:
+            produced |= p.output_types
+        available = source_types | produced
+        return all(p.input_types & available for p in plan.passes)
+
     def _query_backends(
         self,
         output_group: OutputGroup,
