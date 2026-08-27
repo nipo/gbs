@@ -202,8 +202,12 @@ class VivadoIpPackageTask(VivadoCommand):
                 tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
             ]))
             await self.command_run(tcl.Command([
-                "add_files", "-norecurse", "-fileset", tcl.BareWord("$cstrset_obj"),
-                tcl.Expansion(["list", tcl.BareWord("$fname")]),
+                "set", tcl.BareWord("fobj"),
+                tcl.Expansion(["add_files", "-norecurse", "-fileset", tcl.BareWord("$cstrset_obj"),
+                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set_property", "file_type", "XDC", tcl.BareWord("$fobj"),
             ]))
 
         # Set top
@@ -322,6 +326,45 @@ class VivadoIpPackageTask(VivadoCommand):
                 "ipx::add_file", fname, impl_group,
             ]))
 
+        # Add bd files
+        bd_tcl_inputs = self.inputs_of_type("vivado-bd-tcl")
+        if bd_tcl_inputs:
+            await self.command_run(tcl.Command([
+                "ipx::add_file_group",
+                tcl.BareWord("-type"),
+                "utility",
+                "",
+                tcl.Expansion(["ipx::current_core"]),
+            ]))
+            fset = tcl.Expansion(["ipx::get_file_groups", "xilinx_utilityxitfiles", tcl.BareWord("-of_objects"), tcl.Expansion(["ipx::current_core"])])
+            for resource in bd_tcl_inputs:
+                file_path = str(resource.path)
+                await self.command_run(tcl.Command([
+                    "set", tcl.BareWord("fname"),
+                    tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
+                ]))
+                await self.command_run(tcl.Command([
+                    "set", tcl.BareWord("fobj"),
+                    tcl.Expansion([
+                        "ipx::add_file", tcl.BareWord("$fname"), fset
+                        ])
+                ]))
+                await self.command_run(tcl.Command([
+                    "set_property", tcl.BareWord("type"), tcl.BareWord("tclSource"), tcl.BareWord("$fobj"),
+                    ]))
+
+        # Add xgui file by overwriting in-IP generated xgui
+        xgui_tcl_inputs = self.inputs_of_type("vivado-xgui-tcl")
+        if xgui_tcl_inputs:
+            fset = tcl.Expansion(["ipx::get_file_groups", "xilinx_xpgui", tcl.BareWord("-of_objects"), tcl.Expansion(["ipx::current_core"])])
+            existing_fname = tcl.Expansion(["get_property", "NAME", tcl.Expansion(["ipx::get_files", "*.tcl", "-of_objects", fset])])
+            existing_abs_fname = tcl.Expansion(["file", "join", str(ip_dir), existing_fname])
+            resource, = xgui_tcl_inputs
+
+            await self.command_run(tcl.Command([
+                "file", "copy", "-force", str(resource.path.resolve()), existing_abs_fname,
+            ]))
+                        
         await self.command_run(tcl.Command([
             "ipx::update_checksums", core,
         ]))

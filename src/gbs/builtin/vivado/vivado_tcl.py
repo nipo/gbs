@@ -141,8 +141,11 @@ class VivadoCommand(tcl.CommandTask):
         Args:
             cmd: TCL Command object to execute
         """
+        rsp = []
         async for msg in self.session.interact(cmd):
+            rsp.append(msg.line)
             await self.message_handle(msg)
+        return rsp
 
 
 class LongRunningCommand(VivadoCommand):

@@ -18,6 +18,8 @@ ACCEPTED_INPUT_TYPES = {
     "verilog",
     "vivado-bus-definition",
     "vivado-ip-customization-tcl",
+    "vivado-bd-tcl",
+    "vivado-xgui-tcl",
     "xilinx-xdc",
 }
 
