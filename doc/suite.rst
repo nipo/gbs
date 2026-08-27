@@ -294,6 +294,54 @@ Show detailed information::
 
    gbs suite list suite.gbs.yaml --verbose
 
+.. _suite-outputs:
+
+List Outputs
+~~~~~~~~~~~~
+
+List, in machine-readable form, every output the suite's projects
+declare — useful in CI to know which artifacts to collect before the
+build has run::
+
+   gbs suite -f suite.gbs.yaml outputs
+   gbs suite -f suite.gbs.yaml outputs --format json
+
+Restrict to a subset with the same tag filters ``suite build`` takes::
+
+   gbs suite -f suite.gbs.yaml outputs --tags synth
+   gbs suite -f suite.gbs.yaml outputs --exclude-tags simulation
+
+The report is a list of records, one per output group, stamped with the
+suite-local project name. It is the only thing written to stdout, so it
+can be piped straight into a parser. The schema is the one
+``gbs project outputs`` emits (see :doc:`cli`), so a suite document and
+a project document can be read by the same consumer:
+
+.. code-block:: yaml
+
+   - project: ice40-synth      # the suite entry name, not the project's own name
+     group: pnr
+     topcell: top
+     part: iCE40UP5K-SG48I
+     backends:
+       - gbs.builtin.yosys
+       - gbs.builtin.nextpnr
+       - gbs.builtin.icepack
+     outputs:
+       - type: bitstream
+         path: yosys/ice40/blink/blink.bin
+
+Selection follows what ``suite build`` would do: projects marked
+``skip: true`` are left out, tag filters apply, and a project entry
+restricting its ``output_groups`` is described for those groups only.
+
+Naming the backends an output group relies on means planning it, which
+needs the toolchain installed. A project whose tool is missing from this
+machine is still listed, with an ``error`` key in place of ``backends``
+— the same way ``suite build`` reports it as unplannable rather than as
+a failure. The command exits 0 in that case. A project the suite file
+points at that cannot be found or loaded, by contrast, is an error.
+
 Clean Suite
 ~~~~~~~~~~~
 

@@ -9,6 +9,9 @@ from .model import ProjectModel, OutputGroup, OutputFile
 # Project execution and loading
 from .project import Project, LoadError, PlanRealization
 
+# Introspection
+from .output_inventory import OutputInventory
+
 __all__ = [
     # Data models
     "ProjectModel",
@@ -18,4 +21,6 @@ __all__ = [
     "Project",
     "LoadError",
     "PlanRealization",
+    # Introspection
+    "OutputInventory",
 ]

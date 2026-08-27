@@ -11,6 +11,7 @@ from ..logging import get_logger
 from ..repository.loader import load_repository
 from ..cli import get_project_file
 from .group import ReMatchGroup
+from .machine_output import MachineOutput
 
 @click.group(invoke_without_command=False, cls = ReMatchGroup)
 @click.option(
@@ -170,53 +171,31 @@ async def show(ctx, diagram: Path | None):
 
 
 @project.command()
-@click.option(
-    "--format", "fmt",
-    type=click.Choice(["yaml", "json"]),
-    default="yaml",
-    help="Output format (default: yaml)"
-)
+@MachineOutput.format_option
 @click.pass_context
 async def outputs(ctx, fmt: str):
-    """List output files, types, and required backends"""
+    """List output files, types, and required backends
+
+    Emits the same record schema as `gbs suite outputs`, so documents
+    from both commands can be consumed by one reader.
+    """
+    from ..project.output_inventory import OutputInventory
+
     project_file = get_project_file(ctx)
     gbs_config = ctx.obj.get("gbs_config")
+    hub = ctx.obj.get("feedback_hub")
+
+    # The report is the only thing on stdout; everything the load and
+    # the planner have to say goes to stderr.
+    if hub is not None:
+        hub.divert_output(sys.stderr)
 
     proj = await _project_load(project_file, gbs_config)
+    records = OutputInventory(proj, name=proj.model.name).records()
 
-    # Run planner to determine which backends are needed per output group
-    from ..plugins import get_plugin_registry
-    from ..planner.planner import BuildPlanner
+    if hub is not None:
+        # Drain queued messages before the report so they cannot land in
+        # the middle of it.
+        await hub.flush()
 
-    plugin_registry = get_plugin_registry()
-    backends = plugin_registry.get_all_backends()
-
-    data = []
-    for og in proj.model.output_groups:
-        root_template = proj.model.get_root_partition_template(og)
-        planner = BuildPlanner(
-            proj.repositories,
-            backends,
-            proj.model.raw_config,
-            proj.gbs_config,
-            root_partition_template=root_template,
-        )
-        plan = planner.plan(og)
-        backend_names = sorted({pm.backend_name for pm in plan.passes})
-
-        data.append({
-            "group": og.name,
-            "topcell": og.topcell,
-            "backends": backend_names,
-            "outputs": [
-                {"type": of.type, "path": str(of.path)}
-                for of in og.outputs
-            ],
-        })
-
-    if fmt == "json":
-        import json
-        click.echo(json.dumps(data, indent=2))
-    else:
-        import yaml
-        click.echo(yaml.dump(data, default_flow_style=False), nl=False)
+    MachineOutput.echo(records, fmt)

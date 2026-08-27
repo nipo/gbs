@@ -39,8 +39,8 @@ General Options
     Applies to every command that loads a project: ``project build``,
     ``project show``, ``project outputs``, ``project clean``,
     ``suite build`` (propagated to every project in the suite),
-    ``suite list``, ``suite clean``. Must appear **before** the
-    subcommand: ``gbs -t vivado=vivado:sim project build``.
+    ``suite list``, ``suite outputs``, ``suite clean``. Must appear
+    **before** the subcommand: ``gbs -t vivado=vivado:sim project build``.
 
 ``--tool-version BACKEND=VERSION``
     Pin a tool version for a backend without changing the tool
@@ -190,7 +190,8 @@ gbs project outputs
 ~~~~~~~~~~~~~~~~~~~
 
 List output files, types, and required backends for each output group in
-machine-readable format.
+machine-readable format. The report is the only thing written to stdout;
+diagnostics go to stderr.
 
 .. code-block:: bash
 
@@ -200,6 +201,32 @@ machine-readable format.
 
 ``--format yaml|json``
     Output format. Default: ``yaml``.
+
+**Output schema**
+
+A list of records, one per output group, in project-file order. The same
+schema as :ref:`gbs suite outputs <suite-outputs>`, so documents from
+both commands can be read by one consumer and concatenated.
+
+.. code-block:: yaml
+
+   - project: blink            # project name; the suite entry name under `suite outputs`
+     group: pnr                # output group name
+     topcell: top
+     part: iCE40UP5K-SG48I     # output group target part, absent when unset
+     partition: mylib.top      # root partition, absent when the project has only one
+     backends:                 # backends contributing passes, absent when planning failed
+       - gbs.builtin.yosys
+     outputs:
+       - type: bitstream
+         path: blink.bin       # as declared, resolved against the project directory
+
+Keys carrying no value are omitted rather than emitted empty. Naming the
+backends means planning the output group, which needs its toolchain
+installed; when planning fails the record carries an ``error`` key with
+the headline of the diagnostic instead of ``backends``, and the full
+diagnostic goes to the log. That is not an error exit — the declared
+outputs are reported either way.
 
 **Example:**
 

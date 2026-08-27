@@ -12,6 +12,7 @@ from .model import (
 )
 from .loader import load_suite, LoadError
 from .executor import SuiteExecutor, ExecutionError
+from .output_inventory import SuiteOutputInventory
 from .formatters import write_junit_xml, write_summary_json
 
 __all__ = [
@@ -33,6 +34,9 @@ __all__ = [
     # Executor
     'SuiteExecutor',
     'ExecutionError',
+
+    # Introspection
+    'SuiteOutputInventory',
 
     # Formatters
     'write_junit_xml',

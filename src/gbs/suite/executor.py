@@ -89,7 +89,7 @@ class SuiteExecutor(UIReporter):
 
         # Apply tag filtering to suite projects
         if self.tags or self.exclude_tags:
-            self._apply_tag_filter()
+            self.apply_tag_filter()
 
         # Determine build order based on dependencies
         build_order = self._topological_sort()
@@ -570,7 +570,7 @@ class SuiteExecutor(UIReporter):
 
         return projects_with_files
 
-    def _apply_tag_filter(self):
+    def apply_tag_filter(self):
         """Apply tag filtering to suite projects"""
         original_count = len(self.suite.projects)
         filtered_projects = []

@@ -10,6 +10,7 @@ import sys
 from ..logging import get_logger
 from ..ui import get_global_hub, LogMessage, BuildStatus
 from .group import ReMatchGroup
+from .machine_output import MachineOutput
 
 
 @click.group(invoke_without_command=False, cls=ReMatchGroup)
@@ -343,6 +344,68 @@ async def clean(ctx, dry_run):
         logger.exception("Suite clean failed")
         click.echo(f"Suite clean failed: {e}", err=True)
         sys.exit(1)
+
+
+@suite.command()
+@MachineOutput.format_option
+@click.option(
+    "--tags",
+    type=str,
+    multiple=True,
+    help="List only projects with these tags (can be repeated)"
+)
+@click.option(
+    "--exclude-tags",
+    type=str,
+    multiple=True,
+    help="Exclude projects with these tags (can be repeated)"
+)
+@click.pass_context
+async def outputs(ctx, fmt, tags, exclude_tags):
+    """List output files, types, and required backends of every project
+
+    Emits the same record schema as `gbs project outputs`, one record per
+    output group, stamped with the suite-local project name.
+
+    Naming the backends an output group relies on means planning it, which
+    needs the toolchain installed. A project whose tool is missing here is
+    still listed, with its planning failure in an `error` key instead of
+    `backends` — the same way `suite build` reports it as unplannable
+    rather than as a failure.
+    """
+    from ..suite import load_suite
+    from ..suite.output_inventory import SuiteOutputInventory
+
+    logger = get_logger()
+    suite_file = get_suite_file(ctx)
+    gbs_config = ctx.obj.get("gbs_config")
+    hub = ctx.obj.get("feedback_hub")
+
+    # The report is the only thing on stdout; whatever the loads and the
+    # planners of a dozen projects have to say goes to stderr.
+    if hub is not None:
+        hub.divert_output(sys.stderr)
+
+    try:
+        suite_def = load_suite(suite_file)
+        inventory = SuiteOutputInventory(
+            suite_def,
+            gbs_config=gbs_config,
+            tags=tags if tags else None,
+            exclude_tags=exclude_tags if exclude_tags else None,
+        )
+        records = inventory.records()
+    except Exception as e:
+        logger.exception("Failed to list suite outputs")
+        click.echo(f"Failed to list suite outputs: {e}", err=True)
+        sys.exit(1)
+
+    if hub is not None:
+        # Drain queued messages before the report so they cannot land in
+        # the middle of it.
+        await hub.flush()
+
+    MachineOutput.echo(records, fmt)
 
 
 __all__ = ['suite']
