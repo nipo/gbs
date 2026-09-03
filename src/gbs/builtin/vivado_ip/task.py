@@ -77,11 +77,16 @@ class VivadoIpPackageTask(VivadoCommand):
         for resource in self.inputs_of_type('vivado-ip-repository'):
             ip_repo_paths.append(str(resource))
 
-        if bus_defs := self.inputs_of_type('vivado-bus-definition'):
+        bus_defs = self.inputs_of_type('vivado-bus-definition')
+        bus_zips = self.inputs_of_type('vivado-bus-zip')
+        if bus_defs or bus_zips:
             bus_repo_dir = output_dir / "bus_repo"
             bus_repo_dir.mkdir(parents=True, exist_ok=True)
             for bus_rsrc in bus_defs:
                 shutil.copy2(bus_rsrc.path, bus_repo_dir / bus_rsrc.path.name)
+            for zip_rsrc in bus_zips:
+                with zipfile.ZipFile(zip_rsrc.path) as zf:
+                    zf.extractall(bus_repo_dir)
             ip_repo_paths.append(str(bus_repo_dir))
 
         if ip_repo_paths:

@@ -20,6 +20,7 @@ class VivadoIpPackagePass(BasePass):
     Input types:
         - vhdl, verilog: HDL sources for the IP
         - vivado-bus-definition: Custom bus interface XML definitions
+        - vivado-bus-zip: Archive of custom bus interface XML definitions
         - vivado-ip-customization-tcl: Post-packaging TCL scripts
         - vivado-bd-tcl: Bd instance param propagation TCL scripts
         - vivado-xgui-tcl: GUI propagation TCL scripts
@@ -34,6 +35,7 @@ class VivadoIpPackagePass(BasePass):
         "vhdl",
         "verilog",
         "vivado-bus-definition",
+        "vivado-bus-zip",
         "vivado-ip-repository",
         "vivado-ip-customization-tcl",
         "vivado-bd-tcl",
