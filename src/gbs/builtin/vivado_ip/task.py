@@ -327,31 +327,41 @@ class VivadoIpPackageTask(VivadoCommand):
             ]))
 
         # Add bd files
+        #
+        # ipx::add_file records the path it is handed, so the script has to sit
+        # under the IP root and be named relative to it, otherwise the reference
+        # points outside the IP and does not survive export.
         bd_tcl_inputs = self.inputs_of_type("vivado-bd-tcl")
         if bd_tcl_inputs:
-            await self.command_run(tcl.Command([
-                "ipx::add_file_group",
-                tcl.BareWord("-type"),
-                "utility",
-                "",
-                tcl.Expansion(["ipx::current_core"]),
-            ]))
-            fset = tcl.Expansion(["ipx::get_file_groups", "xilinx_utilityxitfiles", tcl.BareWord("-of_objects"), tcl.Expansion(["ipx::current_core"])])
+            bd_dir = ip_dir / "bd"
+            bd_dir.mkdir(parents=True, exist_ok=True)
+
+            staged = {}
             for resource in bd_tcl_inputs:
-                file_path = str(resource.path)
-                await self.command_run(tcl.Command([
-                    "set", tcl.BareWord("fname"),
-                    tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
-                ]))
+                name = resource.path.name
+                if name in staged:
+                    raise RuntimeError(
+                        f"Conflicting vivado-bd-tcl inputs named {name}: "
+                        f"{staged[name]} and {resource.path}"
+                    )
+                staged[name] = resource.path
+                self.info(f"Staging BD script: {name}")
+                shutil.copy2(resource.path, bd_dir / name)
+
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("bd_group"),
+                tcl.Expansion(["ipx::add_file_group", "xilinx_blockdiagram", core]),
+            ]))
+            for name in staged:
                 await self.command_run(tcl.Command([
                     "set", tcl.BareWord("fobj"),
                     tcl.Expansion([
-                        "ipx::add_file", tcl.BareWord("$fname"), fset
-                        ])
+                        "ipx::add_file", f"bd/{name}", tcl.BareWord("$bd_group"),
+                    ]),
                 ]))
                 await self.command_run(tcl.Command([
                     "set_property", tcl.BareWord("type"), tcl.BareWord("tclSource"), tcl.BareWord("$fobj"),
-                    ]))
+                ]))
 
         # Add xgui file by overwriting in-IP generated xgui
         xgui_tcl_inputs = self.inputs_of_type("vivado-xgui-tcl")
