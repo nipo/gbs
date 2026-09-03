@@ -259,6 +259,7 @@ from .project import project
 from .partition import partition
 from .suite import suite
 from .config import config
+from .convert import convert
 from .openxc7 import openxc7
 
 cli.add_command(repo)
@@ -266,6 +267,7 @@ cli.add_command(project)
 cli.add_command(partition)
 cli.add_command(suite)
 cli.add_command(config)
+cli.add_command(convert)
 cli.add_command(openxc7)
 
 
