@@ -47,7 +47,7 @@ class IseBackend(BaseBackend):
             target = config.get("target", {})
             part = target.get("part")
             if not part:
-                self.warning("ISE backend skipped: no part selected")
+                self.logger.warning("ISE backend skipped: no part selected")
                 return []
             passes.append(IseSynthesizePass(config, project_config, gbs_config))
 

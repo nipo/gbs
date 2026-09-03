@@ -32,7 +32,7 @@ class QuartusBackend(BaseBackend):
             target = config.get("target", {})
             part = target.get("part")
             if not part:
-                self.warning("Quartus backend skipped: no part selected")
+                self.logger.warning("Quartus backend skipped: no part selected")
                 return []
             passes.append(QuartusSynthesizePass(config, project_config, gbs_config))
 

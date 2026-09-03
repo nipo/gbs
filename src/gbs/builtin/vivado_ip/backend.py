@@ -32,7 +32,7 @@ class VivadoIpBackend(BaseBackend):
             target = config.get("target", {})
             part = target.get("part")
             if not part:
-                self.warning("Vivado IP backend skipped: no part selected")
+                self.logger.warning("Vivado IP backend skipped: no part selected")
                 return []
             passes.append(VivadoIpPackagePass(config, project_config, gbs_config))
 
