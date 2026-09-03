@@ -143,7 +143,8 @@ class VivadoCommand(tcl.CommandTask):
         """
         rsp = []
         async for msg in self.session.interact(cmd):
-            rsp.append(msg.line)
+            if isinstance(msg, ToolMessage):
+                rsp.append(msg.line)
             await self.message_handle(msg)
         return rsp
 
