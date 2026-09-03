@@ -69,6 +69,31 @@ class PartitionTemplate:
 
         return file_types
 
+    def has_deps(self) -> bool:
+        """Whether any conditional branch declares dependencies
+
+        Repository partitions are only reachable through dependencies,
+        so a template without any cannot bring repository sources into
+        the build.
+
+        Returns:
+            True if at least one branch has a deps entry
+        """
+        def condition_has_deps(condition: FilterCondition) -> bool:
+            if condition.deps:
+                return True
+            return any(
+                condition_has_deps(nested)
+                for nested_group in condition.groups
+                for nested in nested_group.conditions
+            )
+
+        return any(
+            condition_has_deps(condition)
+            for group in self.groups
+            for condition in group.conditions
+        )
+
     def evaluate(self, filter_vars: dict[str, str], library_name: str) -> Partition:
         """Evaluate partition template with filter variables
 

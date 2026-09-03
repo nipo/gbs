@@ -173,10 +173,15 @@ class BuildPlanner(UIReporter):
         # remains.
         self._considered_chains: list[list[str]] = []
 
-        # Compute available source file types
+        # Compute available source file types. Repository sources are
+        # only reachable through dependencies, so when the root
+        # partition template is known and declares none, the repository
+        # file types cannot enter the build and must not require a
+        # consuming pass.
         self.available_source_types = set()
-        for repo in repositories:
-            self.available_source_types.update(repo.file_types())
+        if root_partition_template is None or root_partition_template.has_deps():
+            for repo in repositories:
+                self.available_source_types.update(repo.file_types())
 
         # Add file types from root partition template if provided
         if root_partition_template is not None:
