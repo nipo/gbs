@@ -37,6 +37,7 @@ IP Packaging
    :maxdepth: 1
 
    vivado_ip
+   vivado_bus
 
 Utilities
 ~~~~~~~~~

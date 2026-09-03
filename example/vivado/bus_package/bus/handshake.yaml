@@ -1,0 +1,18 @@
+vendor: gbs
+library: example
+name: handshake
+description: Ready/valid handshake with byte payload
+display_name: Handshake
+
+ports:
+  valid:
+    role: m2s
+    description: Payload valid
+  ready:
+    role: s2m
+    description: Consumer ready
+  data:
+    role: m2s
+    width: 8
+    qualifier: data
+    description: Payload

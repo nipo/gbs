@@ -1,0 +1,15 @@
+name: bus_package
+
+root:
+  name: top
+  sources:
+    - file_type: vivado-bus-yaml
+      files:
+        - bus/handshake.yaml
+
+output:
+  - name: bus_definitions
+    topcell: handshake
+    outputs:
+      - type: vivado-bus-zip
+        path: example_buses.zip
