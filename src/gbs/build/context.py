@@ -1009,7 +1009,11 @@ class BuildContext(UIReporter):
         # We want: dependencies before dependents
         # in_degree = number of dependencies each library has
 
-        in_degree = {lib: len(graph[lib]) for lib in graph}
+        # Dependencies on libraries absent from the pending queue are
+        # already dealt with and never get released here: they must not
+        # count, or a library depending on them is reported as circular.
+        in_degree = {lib: len([dep for dep in graph[lib] if dep in graph])
+                     for lib in graph}
 
         # Find all nodes with no dependencies
         queue = [lib for lib in graph if in_degree[lib] == 0]
