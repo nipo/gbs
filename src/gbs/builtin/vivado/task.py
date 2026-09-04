@@ -310,6 +310,9 @@ class NonProjectBuild(VivadoCommand):
             tcl.Expansion(["current_project"])
         ]))
         await self.command_run(tcl.Command([
+            "set_param", "project.hsv.draftModeDefault", "only",
+        ]))
+        await self.command_run(tcl.Command([
             "set", tcl.BareWord("source_fileset_obj"),
             tcl.Expansion(["get_filesets", "sources_1"])
         ]))
