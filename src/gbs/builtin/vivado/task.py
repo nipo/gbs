@@ -284,6 +284,9 @@ class NonProjectBuild(VivadoCommand):
             await self.command_run(tcl.Command([
                 "report_utilization", "-file", str(rsrc.path)
             ]))
+            await self.command_run(tcl.Command([
+                "report_utilization", "-file", str(rsrc.path), "-append", "-hierarchical"
+            ]))
 
         for rsrc in self.outputs_of_type("vivado-netlist-edif"):
             await self.command_run(tcl.Command([
