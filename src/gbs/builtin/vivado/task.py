@@ -241,7 +241,7 @@ class NonProjectBuild(VivadoCommand):
                 ]))
 
             # TCL constraint files
-            if resource.file_type == 'xilinx-constraint-tcl':
+            if resource.file_type == 'xilinx-constraints-tcl':
                 self.debug(f"Adding constraints TCL: {resource.path}")
                 await self.command_run(tcl.Command([
                     "set", "f",
