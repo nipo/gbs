@@ -102,8 +102,16 @@ class PlaceAndRoute(Task):
 
         # Add constraint files if provided
         constraints = self.inputs_of_type(tc.constraint_type)
-        for constraint_res in constraints:
-            cmd.extend([tc.constraint_flag, str(constraint_res.path)])
+        if tc.single_constraint and len(constraints) > 1:
+            # nextpnr-ice40 accepts --pcf only once; concatenate all
+            # constraint files into one, in input order.
+            merged_path = output_path.parent / f"{topcell}_merged.pcf"
+            merged_path.write_text("\n".join(
+                c.path.read_text() for c in constraints))
+            cmd.extend([tc.constraint_flag, str(merged_path)])
+        else:
+            for constraint_res in constraints:
+                cmd.extend([tc.constraint_flag, str(constraint_res.path)])
         if not constraints and tc.name == "ice40":
             # Only ice40 supports this permissive flag; xilinx and ecp5
             # will hard-error if no constraint file is provided.

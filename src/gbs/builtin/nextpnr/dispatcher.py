@@ -31,6 +31,7 @@ class NextpnrTargetConfig:
     constraint_type: str         # Constraint file type
     constraint_flag: str         # Command-line flag for constraint file
     use_chipdb: bool = False     # True for --chipdb style targets (xilinx)
+    single_constraint: bool = False  # Tool accepts the constraint flag only once
 
 
 # Target configurations
@@ -44,6 +45,7 @@ NEXTPNR_TARGETS = {
         output_flag="--asc",
         constraint_type="ice40-pcf",
         constraint_flag="--pcf",
+        single_constraint=True,
     ),
     "ecp5": NextpnrTargetConfig(
         name="ecp5",
