@@ -34,6 +34,10 @@ class Session(shell.Session):
     async def session_init(self):
         await super().session_init()
         await self.execute(["plugin", "-i", "ghdl"])
+
+    def _cmd_serialize(self, cmd: list[str]) -> str:
+        """Serialize shell command to string using shlex"""
+        return ' '.join(cmd)
         
     loop_pattern = re.compile(r'^.*Detected loop at')
     # Regex patterns for parsing yosys output
