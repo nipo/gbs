@@ -124,8 +124,13 @@ class YosysEcp5Pass(YosysBasePass):
     synth_target = "synth_ecp5"
     extra_filter_vars = {"vendor": "lattice", "family": "ecp5"}
     part_prefix = ("lfe5", "lae5")
-    default_steps = ("chformal -remove", "tribuf -logic",)
-    default_synth_args = ("-abc9", "-family", "ecp5")
+    # Tristates are left standing for iopadmap to turn into
+    # bidirectional pads.  Resolving them to logic beforehand costs a
+    # design its inout ports: a pad ends up driven for good, and what
+    # reads back from it is what the fabric put there rather than what
+    # is on the wire.
+    default_steps = ("flatten", "chformal -remove")
+    default_synth_args = ("-abc9", "-family", "ecp5", "-iopad")
 
 
 class YosysXilinxPass(YosysBasePass):
