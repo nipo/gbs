@@ -120,7 +120,15 @@ class Xst(IseTask):
 
     async def work(self) -> None:
         """Call XST"""
-        lines = []
+        # XST analyses the list in the order it is given, so a unit
+        # has to come after everything it references.  Task input
+        # order puts the libraries before work already, except for one
+        # generated during the build: its files are produced by
+        # another task and arrive last, after the top level that
+        # instantiates them.  Work holds the root partition, so
+        # emitting it last is the order that always holds.
+        library_lines = []
+        work_lines = []
         for resource in self.inputs:
             file_type = resource.file_type or 'unknown'
             library = resource.library or 'work'
@@ -128,14 +136,20 @@ class Xst(IseTask):
 
             if file_type in ["ise-settings-sh", "build-definition"]:
                 continue
-            
+
             # XST expects file_type names in lowercase
             lang = file_type.lower()
 
             if lang not in ["vhdl", "verilog"]:
                 raise ValueError(f"Unsupported language for XST: {lang}")
 
-            lines.append(f"{lang} {library} {file_path}")
+            line = f"{lang} {library} {file_path}"
+            if library == 'work':
+                work_lines.append(line)
+            else:
+                library_lines.append(line)
+
+        lines = library_lines + work_lines
 
         netlist_rsrc, = self.outputs_of_type("ise-netlist-xst")
         output_dir = netlist_rsrc.path.parent
