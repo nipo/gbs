@@ -59,6 +59,31 @@ Configuration Options
 ``output_base_name``
     Base name for output files. If not specified, derived from project name.
 
+``map_options``
+    MAP flags, overriding the defaults key by key rather than replacing
+    them, so a project states only what it wants changed. A value of
+    ``null`` drops the flag entirely, which is how a default is turned
+    off. The device and the file arguments are structural and are not
+    reachable this way.
+
+    Defaults: ``ol: high``, ``xe: c``, ``mt: on``, ``global_opt: speed``,
+    ``retiming: on``, ``register_duplication: on``,
+    ``equivalent_register_removal: off``, ``lc: area``.
+
+    .. code-block:: yaml
+
+       backend_config:
+         gbs.builtin.ise:
+           map_options:
+             # Pack the registers that drive pins into the IOBs, which
+             # is what a source synchronous bus wants.
+             pr: b
+             # Spartan-6 drops this one anyway, and says so.
+             retiming: null
+
+``par_options``
+    The same, for PAR. Defaults: ``ol: high``, ``xe: c``.
+
 Build artifacts are placed in ``gbs-build/<output_group_name>/``.
 Use the ``outputs`` section to copy final files to desired locations.
 

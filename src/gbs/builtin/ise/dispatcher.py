@@ -47,11 +47,15 @@ class IseDispatcher(BaseDispatcher):
             vhdl_std: str,
             tool: str,
             target: dict[str, str] = {},
+            map_options: dict = {},
+            par_options: dict = {},
     ):
         super().__init__(context, "ise", tool_name=tool)
         self.output_base_name = "project"
         self.target = target
         self.device = target["part"]
+        self.map_options = map_options
+        self.par_options = par_options
 
         self.xst_task = None
         self.bmm_task = None
@@ -173,6 +177,7 @@ class IseDispatcher(BaseDispatcher):
             device=self.device,
             inputs=[env_resource, ngd_resource],
             outputs=[map_resource, pcf_resource, map_report_resource],
+            options=self.map_options,
         )
 
         # Place and Route
@@ -180,6 +185,7 @@ class IseDispatcher(BaseDispatcher):
             dispatcher=self,
             inputs=[env_resource, map_resource],
             outputs=[par_resource, par_log_resource, par_pad_resource],
+            options=self.par_options,
         )
 
         # Run Timing Analysis

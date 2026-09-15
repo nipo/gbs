@@ -21,6 +21,12 @@ class IseSynthesizePass(BasePass):
 
     Input types: vhdl (verilog is optional, handled by dispatcher)
     Output types: ise-bitstream, ise-timing-report, ise-netlist
+
+    Configuration options (from backend_config):
+        - vhdl_standard: VHDL revision; ISE only serves "1993"
+        - map_options: MAP flags, overriding the defaults key by key.
+          A value of None drops its flag.
+        - par_options: the same, for PAR.
     """
     name = "ise-synthesize"
     input_types = {"vhdl", "verilog", "xilinx-ucf"}
@@ -97,4 +103,6 @@ class IseSynthesizePass(BasePass):
             vhdl_std=vhdl_std,
             target=target,
             tool = tool,
+            map_options = self.config.get("map_options", {}),
+            par_options = self.config.get("par_options", {}),
         )]

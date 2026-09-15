@@ -13,6 +13,25 @@ from ...ui.messages import MessageSeverity, ToolMessage
 from ...build.subprocess import MessageSubprocess
 from ...report_aggregator import TextReport, HtmlFragment, aggregate_text, csv_to_html_table
 
+
+def flags(defaults: dict, overrides: dict) -> list[str]:
+    """Command line flags from a step's defaults and a project's overrides.
+
+    A key present in overrides replaces the default; a value of None
+    drops the flag, which is how a project turns off something the
+    default set asks for.
+    """
+    merged = {**defaults, **overrides}
+
+    ret = []
+    for key, value in merged.items():
+        if value is None:
+            continue
+        ret += [f"-{key}", str(value)]
+
+    return ret
+
+
 class IseSubprocess(MessageSubprocess):
     def __init__(self,
                  settings_sh: Path,
@@ -307,7 +326,22 @@ class Map(IseTask):
 
     Executes: map -p <device> -ol high ... -w <ngd> -o <map.ncd>
     Produces: .map.ncd and .pcf files
+
+    `options` overrides the defaults below, key by key; a value of None
+    drops its flag.  The device and the file arguments are structural
+    and are not reachable that way.
     """
+
+    default_options = {
+        "ol": "high",
+        "xe": "c",
+        "mt": "on",
+        "global_opt": "speed",
+        "retiming": "on",
+        "register_duplication": "on",
+        "equivalent_register_removal": "off",
+        "lc": "area",
+    }
 
     def __init__(
         self,
@@ -315,6 +349,7 @@ class Map(IseTask):
         device: str,
         inputs: list,
         outputs: list,
+        options: dict = None,
     ):
         super().__init__(
             dispatcher=dispatcher,
@@ -324,6 +359,7 @@ class Map(IseTask):
             description="MAP",
         )
         self.device = device
+        self.options = options or {}
 
     async def work(self) -> None:
         """Run MAP"""
@@ -334,14 +370,7 @@ class Map(IseTask):
         cmd = [
             "map",
             "-p", self.device,
-            "-ol", "high",
-            "-xe", "c",
-            "-mt", "on",
-            "-global_opt", "speed",
-            "-retiming", "on",
-            "-register_duplication", "on",
-            "-equivalent_register_removal", "off",
-            "-lc", "area",
+            *flags(self.default_options, self.options),
             "-w",
             str(in_ngd.path),
             "-o", str(out_ncd.path),
@@ -366,13 +395,21 @@ class Par(IseTask):
 
     Executes: par -ol high -xe c -w <map.ncd> -o <par.ncd>
     Produces: .par.ncd file
+
+    `options` behaves as for Map.
     """
+
+    default_options = {
+        "ol": "high",
+        "xe": "c",
+    }
 
     def __init__(
         self,
         dispatcher: "Dispatcher",
         inputs: list,
         outputs: list,
+        options: dict = None,
     ):
         super().__init__(
             dispatcher=dispatcher,
@@ -381,6 +418,7 @@ class Par(IseTask):
             outputs=outputs,
             description="PAR (Place and Route)",
         )
+        self.options = options or {}
 
     async def work(self) -> None:
         """Run PAR"""
@@ -389,8 +427,7 @@ class Par(IseTask):
 
         cmd = [
             "par",
-            "-ol", "high",
-            "-xe", "c",
+            *flags(self.default_options, self.options),
             "-w",
             str(in_ncd.path),
             str(out_ncd.path),
