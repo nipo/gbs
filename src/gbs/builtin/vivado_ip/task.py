@@ -107,6 +107,7 @@ class VivadoIpPackageTask(VivadoCommand):
 
     async def work(self) -> None:
         topcell = self.dispatcher.context.get_topcell()
+        top_lib = self.dispatcher.context.get_topcell_library() or "work"
         output_dir = self.dispatcher.context.output_path.resolve()
         ip_dir = output_dir / "ip"
         proj_dir = output_dir / "proj"
@@ -215,7 +216,14 @@ class VivadoIpPackageTask(VivadoCommand):
                 "set_property", "file_type", "XDC", tcl.BareWord("$fobj"),
             ]))
 
-        # Set top
+        # Set top. The library matters as soon as the topcell is not in work
+        # -- a wrapper generated into a library of its own, say -- and Vivado
+        # looks it up in the default library otherwise.
+        self.debug(f"Setting top: {topcell} (lib={top_lib})")
+        await self.command_run(tcl.Command([
+            "set_property", "-name", "top_lib", "-value", top_lib,
+            "-objects", tcl.BareWord("$srcset_obj"),
+        ]))
         await self.command_run(tcl.Command([
             "set_property", "-name", "top", "-value", topcell,
             "-objects", tcl.BareWord("$srcset_obj"),
