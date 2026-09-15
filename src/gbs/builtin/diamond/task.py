@@ -109,10 +109,18 @@ class ProjectInit(DiamondCommand):
             "-synthesis", dispatcher.synthesis,
         ]))
 
-        # Add HDL sources in dependency order (LSE analyzes them in
-        # list order)
+        # Synthesis analyses the list in the order it is given, so a
+        # unit has to come after everything it references.  Task input
+        # order puts the libraries before work already, except for one
+        # generated during the build: its files are produced by
+        # another task and arrive last, after the top level that
+        # instantiates them.  Work holds the root partition, so
+        # emitting it after every other library is the order that
+        # always holds.
         hdl_inputs = [r for r in self.inputs
                       if isinstance(r, Resource) and r.file_type in ("vhdl", "verilog")]
+        hdl_inputs = ([r for r in hdl_inputs if (r.library or "work") != "work"]
+                      + [r for r in hdl_inputs if (r.library or "work") == "work"])
         total = len(hdl_inputs)
         self.debug(f"Adding {total} HDL source files...")
         for i, resource in enumerate(hdl_inputs):
