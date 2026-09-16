@@ -11,6 +11,7 @@ from typing import AsyncIterator
 from pathlib import Path
 
 from ...build import tcl
+from ...build.task import BuildError
 from ...build.platform import ProcessControl, ProcessInfo
 from ...build.process_watchdog import ProcessWatchdog
 from ...ui.messages import MessageSeverity, ToolMessage
@@ -192,7 +193,18 @@ class VivadoCommand(tcl.CommandTask):
 
     Wraps the generic TCL CommandTask with Vivado-specific progress handling.
     Converts ProgressIndication objects into task progress updates.
+
+    Errors Vivado reports are accumulated as they come, and turned into a
+    BuildError by error_check(). A Vivado flow is a series of TCL commands
+    and most of them do not raise: a source that does not parse, an IP that
+    does not generate or a design that does not synthesize is reported as an
+    ERROR message and the interpreter carries on to the next command. The
+    task has to look at what was said to know that it failed.
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.errors = []
 
     async def message_handle(self, msg: ToolMessage | ProgressIndication) -> None:
         """Handle messages from Vivado, including progress indications"""
@@ -202,7 +214,17 @@ class VivadoCommand(tcl.CommandTask):
                 status = f"{msg.phase} - {msg.step}" if msg.phase else msg.step
             await self.update_progress(None, status)
         else:
+            if msg.severity is MessageSeverity.ERROR:
+                self.errors.append(msg.message)
             await self.add_message_obj(msg)
+
+    def error_check(self, step: str) -> None:
+        """Fail the build on what Vivado reported so far"""
+        if not self.errors:
+            return
+        reported = "\n".join(self.errors)
+        self.errors = []
+        raise BuildError(f"Vivado failed to {step}:\n{reported}")
 
     async def command_run(self, cmd: tcl.Command) -> None:
         """Run a TCL command and wait for completion

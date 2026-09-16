@@ -76,6 +76,7 @@ class NonProjectBuild(ProjectCommand):
         else:
             self.info(f"Using non-project mode (HDL only)")
             await self._non_project_mode_init()
+        self.error_check("create the project")
 
         await self.update_progress(0.02, "User TCL")
 
@@ -85,21 +86,25 @@ class NonProjectBuild(ProjectCommand):
             await self.command_run(tcl.Command([
                 "source", tcl.String(str(resource.path))
             ]))
+        self.error_check("run the user init scripts")
 
         # Set up IP repository paths (both modes, no-op when empty)
         await self._setup_ip_repos(inputs_by_type, output_dir)
+        self.error_check("set up the IP repositories")
 
         await self.update_progress(0.05, "Sources")
 
         # Block design handling (project mode only)
         if needs_project_mode:
             await self._add_block_designs(inputs_by_type, output_dir)
+            self.error_check("add the block designs")
 
         # Add HDL and constraint sources (shared)
         await self._add_sources(self.inputs)
 
         # Set top module (shared)
         await self.top_set(topcell, top_lib)
+        self.error_check("add the design sources")
 
         await self.update_progress(0.2, "IPs")
 
@@ -111,6 +116,7 @@ class NonProjectBuild(ProjectCommand):
 
         # Generate reports (shared — design is open in both modes at this point)
         await self._generate_reports()
+        self.error_check("write the reports")
 
         self.info("Build complete")
 
@@ -297,6 +303,7 @@ class NonProjectBuild(ProjectCommand):
             tcl.Expansion(["get_ips"]),
             tcl.String("generate_target {synthesis implementation} $ip; synth_ip $ip")
         ]))
+        self.error_check("generate the IP cores")
 
         await self.update_progress(0.3, "Synth")
 
@@ -305,24 +312,28 @@ class NonProjectBuild(ProjectCommand):
         await self.command_run(tcl.Command([
             "synth_design", "-top", topcell, "-part", self.part, "-assert"
         ]))
+        self.error_check("synthesize the design")
 
         await self.update_progress(0.4, "Opt")
 
         # Optimization
         self.info("Running optimization")
         await self.command_run(tcl.Command(["opt_design"]))
+        self.error_check("optimize the design")
 
         await self.update_progress(0.5, "Place")
 
         # Place
         self.info("Running placement")
         await self.command_run(tcl.Command(["place_design"]))
+        self.error_check("place the design")
 
         await self.update_progress(0.6, "Route")
 
         # Route
         self.info("Running routing")
         await self.command_run(tcl.Command(["route_design"]))
+        self.error_check("route the design")
 
         # Set USERID
         await self.command_run(tcl.Command([
@@ -340,6 +351,7 @@ class NonProjectBuild(ProjectCommand):
             await self.command_run(tcl.Command([
                 "write_bitstream", "-force", str(rsrc.path)
             ]))
+        self.error_check("write the bitstream")
 
     # ── Project mode (for BD/XCI/IP designs) ──────────────────────
 
@@ -423,6 +435,7 @@ class NonProjectBuild(ProjectCommand):
         await self.command_run(tcl.Command([
             "wait_on_run", "synth_1",
         ]))
+        self.error_check("synthesize the design")
         await self.command_run(tcl.Command([
             "if",
             tcl.String('[get_property PROGRESS [get_runs synth_1]] != "100%"'),
@@ -440,6 +453,7 @@ class NonProjectBuild(ProjectCommand):
         await self.command_run(tcl.Command([
             "wait_on_run", "impl_1",
         ]))
+        self.error_check("implement the design")
         await self.command_run(tcl.Command([
             "if",
             tcl.String('[get_property PROGRESS [get_runs impl_1]] != "100%"'),
@@ -454,6 +468,7 @@ class NonProjectBuild(ProjectCommand):
                 f"project/synth.runs/impl_1/{topcell}.bit",
                 str(rsrc.path),
             ]))
+        self.error_check("collect the bitstream")
 
         # Open implementation run for report generation
         await self.command_run(tcl.Command([

@@ -9,6 +9,7 @@ import pytest
 from types import SimpleNamespace
 
 from gbs.build import BuildContext
+from gbs.build.task import BuildError
 from gbs.builtin.vivado.dispatcher import VivadoDispatcher
 from gbs.builtin.vivado.passes import VivadoSynthesizePass
 from gbs.builtin.vivado.project import ProjectCommand
@@ -17,6 +18,7 @@ from gbs.builtin.vivado.vivado_tcl import Session
 from gbs.builtin.vivado_ip.dispatcher import VivadoIpDispatcher
 from gbs.builtin.vivado_ip.passes import VivadoIpPackagePass
 from gbs.builtin.vivado_ip.task import VivadoIpPackageTask
+from gbs.ui.messages import MessageSeverity, ToolMessage
 
 
 class RecordingSession(Session):
@@ -32,10 +34,27 @@ class RecordingSession(Session):
         yield
 
 
+class ErrorSession(RecordingSession):
+    """Session answering with an ERROR to the commands matching a pattern"""
+
+    def __init__(self, failing: str):
+        super().__init__()
+        self.failing = failing
+
+    async def interact(self, cmd):
+        text = self._cmd_serialize(cmd)
+        self.commands.append(text)
+        if self.failing in text:
+            yield ToolMessage(severity=MessageSeverity.ERROR,
+                              message="something went wrong",
+                              identifier="Synth 8-1")
+
+
 class MockDispatcher:
     def __init__(self, context):
         self.context = context
         self.name = "mock"
+        self.tool_config = None
 
 
 class FakeGBSConfig:
@@ -293,3 +312,30 @@ def test_synthesis_pass_runs_pnr():
 
     assert VivadoSynthesizePass(config).filter_vars()["pnr_engine"] == "vivado"
     assert "pnr_engine" not in VivadoIpPackagePass(config).filter_vars()
+
+
+# --- Error reporting ---------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_synthesis_fails_on_error(tmp_path):
+    ctx = context_make(tmp_path)
+    session = ErrorSession("synth_design")
+    task = NonProjectBuild(dispatcher=MockDispatcher(ctx), session=session,
+                           part="xc7a35tcsg324-1", inputs=[], outputs=[])
+
+    with pytest.raises(BuildError, match="synthesize the design"):
+        await task.work()
+
+    assert any("synth_design" in c for c in session.commands)
+    assert not any("route_design" in c for c in session.commands)
+
+
+@pytest.mark.asyncio
+async def test_synthesis_fails_on_project_creation_error(tmp_path):
+    ctx = context_make(tmp_path)
+    session = ErrorSession("create_project")
+    task = NonProjectBuild(dispatcher=MockDispatcher(ctx), session=session,
+                           part="xc7a35tcsg324-1", inputs=[], outputs=[])
+
+    with pytest.raises(BuildError, match="create the project"):
+        await task.work()

@@ -130,6 +130,19 @@ The Vivado IP packaging backend contributes the following filter variables:
 - ``hwdep``: Set to ``xilinx``
 - ``vhdl-version``: VHDL standard from configuration
 
+Error Reporting
+---------------
+
+Vivado reports most failures as ``ERROR:`` messages and keeps running its TCL
+script: a source that does not parse, an IP that does not generate or a design
+that does not synthesize all leave the interpreter at its prompt, ready for the
+next command.
+
+GBS collects those messages and checks them after each step of the flow. The
+first step that reported an error fails the build right there, with a message
+naming the step and quoting what Vivado said, so the failure is attributed to
+the command that caused it instead of to a missing output file at the end.
+
 Stalled ``srcscanner`` Watchdog
 -------------------------------
 

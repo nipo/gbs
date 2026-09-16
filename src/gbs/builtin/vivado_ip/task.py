@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Any
 from collections import defaultdict
 
-from ...build.task import BuildError, Task, Resource
+from ...build.task import Task, Resource
 from ...build import tcl
-from ...ui.messages import MessageSeverity
 from ..vivado.project import ProjectCommand
 from ..vivado.vivado_tcl import Session
 
@@ -48,26 +47,6 @@ class VivadoIpPackageTask(ProjectCommand):
         )
         self.part = part
         self.ip_config = ip_config
-        self.errors = []
-
-    async def message_handle(self, msg) -> None:
-        """Keep every error Vivado reports.
-
-        Packaging is a run of TCL commands and none of them raises: a topcell
-        that does not parse leaves an empty component and the flow carries on
-        to the end. The task has to look at what was said to know it failed.
-        """
-        if getattr(msg, "severity", None) is MessageSeverity.ERROR:
-            self.errors.append(msg.message)
-        await super().message_handle(msg)
-
-    def error_check(self, step: str) -> None:
-        """Fail the build on what Vivado reported so far."""
-        if not self.errors:
-            return
-        reported = "\n".join(self.errors)
-        self.errors = []
-        raise BuildError(f"Vivado failed to {step}:\n{reported}")
 
     async def _get_vivado_version(self) -> tuple[int, int]:
         """Query Vivado version via 'version -short'.
