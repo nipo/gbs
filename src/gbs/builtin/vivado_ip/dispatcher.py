@@ -4,12 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
-from ...utils import expand_path, resolve_tool_exe
 from .task import VivadoIpPackageTask
-from ..vivado.vivado_tcl import Session
+from ..vivado.base import VivadoDispatcherBase
 
 
 # Input file types accepted by the IP packaging dispatcher
@@ -25,7 +23,7 @@ ACCEPTED_INPUT_TYPES = {
 }
 
 
-class VivadoIpDispatcher(BaseDispatcher):
+class VivadoIpDispatcher(VivadoDispatcherBase):
     """Vivado IP packaging dispatcher
 
     Workflow:
@@ -45,36 +43,15 @@ class VivadoIpDispatcher(BaseDispatcher):
         target: dict[str, str] | None = None,
         ip_config: dict[str, Any] | None = None,
     ):
-        super().__init__(context, "vivado-ip", tool_name=vivado_tool)
-        self.vhdl_std = vhdl_std
-        self.target = target or {}
+        super().__init__(
+            context,
+            "vivado-ip",
+            vhdl_std=vhdl_std,
+            vivado_tool=vivado_tool,
+            target=target,
+        )
         self.ip_config = ip_config or {}
-        self._session: Session | None = None
         self._package_task: VivadoIpPackageTask | None = None
-
-    def _get_session(self) -> Session:
-        """Get or create shared Vivado TCL session"""
-        if self._session is None:
-            vivado_path = expand_path(self.get_tool_option("path"))
-
-            try:
-                vivado_exe = resolve_tool_exe(vivado_path / "bin" / "vivado")
-            except FileNotFoundError:
-                raise RuntimeError(f"Vivado not found at {vivado_path}")
-
-            self._session = Session(
-                argv=[
-                    str(vivado_exe),
-                    "-mode", "tcl",
-                    "-nojournal",
-                    "-nolog",
-                ],
-                cwd=self.context.output_path,
-                env=self.tool_env or None,
-                use_pty=True,
-            )
-
-        return self._session
 
     async def process(self) -> None:
         """Process input files"""
@@ -83,14 +60,9 @@ class VivadoIpDispatcher(BaseDispatcher):
 
         await self._attach_pending_inputs()
 
-    async def close(self) -> None:
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
-
     async def _create_package_task(self) -> None:
         """Create the IP packaging task with output resources"""
-        session = self._get_session()
+        session = self.session_get()
         part = self.target.get("part")
 
         if not part:

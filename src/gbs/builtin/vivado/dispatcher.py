@@ -8,12 +8,10 @@ from __future__ import annotations
 from typing import Any
 from pathlib import Path
 
-from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
-from ...utils import expand_path, resolve_tool_exe
+from .base import VivadoDispatcherBase
 from .task import NonProjectBuild, AggregateSynthesisReport, AggregatePnrReport
-from .vivado_tcl import Session
 
 
 # Accepted input file types
@@ -45,7 +43,7 @@ OUTPUT_FILES = {
 }
 
 
-class VivadoDispatcher(BaseDispatcher):
+class VivadoDispatcher(VivadoDispatcherBase):
     """Vivado FPGA synthesis backend (non-project mode)
 
     Workflow:
@@ -65,36 +63,14 @@ class VivadoDispatcher(BaseDispatcher):
         vivado_tool: str = "vivado",
         target: dict[str, str] | None = None,
     ):
-        super().__init__(context, "vivado", tool_name=vivado_tool)
-        self.vhdl_std = vhdl_std
-        self.target = target or {}
-        self._session: Session | None = None
+        super().__init__(
+            context,
+            "vivado",
+            vhdl_std=vhdl_std,
+            vivado_tool=vivado_tool,
+            target=target,
+        )
         self._build_task: NonProjectBuild | None = None
-
-    def _get_session(self) -> Session:
-        """Get or create shared Vivado TCL session"""
-        if self._session is None:
-            vivado_path = expand_path(self.get_tool_option("path"))
-
-            # Vivado executable
-            try:
-                vivado_exe = resolve_tool_exe(vivado_path / "bin" / "vivado")
-            except FileNotFoundError:
-                raise RuntimeError(f"Vivado not found at {vivado_path}")
-
-            self._session = Session(
-                argv=[
-                    str(vivado_exe),
-                    "-mode", "tcl",
-                    "-nojournal",
-                    "-nolog",
-                ],
-                cwd=self.context.output_path,
-                env=self.tool_env or None,
-                use_pty=True,  # Vivado requires a tty for proper interactive behavior
-            )
-
-        return self._session
 
     async def process(self) -> None:
         """Process input files
@@ -108,14 +84,9 @@ class VivadoDispatcher(BaseDispatcher):
         # Attach any pending files of accepted types
         await self._attach_pending_inputs()
 
-    async def close(self) -> None:
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
-
     async def _create_build_task(self) -> None:
         """Create the single build task with output resources"""
-        session = self._get_session()
+        session = self.session_get()
         part = self.target.get("part")
 
         if not part:
