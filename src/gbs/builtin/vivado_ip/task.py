@@ -75,30 +75,6 @@ class VivadoIpPackageTask(ProjectCommand):
         self.warning("Could not determine Vivado version, assuming latest")
         return (9999, 0)
 
-    async def _setup_ip_repos(self, output_dir):
-        """Set up IP repository paths"""
-        ip_repo_paths = []
-
-        for resource in self.inputs_of_type('vivado-ip-repository'):
-            ip_repo_paths.append(str(resource))
-
-        bus_defs = self.inputs_of_type('vivado-bus-definition')
-        bus_zips = self.inputs_of_type('vivado-bus-zip')
-        if bus_defs or bus_zips:
-            bus_repo_dir = output_dir / "bus_repo"
-            self.bus_repo_fill(bus_repo_dir, bus_defs)
-            for zip_rsrc in bus_zips:
-                with zipfile.ZipFile(zip_rsrc.path) as zf:
-                    zf.extractall(bus_repo_dir)
-            ip_repo_paths.append(str(bus_repo_dir))
-
-        if ip_repo_paths:
-            self.info(f"Adding repo paths {ip_repo_paths}")
-        else:
-            self.info(f"No repo paths to add")
-
-        await self.ip_repos_setup(ip_repo_paths)
-
     async def work(self) -> None:
         topcell = self.dispatcher.context.get_topcell()
         top_lib = self.dispatcher.context.get_topcell_library() or "work"
@@ -138,7 +114,7 @@ class VivadoIpPackageTask(ProjectCommand):
         await self.source_mgmt_display_only()
 
         # Step 2: Copy bus definitions to local repository
-        await self._setup_ip_repos(output_dir)
+        await self.ip_repos_setup(self.ip_repo_paths_collect(output_dir))
 
         await self.update_progress(0.1, "Adding sources")
 

@@ -7,6 +7,7 @@ do not depend on the flow live here.
 
 from __future__ import annotations
 import shutil
+import zipfile
 from pathlib import Path
 
 from ...build import tcl
@@ -25,6 +26,43 @@ class ProjectCommand(VivadoCommand):
 
     # Whether sources_add() chains each HDL file after the previous one
     sources_reorder = False
+
+    def ip_repo_paths_collect(self, output_dir: Path) -> list[str]:
+        """Materialize the IP repositories of the inputs, list their paths
+
+        Packaged IP arrives as a zip and bus definitions as loose XML
+        files or as a zip; both have to sit in a directory before Vivado
+        can be pointed at them.
+        """
+        ip_repo_paths = []
+
+        for resource in self.inputs_of_type("vivado-ip-zip"):
+            ip_unzip_dir = output_dir / "ip_repo" / resource.path.stem
+            ip_unzip_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(resource.path) as zf:
+                zf.extractall(ip_unzip_dir)
+            ip_repo_paths.append(str(ip_unzip_dir))
+            self.info(f"Extracted IP: {resource.path.name} -> {ip_unzip_dir}")
+
+        for resource in self.inputs_of_type("vivado-ip-repository"):
+            ip_repo_paths.append(str(resource.path))
+
+        bus_defs = self.inputs_of_type("vivado-bus-definition")
+        bus_zips = self.inputs_of_type("vivado-bus-zip")
+        if bus_defs or bus_zips:
+            bus_repo_dir = output_dir / "bus_repo"
+            self.bus_repo_fill(bus_repo_dir, bus_defs)
+            for resource in bus_zips:
+                with zipfile.ZipFile(resource.path) as zf:
+                    zf.extractall(bus_repo_dir)
+            ip_repo_paths.append(str(bus_repo_dir))
+
+        if ip_repo_paths:
+            self.info(f"Adding repo paths {ip_repo_paths}")
+        else:
+            self.info("No repo paths to add")
+
+        return ip_repo_paths
 
     async def ip_repos_setup(self, ip_repo_paths: list[str]) -> None:
         """Append directories to the project IP repository path list"""

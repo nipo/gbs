@@ -10,7 +10,12 @@ from .task import VivadoIpPackageTask
 from ..vivado.base import VivadoDispatcherBase
 
 
-# Input file types accepted by the IP packaging dispatcher
+# Input file types accepted by the IP packaging dispatcher.
+#
+# vivado-ip-zip is deliberately absent: it is what this backend produces,
+# and accepting it as an input would let the planner chain one packaging
+# pass into the next. An already-packaged IP is handed over as a
+# vivado-ip-repository instead.
 ACCEPTED_INPUT_TYPES = {
     "vhdl",
     "verilog",

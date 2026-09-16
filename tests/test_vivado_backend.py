@@ -6,6 +6,7 @@ checked verbatim.
 """
 
 import pytest
+import zipfile
 from types import SimpleNamespace
 
 from gbs.build import BuildContext
@@ -199,6 +200,42 @@ async def test_bus_repo_fill(tmp_path):
     ProjectCommand.bus_repo_fill(repo, [SimpleNamespace(path=source)])
 
     assert (repo / "bus.xml").read_text() == "<x/>"
+
+
+@pytest.mark.asyncio
+async def test_ip_repo_paths_collect(tmp_path):
+    ctx = context_make(tmp_path)
+    ip_zip = tmp_path / "core.zip"
+    with zipfile.ZipFile(ip_zip, "w") as zf:
+        zf.writestr("component.xml", "<x/>")
+    bus_zip = tmp_path / "buses.zip"
+    with zipfile.ZipFile(bus_zip, "w") as zf:
+        zf.writestr("bus.xml", "<x/>")
+    bus_def = tmp_path / "other_bus.xml"
+    bus_def.write_text("<x/>")
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+
+    inputs = [
+        ctx.get_resource(ip_zip, file_type="vivado-ip-zip"),
+        ctx.get_resource(repo_dir, file_type="vivado-ip-repository"),
+        ctx.get_resource(bus_def, file_type="vivado-bus-definition"),
+        ctx.get_resource(bus_zip, file_type="vivado-bus-zip"),
+    ]
+    task = ProjectCommand(dispatcher=MockDispatcher(ctx), name="test",
+                          session=RecordingSession(), inputs=inputs, outputs=[])
+    out = tmp_path / "out"
+
+    paths = task.ip_repo_paths_collect(out)
+
+    assert paths == [
+        str(out / "ip_repo" / "core"),
+        str(repo_dir),
+        str(out / "bus_repo"),
+    ]
+    assert (out / "ip_repo" / "core" / "component.xml").exists()
+    assert (out / "bus_repo" / "bus.xml").exists()
+    assert (out / "bus_repo" / "other_bus.xml").exists()
 
 
 # --- Per-backend source declaration ------------------------------------------

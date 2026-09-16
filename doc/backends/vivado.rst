@@ -24,6 +24,8 @@ Supported Inputs
 - ``vivado-block-design``: Vivado block design files (triggers project mode)
 - ``vivado-init-tcl``: TCL scripts to run at project initialization
 - ``vivado-bus-definition``: Custom bus interface XML definitions
+- ``vivado-bus-zip``: Archive of custom bus interface XML definitions (see :doc:`vivado_bus`)
+- ``vivado-ip-repository``: IP repository directories
 - ``vivado-ip-zip``: Packaged IP zip archives (triggers project mode)
 
 Supported Outputs

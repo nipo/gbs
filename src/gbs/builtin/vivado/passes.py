@@ -25,6 +25,10 @@ class VivadoSynthesizePass(VivadoPassBase):
         - xilinx-constraints-tcl: TCL-based constraints
         - vivado-block-design: Vivado block design files
         - vivado-init-tcl: TCL scripts to run at project init
+        - vivado-ip-zip: Packaged IP archives
+        - vivado-ip-repository: IP repository directories
+        - vivado-bus-definition: Custom bus interface XML definitions
+        - vivado-bus-zip: Archive of custom bus interface XML definitions
 
     Output types:
         - vivado-routing-report: Route status report
@@ -47,6 +51,7 @@ class VivadoSynthesizePass(VivadoPassBase):
         "vivado-ip-zip",
         "vivado-ip-repository",
         "vivado-bus-definition",
+        "vivado-bus-zip",
     }
     output_types = {
         "vivado-routing-report",

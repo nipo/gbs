@@ -7,7 +7,6 @@ and project mode (required for block designs and external IPs).
 
 from __future__ import annotations
 import random
-import zipfile
 from pathlib import Path
 from collections import defaultdict
 
@@ -89,7 +88,7 @@ class NonProjectBuild(ProjectCommand):
         self.error_check("run the user init scripts")
 
         # Set up IP repository paths (both modes, no-op when empty)
-        await self._setup_ip_repos(inputs_by_type, output_dir)
+        await self.ip_repos_setup(self.ip_repo_paths_collect(output_dir))
         self.error_check("set up the IP repositories")
 
         await self.update_progress(0.05, "Sources")
@@ -121,29 +120,6 @@ class NonProjectBuild(ProjectCommand):
         self.info("Build complete")
 
     # ── Shared helpers ────────────────────────────────────────────
-
-    async def _setup_ip_repos(self, inputs_by_type, output_dir):
-        """Set up IP repository paths for packaged IPs and bus definitions"""
-        ip_repo_paths = []
-
-        for resource in inputs_by_type.get('vivado-ip-zip', []):
-            ip_unzip_dir = output_dir / "ip_repo" / resource.path.stem
-            ip_unzip_dir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(resource.path, 'r') as zf:
-                zf.extractall(ip_unzip_dir)
-            ip_repo_paths.append(str(ip_unzip_dir))
-            self.info(f"Extracted IP: {resource.path.name} -> {ip_unzip_dir}")
-
-        for resource in inputs_by_type.get('vivado-ip-repository', []):
-            ip_repo_paths.append(str(resource))
-
-        bus_defs = inputs_by_type.get('vivado-bus-definition', [])
-        if bus_defs:
-            bus_repo_dir = output_dir / "bus_repo"
-            self.bus_repo_fill(bus_repo_dir, bus_defs)
-            ip_repo_paths.append(str(bus_repo_dir))
-
-        await self.ip_repos_setup(ip_repo_paths)
 
     async def _generate_reports(self):
         """Generate reports from the routed design (shared by both modes)"""
