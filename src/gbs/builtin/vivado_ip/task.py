@@ -111,15 +111,12 @@ class VivadoIpPackageTask(ProjectCommand):
             tcl.Expansion(["current_project"]),
         ]))
 
-        await self.source_mgmt_display_only()
+        await self.project_configure()
 
         # Step 2: Copy bus definitions to local repository
         await self.ip_repos_setup(self.ip_repo_paths_collect(output_dir))
 
         await self.update_progress(0.1, "Adding sources")
-
-        # Step 3: Add HDL sources
-        await self.filesets_capture()
 
         hdl_inputs = [r for r in self.inputs
                       if isinstance(r, Resource) and r.file_type in ("vhdl", "verilog")]

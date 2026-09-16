@@ -171,11 +171,7 @@ class NonProjectBuild(ProjectCommand):
         await self.command_run(tcl.Command([
             "create_project", "-in_memory", "-part", self.part
         ]))
-        await self.source_mgmt_display_only()
-        await self.command_run(tcl.Command([
-            "set_param", "project.hsv.draftModeDefault", "only",
-        ]))
-        await self.filesets_capture()
+        await self.project_configure()
 
     async def _non_project_mode_build(self, topcell, userid):
         """Run synthesis+implementation in non-project mode"""
@@ -246,8 +242,7 @@ class NonProjectBuild(ProjectCommand):
             "create_project", "synth", "project",
             "-part", self.part, "-force",
         ]))
-        await self.source_mgmt_display_only()
-        await self.filesets_capture()
+        await self.project_configure()
 
     async def _add_block_designs(self, inputs_by_type, output_dir):
         """Add block designs — copy to build dir, generate targets"""

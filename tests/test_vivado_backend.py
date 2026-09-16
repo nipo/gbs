@@ -160,6 +160,20 @@ async def test_filesets_capture(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_project_configure(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.project_configure()
+
+    assert session.commands == [
+        "set_property {source_mgmt_mode} {DisplayOnly} [current_project]",
+        "set_param {project.hsv.draftModeDefault} {only}",
+        "set source_fileset_obj [get_filesets {sources_1}]",
+        "set constraints_fileset_obj [get_filesets {constrs_1}]",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_source_mgmt_display_only(tmp_path):
     task, session = project_command(tmp_path)
 

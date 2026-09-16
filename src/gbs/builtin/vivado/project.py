@@ -99,6 +99,19 @@ class ProjectCommand(VivadoCommand):
             tcl.Expansion(["get_filesets", "constrs_1"]),
         ]))
 
+    async def project_configure(self) -> None:
+        """Set the project properties every Vivado flow relies on
+
+        Draft mode keeps the source scanner from elaborating the design
+        on every source it is handed; sources come in compilation order
+        and the flow declares the top cell itself.
+        """
+        await self.source_mgmt_display_only()
+        await self.command_run(tcl.Command([
+            "set_param", "project.hsv.draftModeDefault", "only",
+        ]))
+        await self.filesets_capture()
+
     async def source_mgmt_display_only(self) -> None:
         """Keep Vivado from reordering or re-deriving the source set"""
         await self.command_run(tcl.Command([
