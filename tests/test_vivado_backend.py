@@ -1,0 +1,295 @@
+"""Tests for the Vivado synthesis and IP packaging backends
+
+The tasks are driven with a session that records the TCL it is handed
+instead of talking to Vivado, so the commands each flow emits are
+checked verbatim.
+"""
+
+import pytest
+from types import SimpleNamespace
+
+from gbs.build import BuildContext
+from gbs.builtin.vivado.dispatcher import VivadoDispatcher
+from gbs.builtin.vivado.passes import VivadoSynthesizePass
+from gbs.builtin.vivado.project import ProjectCommand
+from gbs.builtin.vivado.task import NonProjectBuild
+from gbs.builtin.vivado.vivado_tcl import Session
+from gbs.builtin.vivado_ip.dispatcher import VivadoIpDispatcher
+from gbs.builtin.vivado_ip.passes import VivadoIpPackagePass
+from gbs.builtin.vivado_ip.task import VivadoIpPackageTask
+
+
+class RecordingSession(Session):
+    """Session recording serialized commands, answering nothing"""
+
+    def __init__(self):
+        super().__init__(argv=["vivado"])
+        self.commands = []
+
+    async def interact(self, cmd):
+        self.commands.append(self._cmd_serialize(cmd))
+        return
+        yield
+
+
+class MockDispatcher:
+    def __init__(self, context):
+        self.context = context
+        self.name = "mock"
+
+
+class FakeGBSConfig:
+    def __init__(self, path):
+        self.path = path
+
+    def get_tool(self, identifier):
+        return SimpleNamespace(config={"path": str(self.path)})
+
+
+def context_make(tmp_path, gbs_config=None):
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=gbs_config)
+    ctx.set_output_group_context(topcell="top", topcell_library="toplib",
+                                 output_group=SimpleNamespace(name=""))
+    return ctx
+
+
+def sources_make(ctx, tmp_path):
+    """One source of each type the add-source loops know about"""
+    resources = []
+    for name, file_type, version, library in [
+            ("a.vhd", "vhdl", "2008", "liba"),
+            ("b.vhd", "vhdl", "1993", "libb"),
+            ("c.v", "verilog", None, "libc"),
+            ("d.xdc", "xilinx-xdc", None, None),
+    ]:
+        path = tmp_path / name
+        path.write_text("")
+        resources.append(ctx.get_resource(path, file_type=file_type,
+                                          file_type_version=version,
+                                          library=library))
+    return resources
+
+
+def vivado_install(tmp_path):
+    """Create a directory layout resolve_tool_exe() accepts"""
+    exe = tmp_path / "bin" / "vivado"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_text("")
+    return exe
+
+
+# --- Shared project helpers --------------------------------------------------
+
+def project_command(tmp_path):
+    ctx = context_make(tmp_path)
+    session = RecordingSession()
+    task = ProjectCommand(dispatcher=MockDispatcher(ctx), name="test",
+                          session=session, inputs=[], outputs=[])
+    return task, session
+
+
+@pytest.mark.asyncio
+async def test_ip_repos_setup(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.ip_repos_setup(["/repo/a", "/repo/b"])
+
+    assert session.commands == [
+        "set_property {ip_repo_paths} [concat [get_property {ip_repo_paths} "
+        "[current_project]] [list {/repo/a} {/repo/b}]] [current_project]",
+        "update_ip_catalog {-rebuild}",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ip_repos_setup_without_repository(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.ip_repos_setup([])
+
+    assert session.commands == []
+
+
+@pytest.mark.asyncio
+async def test_filesets_capture(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.filesets_capture()
+
+    assert session.commands == [
+        "set source_fileset_obj [get_filesets {sources_1}]",
+        "set constraints_fileset_obj [get_filesets {constrs_1}]",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_source_mgmt_display_only(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.source_mgmt_display_only()
+
+    assert session.commands == [
+        "set_property {source_mgmt_mode} {DisplayOnly} [current_project]",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_top_set(tmp_path):
+    task, session = project_command(tmp_path)
+
+    await task.top_set("blinky", "mylib")
+
+    assert session.commands == [
+        "set_property {top_lib} {mylib} $source_fileset_obj",
+        "set_property {top} {blinky} $source_fileset_obj",
+    ]
+
+
+def test_vhdl_file_type():
+    def resource(version):
+        return SimpleNamespace(file_type_version=version)
+
+    assert ProjectCommand.vhdl_file_type(resource("2008")) == "VHDL 2008"
+    assert ProjectCommand.vhdl_file_type(resource("1993")) == "VHDL"
+    assert ProjectCommand.vhdl_file_type(resource(None)) == "VHDL"
+
+
+@pytest.mark.asyncio
+async def test_bus_repo_fill(tmp_path):
+    source = tmp_path / "bus.xml"
+    source.write_text("<x/>")
+    repo = tmp_path / "bus_repo"
+
+    ProjectCommand.bus_repo_fill(repo, [SimpleNamespace(path=source)])
+
+    assert (repo / "bus.xml").read_text() == "<x/>"
+
+
+# --- Per-backend source declaration ------------------------------------------
+
+@pytest.mark.asyncio
+async def test_synthesis_add_sources(tmp_path):
+    ctx = context_make(tmp_path)
+    session = RecordingSession()
+    resources = sources_make(ctx, tmp_path)
+    task = NonProjectBuild(dispatcher=MockDispatcher(ctx), session=session,
+                           part="xc7a35tcsg324-1", inputs=resources, outputs=[])
+
+    await task._add_sources(resources)
+
+    assert session.commands == [
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'a.vhd'}}}]]",
+        "set_property {-dict} {file_type {VHDL 2008} library {liba}} $f",
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'b.vhd'}}}]]",
+        "set_property {-dict} {file_type {VHDL} library {libb}} $f",
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'c.v'}}}]]",
+        "set_property {-dict} {file_type {Verilog} library {libc}} $f",
+        "set {f} [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'd.xdc'}}}]]",
+        "set_property {-dict} {file_type {XDC} used_in {synthesis implementation}} $f",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ip_package_add_sources(tmp_path):
+    ctx = context_make(tmp_path)
+    session = RecordingSession()
+    resources = sources_make(ctx, tmp_path)
+    task = VivadoIpPackageTask(dispatcher=MockDispatcher(ctx), session=session,
+                               part="xc7a35tcsg324-1", ip_config={},
+                               inputs=resources, outputs=[])
+    hdl_inputs = [r for r in resources if r.file_type in ("vhdl", "verilog")]
+    xdc_inputs = task.inputs_of_type("xilinx-xdc")
+
+    await task._add_sources(hdl_inputs, xdc_inputs)
+
+    assert session.commands == [
+        f"set fname [file {{normalize}} {{{tmp_path / 'a.vhd'}}}]",
+        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        "[list $fname]]",
+        "set_property {file_type} {vhdl} $fobj",
+        "set_property {library} {liba} $fobj",
+        "set last_source $fobj",
+        f"set fname [file {{normalize}} {{{tmp_path / 'b.vhd'}}}]",
+        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        "[list $fname]]",
+        "set_property {file_type} {vhdl} $fobj",
+        "set_property {library} {libb} $fobj",
+        "reorder_files {-after} [get_property {name} $last_source] "
+        "[get_property {name} $fobj]",
+        "set last_source $fobj",
+        f"set fname [file {{normalize}} {{{tmp_path / 'c.v'}}}]",
+        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        "[list $fname]]",
+        "set_property {file_type} {verilog} $fobj",
+        "set_property {library} {libc} $fobj",
+        "reorder_files {-after} [get_property {name} $last_source] "
+        "[get_property {name} $fobj]",
+        "set last_source $fobj",
+        f"set fname [file {{normalize}} {{{tmp_path / 'd.xdc'}}}]",
+        "set fobj [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
+        "[list $fname]]",
+        "set_property {file_type} {XDC} $fobj",
+    ]
+
+
+# --- Dispatchers -------------------------------------------------------------
+
+@pytest.mark.parametrize("factory", [VivadoDispatcher, VivadoIpDispatcher])
+def test_dispatcher_session_argv(tmp_path, factory):
+    exe = vivado_install(tmp_path)
+    ctx = context_make(tmp_path, gbs_config=FakeGBSConfig(tmp_path))
+    dispatcher = factory(context=ctx, target={"part": "xc7a35tcsg324-1"})
+
+    session = dispatcher.session_get()
+
+    assert session.argv == [str(exe), "-mode", "tcl", "-nojournal", "-nolog"]
+    assert dispatcher.session_get() is session
+
+
+@pytest.mark.parametrize("factory", [VivadoDispatcher, VivadoIpDispatcher])
+def test_dispatcher_session_without_install(tmp_path, factory):
+    ctx = context_make(tmp_path, gbs_config=FakeGBSConfig(tmp_path / "nowhere"))
+    dispatcher = factory(context=ctx, target={"part": "xc7a35tcsg324-1"})
+
+    with pytest.raises(RuntimeError, match="Vivado not found"):
+        dispatcher.session_get()
+
+
+# --- Passes ------------------------------------------------------------------
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_filter_vars(factory):
+    config = {"target": {"part": "xc7a35tcsg324-1"}, "vhdl_standard": "2008"}
+
+    filter_vars = factory(config).filter_vars()
+
+    assert filter_vars["purpose"] == "synthesis"
+    assert filter_vars["vendor"] == "xilinx"
+    assert filter_vars["vhdl_frontend"] == "vivado"
+    assert filter_vars["verilog_frontend"] == "vivado"
+    assert filter_vars["synthesis_engine"] == "vivado"
+    assert filter_vars["bitstream_engine"] == "vivado"
+    assert filter_vars["vhdl_std"] == "2008"
+    assert filter_vars["part"] == "xc7a35tcsg324-1"
+    assert filter_vars["family"] == "artix7"
+
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_filter_vars_unparsable_part(factory, caplog):
+    config = {"target": {"part": "xc7a35t"}}
+
+    filter_vars = factory(config).filter_vars()
+
+    assert filter_vars["part"] == "xc7a35t"
+    assert "Cannot parse device" in caplog.text
+
+
+def test_synthesis_pass_runs_pnr():
+    config = {"target": {"part": "xc7a35tcsg324-1"}}
+
+    assert VivadoSynthesizePass(config).filter_vars()["pnr_engine"] == "vivado"
+    assert "pnr_engine" not in VivadoIpPackagePass(config).filter_vars()
