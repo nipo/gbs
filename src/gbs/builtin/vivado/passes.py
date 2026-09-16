@@ -70,15 +70,6 @@ class VivadoSynthesizePass(VivadoPassBase):
 
     runs_pnr = True
 
-    def probe(self) -> str | None:
-        target = self.config.get("target") or {}
-        part = (target.get("part") or "").lower()
-        if not part.startswith("xc"):
-            return f"target part {part!r} is not a Xilinx device"
-        if part.startswith("xc6") or part.startswith("xc5") or part.startswith("xc4") or part.startswith("xc3"):
-            return f"target part {part!r} is pre-7-series; Vivado only handles 7-series and later"
-        return self.probe_tool("vivado")
-
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Vivado dispatcher for execution
 

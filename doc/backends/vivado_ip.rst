@@ -167,6 +167,7 @@ Requirements
 
 - Vivado Design Suite installed
 - Valid Vivado license
+- A 7-series or later Xilinx part in the output group
 - HDL source files for the IP
 
 See Also

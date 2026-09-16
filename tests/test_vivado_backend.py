@@ -438,3 +438,31 @@ async def test_synthesis_fails_on_project_creation_error(tmp_path):
 
     with pytest.raises(BuildError, match="create the project"):
         await task.work()
+
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_probe_rejects_pre_7_series(factory, tmp_path):
+    vivado_install(tmp_path)
+    config = {"target": {"part": "xc6slx9"}}
+
+    reason = factory(config, gbs_config=FakeGBSConfig(tmp_path)).probe()
+
+    assert "pre-7-series" in reason
+
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_probe_rejects_other_vendors(factory, tmp_path):
+    vivado_install(tmp_path)
+    config = {"target": {"part": "gw1nr-lv9qn88pc6/i5"}}
+
+    reason = factory(config, gbs_config=FakeGBSConfig(tmp_path)).probe()
+
+    assert "not a Xilinx device" in reason
+
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_probe_accepts_7_series(factory, tmp_path):
+    vivado_install(tmp_path)
+    config = {"target": {"part": "xc7a35tcsg324-1"}}
+
+    assert factory(config, gbs_config=FakeGBSConfig(tmp_path)).probe() is None

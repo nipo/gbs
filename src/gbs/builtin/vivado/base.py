@@ -102,6 +102,18 @@ class VivadoPassBase(BasePass):
     runs_pnr = False
 
     def probe(self) -> str | None:
+        """Reject targets Vivado cannot handle, then check the tool
+
+        Vivado handles 7-series and later; earlier families are ISE
+        territory.
+        """
+        target = self.config.get("target") or {}
+        part = (target.get("part") or "").lower()
+        if not part.startswith("xc"):
+            return f"target part {part!r} is not a Xilinx device"
+        if part[:3] in ("xc3", "xc4", "xc5", "xc6"):
+            return (f"target part {part!r} is pre-7-series; Vivado only "
+                    f"handles 7-series and later")
         return self.probe_tool("vivado")
 
     def filter_vars(self) -> dict[str, Any]:
