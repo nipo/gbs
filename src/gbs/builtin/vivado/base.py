@@ -6,14 +6,18 @@ the planner the same way; this module holds what they share.
 """
 
 from __future__ import annotations
+import logging
 from typing import Any
 
-from ...base import BaseDispatcher
+from ...base import BaseDispatcher, BasePass
 from ...build.context import BuildContext
 from ...utils import expand_path, resolve_tool_exe
+from .. import xilinx_part
 from .vivado_tcl import Session
 
-__all__ = ["VivadoDispatcherBase"]
+__all__ = ["VivadoDispatcherBase", "VivadoPassBase"]
+
+logger = logging.getLogger(__name__)
 
 
 class VivadoDispatcherBase(BaseDispatcher):
@@ -64,3 +68,52 @@ class VivadoDispatcherBase(BaseDispatcher):
         if self.session is not None:
             await self.session.close()
             self.session = None
+
+
+class VivadoPassBase(BasePass):
+    """Pass planning a build step run by Vivado
+
+    Subclasses declare their input and output types, and create their
+    dispatcher.
+    """
+
+    # Whether the flow this pass plans takes the design through
+    # place-and-route
+    runs_pnr = False
+
+    def probe(self) -> str | None:
+        return self.probe_tool("vivado")
+
+    def filter_vars(self) -> dict[str, Any]:
+        """Contribute canonical filter variables for a Vivado flow.
+
+        Vivado is both the HDL frontend and the synthesis engine, and
+        produces bitstreams on its own.
+        """
+        vhdl_std = self.config.get("vhdl_standard", "1993")
+
+        filter_vars: dict[str, Any] = {
+            "purpose": "synthesis",
+            "vendor": "xilinx",
+            "vhdl_frontend": "vivado",
+            "verilog_frontend": "vivado",
+            "synthesis_engine": "vivado",
+            "bitstream_engine": "vivado",
+            "vhdl_std": vhdl_std,
+        }
+
+        if self.runs_pnr:
+            filter_vars["pnr_engine"] = "vivado"
+
+        target = self.config.get("target", {})
+        device = target.get("part")
+        if device:
+            filter_vars["part"] = device
+            filter_vars.update(xilinx_part.filter_vars(device))
+            if not xilinx_part.parse_part(device):
+                logger.warning(
+                    f"Cannot parse device <{device}>, should be "
+                    f"<part><-speed><package>"
+                )
+
+        return filter_vars

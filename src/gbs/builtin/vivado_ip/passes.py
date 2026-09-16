@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-from ...base import BasePass
 from ...protocol import Dispatcher
 from .dispatcher import VivadoIpDispatcher
+from ..vivado.base import VivadoPassBase
 
 
-class VivadoIpPackagePass(BasePass):
+class VivadoIpPackagePass(VivadoPassBase):
     """Pass that packages HDL into a Vivado IP-XACT package
 
     This pass uses Vivado tools to:
@@ -46,44 +46,6 @@ class VivadoIpPackagePass(BasePass):
         "vivado-ip-zip",
         "vivado-ip-dir",
     }
-
-    def probe(self) -> str | None:
-        return self.probe_tool("vivado")
-
-    def filter_vars(self) -> dict[str, Any]:
-        """Contribute canonical filter variables for IP packaging.
-
-        Packaging needs synthesizable HDL, so ``purpose`` is set to
-        ``synthesis`` and the frontends and synthesis engine point to
-        Vivado.
-        """
-        vhdl_std = self.config.get("vhdl_standard", "1993")
-
-        filter_vars: dict[str, Any] = {
-            "purpose": "synthesis",
-            "vendor": "xilinx",
-            "vhdl_frontend": "vivado",
-            "verilog_frontend": "vivado",
-            "synthesis_engine": "vivado",
-            "bitstream_engine": "vivado",
-            "vhdl_std": vhdl_std,
-        }
-
-        from .. import xilinx_part
-        target = self.config.get("target", {})
-        device = target.get("part")
-        if device:
-            filter_vars["part"] = device
-            filter_vars.update(xilinx_part.filter_vars(device))
-            if not xilinx_part.parse_part(device):
-                import logging
-                logger = logging.getLogger("gbs.builtin.vivado.passes")
-                logger.warning(
-                    f"Cannot parse device <{device}>, should be "
-                    f"<part><-speed><package>"
-                )
-
-        return filter_vars
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create Vivado IP dispatcher for execution"""
