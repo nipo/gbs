@@ -11,6 +11,8 @@ from typing import AsyncIterator
 from pathlib import Path
 
 from ...build import tcl
+from ...build.platform import ProcessControl, ProcessInfo
+from ...build.process_watchdog import ProcessWatchdog
 from ...ui.messages import MessageSeverity, ToolMessage
 
 __all__ = ["ProgressIndication", "Session", "VivadoCommand", "LongRunningCommand"]
@@ -36,6 +38,11 @@ class Session(tcl.Session):
     # Vivado TCL prompt
     prompt = "Vivado% "
 
+    # Vivado's source scanning helper, and how long it may run before
+    # being considered stalled
+    srcscanner_name = "srcscanner"
+    srcscanner_grace = 20.0
+
     # Regex patterns for parsing Vivado output
     # Vivado messages format: SEVERITY: [ID] message
     msg_pattern = re.compile(
@@ -54,6 +61,10 @@ class Session(tcl.Session):
         'CRITICAL WARNING': MessageSeverity.WARNING,
         'ERROR': MessageSeverity.ERROR,
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._srcscanner_watchdog = None
 
     @classmethod
     def log_line_parse(cls, line: str) -> ToolMessage | ProgressIndication | None:
@@ -116,6 +127,64 @@ class Session(tcl.Session):
         """
         # Wait for initial prompt
         await super().session_init()
+
+        self._srcscanner_watchdog_start()
+
+    def _srcscanner_watchdog_start(self):
+        """Start watching for stalled srcscanner helpers
+
+        Vivado spawns srcscanner when sources are added or the top cell is
+        set. It sometimes loops forever and the TCL prompt never returns.
+        Its result is not needed: GBS passes sources in dependency order.
+        """
+        if self._srcscanner_watchdog is not None:
+            return
+
+        if not ProcessControl.can_list_processes:
+            self._logger.debug(
+                "Process listing unavailable on this platform, "
+                "srcscanner watchdog disabled"
+            )
+            return
+
+        self._srcscanner_watchdog = ProcessWatchdog(
+            root_pid=self._process.pid,
+            process_name=self.srcscanner_name,
+            grace_seconds=self.srcscanner_grace,
+            on_kill=self._srcscanner_killed,
+            root_alive=lambda: (self._process is not None
+                                and self._process.returncode is None),
+        )
+        self._srcscanner_watchdog.start()
+
+    def _srcscanner_killed(self, info: ProcessInfo):
+        """Report a srcscanner kill to the command in flight
+
+        Queueing the message rather than taking the session lock: the
+        watchdog runs while interact() holds it.
+        """
+        self._logger.warning(
+            f"Killed stalled {info.name} (pid {info.pid}) "
+            f"after {info.age:.0f} s"
+        )
+        self._queue.put_nowait(ToolMessage(
+            severity=MessageSeverity.WARNING,
+            identifier="GBS-SRCSCANNER",
+            message=(
+                f"Killed stalled srcscanner (pid {info.pid}) after "
+                f"{info.age:.0f} s; Vivado continues with the compilation "
+                f"order set by GBS"
+            ),
+        ))
+
+    async def close(self):
+        """Stop the watchdog, then shut the session down"""
+        watchdog = self._srcscanner_watchdog
+        self._srcscanner_watchdog = None
+        if watchdog is not None:
+            await watchdog.stop()
+
+        await super().close()
 
 
 class VivadoCommand(tcl.CommandTask):

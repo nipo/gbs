@@ -8,6 +8,8 @@ import pytest
 
 from gbs.build.platform import ProcessControl, ProcessInfo
 from gbs.build.process_watchdog import ProcessWatchdog
+from gbs.builtin.vivado import vivado_tcl
+from gbs.ui.messages import MessageSeverity, ToolMessage
 
 
 def stat_line(pid, comm, state="S", session=42, starttime=0, field_count=52):
@@ -481,3 +483,53 @@ class TestSessionListing:
         procs = ProcessControl.list_session_processes(os.getsid(0))
         assert os.getpid() in {i.pid for i in procs}
 
+
+class TestVivadoSessionHook:
+    """Tests for the srcscanner hook of the Vivado session"""
+
+    @pytest.mark.asyncio
+    async def test_defaults(self):
+        session = vivado_tcl.Session(argv=["vivado"])
+
+        assert session.srcscanner_grace == 20.0
+        assert session.srcscanner_name == "srcscanner"
+        assert session._srcscanner_watchdog is None
+
+    @pytest.mark.asyncio
+    async def test_kill_is_reported_as_a_warning(self):
+        session = vivado_tcl.Session(argv=["vivado"])
+
+        session._srcscanner_killed(info_make(4321, age=25.0))
+
+        msg = session._queue.get_nowait()
+        assert isinstance(msg, ToolMessage)
+        assert msg.severity == MessageSeverity.WARNING
+        assert msg.identifier == "GBS-SRCSCANNER"
+        assert "4321" in msg.message
+        assert session._queue.empty()
+
+    @pytest.mark.asyncio
+    async def test_close_without_launch(self):
+        session = vivado_tcl.Session(argv=["vivado"])
+
+        await asyncio.wait_for(session.close(), timeout=5.0)
+
+        assert session._srcscanner_watchdog is None
+
+    @pytest.mark.asyncio
+    async def test_close_stops_the_watchdog(self):
+        session = vivado_tcl.Session(argv=["vivado"])
+        lister = ScriptedLister([[]])
+        wd = ProcessWatchdog(
+            root_pid=10, process_name="srcscanner", grace_seconds=10,
+            on_kill=lambda info: None,
+            interval=0.01, lister=lister, killer=RecordingKiller(),
+        )
+        wd.start()
+        task = wd.task
+        session._srcscanner_watchdog = wd
+
+        await asyncio.wait_for(session.close(), timeout=5.0)
+
+        assert task.cancelled()
+        assert session._srcscanner_watchdog is None

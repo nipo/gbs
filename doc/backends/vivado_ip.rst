@@ -130,6 +130,24 @@ The Vivado IP packaging backend contributes the following filter variables:
 - ``hwdep``: Set to ``xilinx``
 - ``vhdl-version``: VHDL standard from configuration
 
+Stalled ``srcscanner`` Watchdog
+-------------------------------
+
+Vivado spawns a headless ``srcscanner`` helper when sources are added or the
+top cell is set. That helper occasionally enters an infinite loop with growing
+memory usage, and the ``Vivado%`` prompt never comes back, so the build hangs
+forever.
+
+GBS watches the Vivado process it launched and kills any ``srcscanner`` of that
+Vivado that has been running for more than 20 seconds. Ownership is decided on
+the Unix session id, so a Vivado started outside GBS is never touched. The
+build then proceeds normally: GBS passes sources in dependency order and does
+not use the scanner's result.
+
+When this happens, a ``GBS-SRCSCANNER`` warning is reported; it does not fail
+the build. The watchdog is Linux-only and has no configuration knob; on other
+platforms it stays off.
+
 Requirements
 ------------
 
