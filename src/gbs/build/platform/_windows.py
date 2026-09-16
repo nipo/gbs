@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 
+from ._process_info import ProcessInfo
+
 # Regex to strip ANSI escape sequences from ConPTY output
 _ANSI_ESCAPE_RE = re.compile(r'\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07]*\x07|\[[0-9]*[a-z])')
 
@@ -189,6 +191,35 @@ class ProcessControl:
         try:
             sp.run(
                 ["taskkill", "/T", "/F", "/PID", str(pid)],
+                stdout=sp.DEVNULL,
+                stderr=sp.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass
+
+    can_list_processes = False
+    """Whether list_session_processes() is usable here."""
+
+    @staticmethod
+    def list_session_processes(sid: int) -> list[ProcessInfo]:
+        """Not available on Windows: there is no session-id equivalent
+        that survives the intermediate wrapper processes."""
+        raise NotImplementedError(
+            "Process listing is not supported on Windows"
+        )
+
+    @staticmethod
+    def kill_process(pid: int, force: bool = False):
+        """Kill a single process, leaving its descendants alone.
+
+        Args:
+            pid: Process ID
+            force: Ignored on Windows (always forceful)
+        """
+        import subprocess as sp
+        try:
+            sp.run(
+                ["taskkill", "/F", "/PID", str(pid)],
                 stdout=sp.DEVNULL,
                 stderr=sp.DEVNULL,
             )
