@@ -82,7 +82,7 @@ class VivadoDispatcher(VivadoDispatcherBase):
             await self._create_build_task()
 
         # Attach any pending files of accepted types
-        await self._attach_pending_inputs()
+        self.inputs_attach(self._build_task, ACCEPTED_INPUT_TYPES)
 
     async def _create_build_task(self) -> None:
         """Create the single build task with output resources"""
@@ -138,23 +138,3 @@ class VivadoDispatcher(VivadoDispatcherBase):
                 inputs=inputs,
                 outputs=[dest],
             )
-
-    async def _attach_pending_inputs(self) -> None:
-        """Attach any pending files of accepted types to the build task"""
-        existing_paths = {r.path for r in self._build_task.inputs}
-
-        for library, resources in self.context.get_pending_by_library_ordered():
-            for source in resources:
-                if source.file_type not in ACCEPTED_INPUT_TYPES:
-                    continue
-                if source.path in existing_paths:
-                    continue
-
-                resource = self.context.get_resource(source.path)
-                resource.metadata = {
-                    'file_type': source.file_type,
-                    'library': source.library,
-                    'variant': getattr(source, 'variant', None),
-                }
-
-                self._build_task.add_input(resource)

@@ -15,6 +15,7 @@ from gbs.builtin.vivado.passes import VivadoSynthesizePass
 from gbs.builtin.vivado.project import ProjectCommand
 from gbs.builtin.vivado.task import NonProjectBuild
 from gbs.builtin.vivado.vivado_tcl import Session
+from gbs.builtin.vivado_ip import dispatcher as ip_dispatcher
 from gbs.builtin.vivado_ip.dispatcher import VivadoIpDispatcher
 from gbs.builtin.vivado_ip.passes import VivadoIpPackagePass
 from gbs.builtin.vivado_ip.task import VivadoIpPackageTask
@@ -55,6 +56,20 @@ class MockDispatcher:
         self.context = context
         self.name = "mock"
         self.tool_config = None
+
+
+class OrderedContext:
+    """Context serving its pending resources in a fixed library order"""
+
+    def __init__(self, context, ordered):
+        self.context = context
+        self.ordered = ordered
+
+    def __getattr__(self, name):
+        return getattr(self.context, name)
+
+    def get_pending_by_library_ordered(self):
+        return self.ordered
 
 
 class FakeGBSConfig:
@@ -290,6 +305,25 @@ def test_dispatcher_session_without_install(tmp_path, factory):
 
     with pytest.raises(RuntimeError, match="Vivado not found"):
         dispatcher.session_get()
+
+
+def test_ip_dispatcher_input_order(tmp_path):
+    ctx = context_make(tmp_path)
+    by_name = {r.path.name: r for r in sources_make(ctx, tmp_path)}
+    ordered = [
+        ("libc", [by_name["c.v"]]),
+        ("liba", [by_name["a.vhd"]]),
+        (None, [by_name["d.xdc"], by_name["f.tcl"]]),
+    ]
+    dispatcher = VivadoIpDispatcher(context=OrderedContext(ctx, ordered),
+                                    target={"part": "xc7a35tcsg324-1"})
+    task = VivadoIpPackageTask(dispatcher=dispatcher, session=RecordingSession(),
+                               part="xc7a35tcsg324-1", ip_config={},
+                               inputs=[], outputs=[])
+
+    dispatcher.inputs_attach(task, ip_dispatcher.ACCEPTED_INPUT_TYPES)
+
+    assert [r.path.name for r in task.inputs] == ["c.v", "a.vhd", "d.xdc"]
 
 
 # --- Passes ------------------------------------------------------------------

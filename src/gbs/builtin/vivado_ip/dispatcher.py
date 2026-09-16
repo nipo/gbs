@@ -16,6 +16,7 @@ ACCEPTED_INPUT_TYPES = {
     "verilog",
     "vivado-bus-definition",
     "vivado-bus-zip",
+    "vivado-ip-repository",
     "vivado-ip-customization-tcl",
     "vivado-bd-tcl",
     "vivado-xgui-tcl",
@@ -58,7 +59,8 @@ class VivadoIpDispatcher(VivadoDispatcherBase):
         if self._package_task is None:
             await self._create_package_task()
 
-        await self._attach_pending_inputs()
+        if self._package_task is not None:
+            self.inputs_attach(self._package_task, ACCEPTED_INPUT_TYPES)
 
     async def _create_package_task(self) -> None:
         """Create the IP packaging task with output resources"""
@@ -91,18 +93,3 @@ class VivadoIpDispatcher(VivadoDispatcherBase):
         self.attach_definition_dependencies(self._package_task)
 
         self.info(f"Created Vivado IP packaging task for part {part}")
-
-    async def _attach_pending_inputs(self) -> None:
-        """Attach any pending files of accepted types to the package task"""
-        if self._package_task is None:
-            return
-
-        existing_paths = {r.path for r in self._package_task.inputs}
-
-        for file_type in ACCEPTED_INPUT_TYPES:
-            for source in list(self.context.filter_pending(file_type=file_type)):
-                if source.path in existing_paths:
-                    continue
-
-                self.debug(f"Attaching input: {source.path} (type={file_type})")
-                self._package_task.add_input(source)

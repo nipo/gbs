@@ -64,6 +64,26 @@ class VivadoDispatcherBase(BaseDispatcher):
 
         return self.session
 
+    def inputs_attach(self, task, accepted_types: set[str]) -> None:
+        """Attach the pending inputs the task accepts, in compilation order
+
+        Libraries come in dependency order, so a Vivado project built by
+        handing the sources over in that order needs no scanning of its
+        own to find the compilation order.
+        """
+        existing_paths = {r.path for r in task.inputs}
+
+        for library, resources in self.context.get_pending_by_library_ordered():
+            for source in resources:
+                if source.file_type not in accepted_types:
+                    continue
+                if source.path in existing_paths:
+                    continue
+
+                self.debug(f"Attaching input: {source.path} "
+                           f"(type={source.file_type}, lib={library})")
+                task.add_input(self.context.get_resource(source.path))
+
     async def close(self) -> None:
         if self.session is not None:
             await self.session.close()

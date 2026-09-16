@@ -17,6 +17,7 @@ Supported Inputs
 - ``verilog``: Verilog source files
 - ``vivado-bus-definition``: Custom bus interface XML definitions
 - ``vivado-bus-zip``: Archive of custom bus interface XML definitions (see :doc:`vivado_bus`)
+- ``vivado-ip-repository``: Directory of IP the packaged core refers to
 - ``vivado-ip-customization-tcl``: Post-packaging TCL scripts for IP customization
 - ``xilinx-xdc``: Constraint files to include in the IP package
 
