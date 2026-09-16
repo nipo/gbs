@@ -80,6 +80,8 @@ def sources_make(ctx, tmp_path):
             ("b.vhd", "vhdl", "1993", "libb"),
             ("c.v", "verilog", None, "libc"),
             ("d.xdc", "xilinx-xdc", None, None),
+            ("e.xci", "xilinx-xci", None, "libe"),
+            ("f.tcl", "xilinx-constraints-tcl", None, None),
     ]:
         path = tmp_path / name
         path.write_text("")
@@ -194,7 +196,7 @@ async def test_synthesis_add_sources(tmp_path):
     task = NonProjectBuild(dispatcher=MockDispatcher(ctx), session=session,
                            part="xc7a35tcsg324-1", inputs=resources, outputs=[])
 
-    await task._add_sources(resources)
+    await task.sources_add(resources, 0.10, 0.05)
 
     assert session.commands == [
         "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
@@ -209,6 +211,11 @@ async def test_synthesis_add_sources(tmp_path):
         "set {f} [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
         f"[file {{normalize}} {{{tmp_path / 'd.xdc'}}}]]",
         "set_property {-dict} {file_type {XDC} used_in {synthesis implementation}} $f",
+        f"set {{f}} [read_ip {{{tmp_path / 'e.xci'}}}]",
+        "set_property {-dict} {library {libe} used_in {synthesis implementation}} $f",
+        "set {f} [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'f.tcl'}}}]]",
+        "set_property {-dict} {file_type {TCL} used_in {synthesis implementation}} $f",
     ]
 
 
@@ -223,36 +230,43 @@ async def test_ip_package_add_sources(tmp_path):
     hdl_inputs = [r for r in resources if r.file_type in ("vhdl", "verilog")]
     xdc_inputs = task.inputs_of_type("xilinx-xdc")
 
-    await task._add_sources(hdl_inputs, xdc_inputs)
+    await task.sources_add(hdl_inputs + xdc_inputs, 0.1, 0.2)
 
     assert session.commands == [
-        f"set fname [file {{normalize}} {{{tmp_path / 'a.vhd'}}}]",
-        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
-        "[list $fname]]",
-        "set_property {file_type} {vhdl} $fobj",
-        "set_property {library} {liba} $fobj",
-        "set last_source $fobj",
-        f"set fname [file {{normalize}} {{{tmp_path / 'b.vhd'}}}]",
-        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
-        "[list $fname]]",
-        "set_property {file_type} {vhdl} $fobj",
-        "set_property {library} {libb} $fobj",
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'a.vhd'}}}]]",
+        "set_property {-dict} {file_type {VHDL 2008} library {liba}} $f",
+        "set last_source $f",
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'b.vhd'}}}]]",
+        "set_property {-dict} {file_type {VHDL} library {libb}} $f",
         "reorder_files {-after} [get_property {name} $last_source] "
-        "[get_property {name} $fobj]",
-        "set last_source $fobj",
-        f"set fname [file {{normalize}} {{{tmp_path / 'c.v'}}}]",
-        "set fobj [add_files {-norecurse} {-fileset} $source_fileset_obj "
-        "[list $fname]]",
-        "set_property {file_type} {verilog} $fobj",
-        "set_property {library} {libc} $fobj",
+        "[get_property {name} $f]",
+        "set last_source $f",
+        "set {f} [add_files {-norecurse} {-fileset} $source_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'c.v'}}}]]",
+        "set_property {-dict} {file_type {Verilog} library {libc}} $f",
         "reorder_files {-after} [get_property {name} $last_source] "
-        "[get_property {name} $fobj]",
-        "set last_source $fobj",
-        f"set fname [file {{normalize}} {{{tmp_path / 'd.xdc'}}}]",
-        "set fobj [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
-        "[list $fname]]",
-        "set_property {file_type} {XDC} $fobj",
+        "[get_property {name} $f]",
+        "set last_source $f",
+        "set {f} [add_files {-norecurse} {-fileset} $constraints_fileset_obj "
+        f"[file {{normalize}} {{{tmp_path / 'd.xdc'}}}]]",
+        "set_property {-dict} {file_type {XDC} used_in {synthesis implementation}} $f",
     ]
+
+
+@pytest.mark.asyncio
+async def test_sources_add_defaults_library_to_work(tmp_path):
+    ctx = context_make(tmp_path)
+    task, session = project_command(tmp_path)
+    path = tmp_path / "nolib.vhd"
+    path.write_text("")
+    resource = ctx.get_resource(path, file_type="vhdl")
+
+    await task.sources_add([resource], 0.0, 0.0)
+
+    assert session.commands[1] == (
+        "set_property {-dict} {file_type {VHDL} library {work}} $f")
 
 
 # --- Dispatchers -------------------------------------------------------------

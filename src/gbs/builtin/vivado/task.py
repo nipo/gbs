@@ -100,7 +100,7 @@ class NonProjectBuild(ProjectCommand):
             self.error_check("add the block designs")
 
         # Add HDL and constraint sources (shared)
-        await self._add_sources(self.inputs)
+        await self.sources_add(self.inputs, 0.10, 0.05)
 
         # Set top module (shared)
         await self.top_set(topcell, top_lib)
@@ -144,100 +144,6 @@ class NonProjectBuild(ProjectCommand):
             ip_repo_paths.append(str(bus_repo_dir))
 
         await self.ip_repos_setup(ip_repo_paths)
-
-    async def _add_sources(self, resources):
-        """Add HDL and constraint source files to the project"""
-
-        resources = list(resources)
-        total = len(resources)
-        for i, resource in enumerate(resources):
-            await self.update_progress(0.10 + .05 * i / total, f"HDL")
-
-            # VHDL files
-            if resource.file_type == 'vhdl':
-                vhdl_type = self.vhdl_file_type(resource)
-                self.debug(f"Adding VHDL: {resource.path} (lib={resource.library}, type={vhdl_type})")
-                await self.command_run(tcl.Command([
-                    "set", "f",
-                    tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset",
-                        tcl.BareWord("$source_fileset_obj"),
-                        tcl.Expansion(["file", "normalize",
-                                       tcl.String(str(resource.path))]),
-                    ])
-                ]))
-                await self.command_run(tcl.Command([
-                    "set_property", "-dict",
-                    tcl.String(f"file_type {{{vhdl_type}}} library {{{resource.library}}}"),
-                    tcl.BareWord("$f")
-                ]))
-
-            # Verilog files
-            if resource.file_type == 'verilog':
-                self.debug(f"Adding Verilog: {resource.path} (lib={resource.library})")
-                await self.command_run(tcl.Command([
-                    "set", "f",
-                    tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset",
-                        tcl.BareWord("$source_fileset_obj"),
-                        tcl.Expansion(["file", "normalize",
-                                       tcl.String(str(resource.path))]),
-                    ])
-                ]))
-                await self.command_run(tcl.Command([
-                    "set_property", "-dict",
-                    tcl.String(f"file_type {{Verilog}} library {{{resource.library}}}"),
-                    tcl.BareWord("$f")
-                ]))
-
-            # XCI (IP) files
-            if resource.file_type == 'xilinx-xci':
-                self.debug(f"Adding XCI: {resource.path} (lib={resource.library})")
-                await self.command_run(tcl.Command([
-                    "set", "f",
-                    tcl.Expansion(["read_ip", tcl.String(str(resource.path))])
-                ]))
-                await self.command_run(tcl.Command([
-                    "set_property", "-dict",
-                    tcl.String(f"library {{{resource.library}}} used_in {{synthesis implementation}}"),
-                    tcl.BareWord("$f")
-                ]))
-
-            # XDC constraint files
-            if resource.file_type == 'xilinx-xdc':
-                self.debug(f"Adding XDC: {resource.path}")
-                await self.command_run(tcl.Command([
-                    "set", "f",
-                    tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset",
-                        tcl.BareWord("$constraints_fileset_obj"),
-                        tcl.Expansion(["file", "normalize",
-                                       tcl.String(str(resource.path))]),
-                    ])
-                ]))
-                await self.command_run(tcl.Command([
-                    "set_property", "-dict",
-                    tcl.String("file_type {XDC} used_in {synthesis implementation}"),
-                    tcl.BareWord("$f")
-                ]))
-
-            # TCL constraint files
-            if resource.file_type == 'xilinx-constraints-tcl':
-                self.debug(f"Adding constraints TCL: {resource.path}")
-                await self.command_run(tcl.Command([
-                    "set", "f",
-                    tcl.Expansion([
-                        "add_files", "-norecurse", "-fileset",
-                        tcl.BareWord("$constraints_fileset_obj"),
-                        tcl.Expansion(["file", "normalize",
-                                       tcl.String(str(resource.path))]),
-                    ])
-                ]))
-                await self.command_run(tcl.Command([
-                    "set_property", "-dict",
-                    tcl.String("file_type {TCL} used_in {synthesis implementation}"),
-                    tcl.BareWord("$f")
-                ]))
 
     async def _generate_reports(self):
         """Generate reports from the routed design (shared by both modes)"""

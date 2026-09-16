@@ -23,6 +23,9 @@ class ProjectCommand(VivadoCommand):
     and the other helpers refer to them.
     """
 
+    # Whether sources_add() chains each HDL file after the previous one
+    sources_reorder = False
+
     async def ip_repos_setup(self, ip_repo_paths: list[str]) -> None:
         """Append directories to the project IP repository path list"""
         if not ip_repo_paths:
@@ -80,6 +83,94 @@ class ProjectCommand(VivadoCommand):
         await self.command_run(tcl.Command([
             "set_property", "top", topcell,
             tcl.BareWord("$source_fileset_obj"),
+        ]))
+
+    async def sources_add(self, resources, progress_start: float,
+                          progress_span: float) -> None:
+        """Declare source files to the project, in the order given
+
+        Resources of a type this method does not know about are left
+        alone; the caller deals with them.
+        """
+        resources = list(resources)
+        total = len(resources)
+        chained = False
+
+        for i, resource in enumerate(resources):
+            if total:
+                await self.update_progress(
+                    progress_start + progress_span * i / total, "Sources")
+
+            library = resource.library or "work"
+            file_type = resource.file_type
+
+            if file_type in ("vhdl", "verilog"):
+                vivado_type = ("Verilog" if file_type == "verilog"
+                               else self.vhdl_file_type(resource))
+                self.debug(f"Adding {vivado_type}: {resource.path} "
+                           f"(lib={library})")
+                await self.file_add("$source_fileset_obj", resource.path)
+                await self.file_properties_set(
+                    f"file_type {{{vivado_type}}} library {{{library}}}")
+                if self.sources_reorder:
+                    await self.source_chain(chained)
+                    chained = True
+
+            elif file_type == "xilinx-xci":
+                self.debug(f"Adding XCI: {resource.path} (lib={library})")
+                await self.command_run(tcl.Command([
+                    "set", "f",
+                    tcl.Expansion(["read_ip", tcl.String(str(resource.path))]),
+                ]))
+                await self.file_properties_set(
+                    f"library {{{library}}} used_in {{synthesis implementation}}")
+
+            elif file_type == "xilinx-xdc":
+                self.debug(f"Adding XDC: {resource.path}")
+                await self.file_add("$constraints_fileset_obj", resource.path)
+                await self.file_properties_set(
+                    "file_type {XDC} used_in {synthesis implementation}")
+
+            elif file_type == "xilinx-constraints-tcl":
+                self.debug(f"Adding constraints TCL: {resource.path}")
+                await self.file_add("$constraints_fileset_obj", resource.path)
+                await self.file_properties_set(
+                    "file_type {TCL} used_in {synthesis implementation}")
+
+    async def source_chain(self, after_previous: bool) -> None:
+        """Pin the file object in `$f` after the previously chained one
+
+        Vivado orders the fileset on its own otherwise, and a project
+        whose sources are compiled in the order GBS hands them over does
+        not need that.
+        """
+        if after_previous:
+            await self.command_run(tcl.Command([
+                "reorder_files", "-after",
+                tcl.Expansion(["get_property", "name",
+                               tcl.BareWord("$last_source")]),
+                tcl.Expansion(["get_property", "name", tcl.BareWord("$f")]),
+            ]))
+        await self.command_run(tcl.Command([
+            "set", tcl.BareWord("last_source"), tcl.BareWord("$f"),
+        ]))
+
+    async def file_add(self, fileset: str, path: Path) -> None:
+        """Add one file to a fileset, leaving the file object in `$f`"""
+        await self.command_run(tcl.Command([
+            "set", "f",
+            tcl.Expansion([
+                "add_files", "-norecurse", "-fileset",
+                tcl.BareWord(fileset),
+                tcl.Expansion(["file", "normalize", tcl.String(str(path))]),
+            ]),
+        ]))
+
+    async def file_properties_set(self, properties: str) -> None:
+        """Apply a property dictionary to the file object in `$f`"""
+        await self.command_run(tcl.Command([
+            "set_property", "-dict", tcl.String(properties),
+            tcl.BareWord("$f"),
         ]))
 
     @staticmethod

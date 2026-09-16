@@ -29,6 +29,10 @@ class VivadoIpPackageTask(ProjectCommand):
     6. Zip the IP directory (if vivado-ip-zip requested)
     """
 
+    # ipx::package_project keeps the fileset order, which is the
+    # compilation order the sources have to be packaged in
+    sources_reorder = True
+
     def __init__(
         self,
         dispatcher: "Dispatcher",
@@ -95,59 +99,6 @@ class VivadoIpPackageTask(ProjectCommand):
 
         await self.ip_repos_setup(ip_repo_paths)
 
-    async def _add_sources(self, hdl_inputs, xdc_inputs) -> None:
-        """Add HDL and constraint sources, keeping the compilation order"""
-        total = len(hdl_inputs) + len(xdc_inputs)
-        last_source_set = False
-        for i, resource in enumerate(hdl_inputs):
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fname"),
-                tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fobj"),
-                tcl.Expansion(["add_files", "-norecurse", "-fileset",
-                               tcl.BareWord("$source_fileset_obj"),
-                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set_property", "file_type", resource.file_type, tcl.BareWord("$fobj"),
-            ]))
-            if resource.library:
-                await self.command_run(tcl.Command([
-                    "set_property", "library", resource.library, tcl.BareWord("$fobj"),
-                ]))
-
-            if last_source_set:
-                await self.command_run(tcl.Command([
-                    "reorder_files", "-after",
-                    tcl.Expansion(["get_property", "name", tcl.BareWord("$last_source")]),
-                    tcl.Expansion(["get_property", "name", tcl.BareWord("$fobj")]),
-                ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("last_source"), tcl.BareWord("$fobj"),
-            ]))
-            last_source_set = True
-
-            if total > 0:
-                await self.update_progress(0.1 + 0.2 * i / total)
-
-        for resource in xdc_inputs:
-            file_path = str(resource.path)
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fname"),
-                tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fobj"),
-                tcl.Expansion(["add_files", "-norecurse", "-fileset",
-                               tcl.BareWord("$constraints_fileset_obj"),
-                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set_property", "file_type", "XDC", tcl.BareWord("$fobj"),
-            ]))
-
     async def work(self) -> None:
         topcell = self.dispatcher.context.get_topcell()
         top_lib = self.dispatcher.context.get_topcell_library() or "work"
@@ -198,7 +149,7 @@ class VivadoIpPackageTask(ProjectCommand):
                       if isinstance(r, Resource) and r.file_type in ("vhdl", "verilog")]
         xdc_inputs = self.inputs_of_type("xilinx-xdc")
 
-        await self._add_sources(hdl_inputs, xdc_inputs)
+        await self.sources_add(hdl_inputs + xdc_inputs, 0.1, 0.2)
 
         await self.top_set(topcell, top_lib)
 
