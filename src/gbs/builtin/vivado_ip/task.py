@@ -14,10 +14,11 @@ from collections import defaultdict
 from ...build.task import BuildError, Task, Resource
 from ...build import tcl
 from ...ui.messages import MessageSeverity
-from ..vivado.vivado_tcl import Session, VivadoCommand
+from ..vivado.project import ProjectCommand
+from ..vivado.vivado_tcl import Session
 
 
-class VivadoIpPackageTask(VivadoCommand):
+class VivadoIpPackageTask(ProjectCommand):
     """Package HDL sources into a Vivado IP-XACT package.
 
     Flow:
@@ -102,9 +103,7 @@ class VivadoIpPackageTask(VivadoCommand):
         bus_zips = self.inputs_of_type('vivado-bus-zip')
         if bus_defs or bus_zips:
             bus_repo_dir = output_dir / "bus_repo"
-            bus_repo_dir.mkdir(parents=True, exist_ok=True)
-            for bus_rsrc in bus_defs:
-                shutil.copy2(bus_rsrc.path, bus_repo_dir / bus_rsrc.path.name)
+            self.bus_repo_fill(bus_repo_dir, bus_defs)
             for zip_rsrc in bus_zips:
                 with zipfile.ZipFile(zip_rsrc.path) as zf:
                     zf.extractall(bus_repo_dir)
@@ -112,19 +111,63 @@ class VivadoIpPackageTask(VivadoCommand):
 
         if ip_repo_paths:
             self.info(f"Adding repo paths {ip_repo_paths}")
-            await self.command_run(tcl.Command([
-                "set_property", "ip_repo_paths",
-                tcl.Expansion([
-                    "concat",
-                    tcl.Expansion(["get_property", "ip_repo_paths",
-                                   tcl.Expansion(["current_project"])]),
-                    tcl.Expansion(["list"] + [tcl.String(p) for p in ip_repo_paths]),
-                ]),
-                tcl.Expansion(["current_project"]),
-            ]))
-            await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
         else:
             self.info(f"No repo paths to add")
+
+        await self.ip_repos_setup(ip_repo_paths)
+
+    async def _add_sources(self, hdl_inputs, xdc_inputs) -> None:
+        """Add HDL and constraint sources, keeping the compilation order"""
+        total = len(hdl_inputs) + len(xdc_inputs)
+        last_source_set = False
+        for i, resource in enumerate(hdl_inputs):
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("fname"),
+                tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("fobj"),
+                tcl.Expansion(["add_files", "-norecurse", "-fileset",
+                               tcl.BareWord("$source_fileset_obj"),
+                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set_property", "file_type", resource.file_type, tcl.BareWord("$fobj"),
+            ]))
+            if resource.library:
+                await self.command_run(tcl.Command([
+                    "set_property", "library", resource.library, tcl.BareWord("$fobj"),
+                ]))
+
+            if last_source_set:
+                await self.command_run(tcl.Command([
+                    "reorder_files", "-after",
+                    tcl.Expansion(["get_property", "name", tcl.BareWord("$last_source")]),
+                    tcl.Expansion(["get_property", "name", tcl.BareWord("$fobj")]),
+                ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("last_source"), tcl.BareWord("$fobj"),
+            ]))
+            last_source_set = True
+
+            if total > 0:
+                await self.update_progress(0.1 + 0.2 * i / total)
+
+        for resource in xdc_inputs:
+            file_path = str(resource.path)
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("fname"),
+                tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set", tcl.BareWord("fobj"),
+                tcl.Expansion(["add_files", "-norecurse", "-fileset",
+                               tcl.BareWord("$constraints_fileset_obj"),
+                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
+            ]))
+            await self.command_run(tcl.Command([
+                "set_property", "file_type", "XDC", tcl.BareWord("$fobj"),
+            ]))
 
     async def work(self) -> None:
         topcell = self.dispatcher.context.get_topcell()
@@ -162,11 +205,7 @@ class VivadoIpPackageTask(VivadoCommand):
             tcl.Expansion(["current_project"]),
         ]))
 
-        await self.command_run(tcl.Command([
-            "set_property", "source_mgmt_mode",
-            "DisplayOnly",
-            tcl.Expansion(["current_project"]),
-        ]))
+        await self.source_mgmt_display_only()
 
         # Step 2: Copy bus definitions to local repository
         await self._setup_ip_repos(output_dir)
@@ -174,81 +213,15 @@ class VivadoIpPackageTask(VivadoCommand):
         await self.update_progress(0.1, "Adding sources")
 
         # Step 3: Add HDL sources
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("srcset_obj"),
-            tcl.Expansion(["get_filesets", "sources_1"]),
-        ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("cstrset_obj"),
-            tcl.Expansion(["get_filesets", "constrs_1"]),
-        ]))
+        await self.filesets_capture()
 
         hdl_inputs = [r for r in self.inputs
                       if isinstance(r, Resource) and r.file_type in ("vhdl", "verilog")]
         xdc_inputs = self.inputs_of_type("xilinx-xdc")
 
-        total = len(hdl_inputs) + len(xdc_inputs)
-        last_source_set = False
-        for i, resource in enumerate(hdl_inputs):
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fname"),
-                tcl.Expansion(["file", "normalize", tcl.String(str(resource.path))]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fobj"),
-                tcl.Expansion(["add_files", "-norecurse", "-fileset", tcl.BareWord("$srcset_obj"),
-                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set_property", "file_type", resource.file_type, tcl.BareWord("$fobj"),
-            ]))
-            if resource.library:
-                await self.command_run(tcl.Command([
-                    "set_property", "library", resource.library, tcl.BareWord("$fobj"),
-                ]))
+        await self._add_sources(hdl_inputs, xdc_inputs)
 
-            if last_source_set:
-                await self.command_run(tcl.Command([
-                    "reorder_files", "-after",
-                    tcl.Expansion(["get_property", "name", tcl.BareWord("$last_source")]),
-                    tcl.Expansion(["get_property", "name", tcl.BareWord("$fobj")]),
-                ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("last_source"), tcl.BareWord("$fobj"),
-            ]))
-            last_source_set = True
-
-            if total > 0:
-                await self.update_progress(0.1 + 0.2 * i / total)
-
-        # Add constraint files
-        for resource in xdc_inputs:
-            file_path = str(resource.path)
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fname"),
-                tcl.Expansion(["file", "normalize", tcl.String(file_path)]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set", tcl.BareWord("fobj"),
-                tcl.Expansion(["add_files", "-norecurse", "-fileset", tcl.BareWord("$cstrset_obj"),
-                               tcl.Expansion(["list", tcl.BareWord("$fname")])]),
-            ]))
-            await self.command_run(tcl.Command([
-                "set_property", "file_type", "XDC", tcl.BareWord("$fobj"),
-            ]))
-
-        # Set top. The library matters as soon as the topcell is not in work
-        # -- a wrapper generated into a library of its own, say -- and Vivado
-        # looks it up in the default library otherwise.
-        self.debug(f"Setting top: {topcell} (lib={top_lib})")
-        await self.command_run(tcl.Command([
-            "set_property", "-name", "top_lib", "-value", top_lib,
-            "-objects", tcl.BareWord("$srcset_obj"),
-        ]))
-        await self.command_run(tcl.Command([
-            "set_property", "-name", "top", "-value", topcell,
-            "-objects", tcl.BareWord("$srcset_obj"),
-        ]))
+        await self.top_set(topcell, top_lib)
 
         await self.update_progress(0.3, "Packaging IP")
 

@@ -7,7 +7,6 @@ and project mode (required for block designs and external IPs).
 
 from __future__ import annotations
 import random
-import shutil
 import zipfile
 from pathlib import Path
 from collections import defaultdict
@@ -16,9 +15,10 @@ from ...build.context import BuildContext
 from ...build.task import Task, Resource
 from ...build import tcl
 from ...report_aggregator import TextReport, aggregate_text
-from .vivado_tcl import Session, VivadoCommand
+from .project import ProjectCommand
+from .vivado_tcl import Session
 
-class NonProjectBuild(VivadoCommand):
+class NonProjectBuild(ProjectCommand):
     """Run complete Vivado build flow.
 
     Automatically selects between:
@@ -45,13 +45,6 @@ class NonProjectBuild(VivadoCommand):
             description="Vivado build"
         )
         self.part = part
-
-    def _get_vhdl_file_type(self, resource) -> str:
-        """Get Vivado file type for VHDL file based on version"""
-        variant = resource.file_type_version or ''
-        if variant == '2008':
-            return "VHDL 2008"
-        return "VHDL"
 
     async def work(self) -> None:
         """Run complete Vivado build flow"""
@@ -103,16 +96,10 @@ class NonProjectBuild(VivadoCommand):
             await self._add_block_designs(inputs_by_type, output_dir)
 
         # Add HDL and constraint sources (shared)
-        await self._add_sources()
+        await self._add_sources(self.inputs)
 
         # Set top module (shared)
-        self.debug(f"Setting top: {topcell} (lib={top_lib})")
-        await self.command_run(tcl.Command([
-            "set_property", "top_lib", top_lib, tcl.BareWord("$source_fileset_obj")
-        ]))
-        await self.command_run(tcl.Command([
-            "set_property", "top", topcell, tcl.BareWord("$source_fileset_obj")
-        ]))
+        await self.top_set(topcell, top_lib)
 
         await self.update_progress(0.2, "IPs")
 
@@ -147,34 +134,22 @@ class NonProjectBuild(VivadoCommand):
         bus_defs = inputs_by_type.get('vivado-bus-definition', [])
         if bus_defs:
             bus_repo_dir = output_dir / "bus_repo"
-            bus_repo_dir.mkdir(parents=True, exist_ok=True)
-            for bus_rsrc in bus_defs:
-                shutil.copy2(bus_rsrc.path, bus_repo_dir / bus_rsrc.path.name)
+            self.bus_repo_fill(bus_repo_dir, bus_defs)
             ip_repo_paths.append(str(bus_repo_dir))
 
-        if ip_repo_paths:
-            await self.command_run(tcl.Command([
-                "set_property", "ip_repo_paths",
-                tcl.Expansion([
-                    "concat",
-                    tcl.Expansion(["get_property", "ip_repo_paths",
-                                   tcl.Expansion(["current_project"])]),
-                    tcl.Expansion(["list"] + [tcl.String(p) for p in ip_repo_paths]),
-                ]),
-                tcl.Expansion(["current_project"]),
-            ]))
-            await self.command_run(tcl.Command(["update_ip_catalog", "-rebuild"]))
+        await self.ip_repos_setup(ip_repo_paths)
 
-    async def _add_sources(self):
+    async def _add_sources(self, resources):
         """Add HDL and constraint source files to the project"""
 
-        total = len(list(self.inputs))
-        for i, resource in enumerate(self.inputs):
+        resources = list(resources)
+        total = len(resources)
+        for i, resource in enumerate(resources):
             await self.update_progress(0.10 + .05 * i / total, f"HDL")
 
             # VHDL files
             if resource.file_type == 'vhdl':
-                vhdl_type = self._get_vhdl_file_type(resource)
+                vhdl_type = self.vhdl_file_type(resource)
                 self.debug(f"Adding VHDL: {resource.path} (lib={resource.library}, type={vhdl_type})")
                 await self.command_run(tcl.Command([
                     "set", "f",
@@ -308,21 +283,11 @@ class NonProjectBuild(VivadoCommand):
         await self.command_run(tcl.Command([
             "create_project", "-in_memory", "-part", self.part
         ]))
-        await self.command_run(tcl.Command([
-            "set_property", "source_mgmt_mode", "DisplayOnly",
-            tcl.Expansion(["current_project"])
-        ]))
+        await self.source_mgmt_display_only()
         await self.command_run(tcl.Command([
             "set_param", "project.hsv.draftModeDefault", "only",
         ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("source_fileset_obj"),
-            tcl.Expansion(["get_filesets", "sources_1"])
-        ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("constraints_fileset_obj"),
-            tcl.Expansion(["get_filesets", "constrs_1"])
-        ]))
+        await self.filesets_capture()
 
     async def _non_project_mode_build(self, topcell, userid):
         """Run synthesis+implementation in non-project mode"""
@@ -387,18 +352,8 @@ class NonProjectBuild(VivadoCommand):
             "create_project", "synth", "project",
             "-part", self.part, "-force",
         ]))
-        await self.command_run(tcl.Command([
-            "set_property", "source_mgmt_mode", "DisplayOnly",
-            tcl.Expansion(["current_project"])
-        ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("source_fileset_obj"),
-            tcl.Expansion(["get_filesets", "sources_1"])
-        ]))
-        await self.command_run(tcl.Command([
-            "set", tcl.BareWord("constraints_fileset_obj"),
-            tcl.Expansion(["get_filesets", "constrs_1"])
-        ]))
+        await self.source_mgmt_display_only()
+        await self.filesets_capture()
 
     async def _add_block_designs(self, inputs_by_type, output_dir):
         """Add block designs — copy to build dir, generate targets"""
