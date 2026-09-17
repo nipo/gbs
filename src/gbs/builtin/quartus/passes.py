@@ -53,6 +53,7 @@ class QuartusSynthesizePass(BasePass):
         "bitstream",
         "synthesis-report", "quartus-synthesis-report",
         "pnr-report",       "quartus-pnr-report",
+        "timing-summary",
     }
 
     def __init__(self,

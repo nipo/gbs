@@ -15,3 +15,6 @@ gbs-build
 dfx_runtime.txt
 *.dmp
 *.jou
+timing.yaml
+/example/diamond/reference
+/example/vivado/project_1.gen

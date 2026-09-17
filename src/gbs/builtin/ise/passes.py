@@ -35,6 +35,7 @@ class IseSynthesizePass(BasePass):
         "bitstream",        "ise-bitstream",
         "synthesis-report", "ise-synthesis-report",
         "pnr-report",       "ise-pnr-report",
+        "timing-summary",
     }
 
     # Prefixes ISE cannot handle (7-series onwards, UltraScale,

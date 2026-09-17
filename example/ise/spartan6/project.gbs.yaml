@@ -26,3 +26,5 @@ output:
         path: synthesis-report.html
       - type: pnr-report
         path: pnr-report.html
+      - type: timing-summary
+        path: timing.yaml

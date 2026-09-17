@@ -412,9 +412,18 @@ class AggregatePnrReport(Task):
         )
 
     async def work(self) -> None:
+        from ...report_aggregator import HtmlFragment
+        from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
+
         reports = []
         for rsrc in self.inputs:
-            reports.append(TextReport.from_file(rsrc.path))
+            if rsrc.file_type == TIMING_SUMMARY_FILE_TYPE:
+                reports.append(HtmlFragment(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.fragment(rsrc.path),
+                ))
+            else:
+                reports.append(TextReport.from_file(rsrc.path))
 
         output, = self.outputs
         output.path.parent.mkdir(parents=True, exist_ok=True)

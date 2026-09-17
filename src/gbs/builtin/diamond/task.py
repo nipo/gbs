@@ -5,7 +5,8 @@ import shutil
 
 from ...build import tcl
 from ...build.task import Task, Resource
-from ...report_aggregator import TextReport, aggregate_text
+from ...report_aggregator import HtmlFragment, TextReport, aggregate_text
+from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
 from .diamondc import Session, DiamondCommand
 
 
@@ -236,6 +237,12 @@ class AggregateReport(Task):
     async def work(self) -> None:
         tabs = []
         for rsrc in self.inputs:
+            if rsrc.file_type == TIMING_SUMMARY_FILE_TYPE:
+                tabs.append(HtmlFragment(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.fragment(rsrc.path),
+                ))
+                continue
             tab_title = self.TAB_TITLES.get(rsrc.file_type, rsrc.path.stem)
             text = rsrc.path.read_text(errors="replace")
             tabs.append(TextReport(title=tab_title, text=text))

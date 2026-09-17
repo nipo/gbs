@@ -7,6 +7,7 @@ from pathlib import Path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ...timing_summary import IseTimingParser, TimingSummaryTask
 from . import task
 
 
@@ -212,12 +213,16 @@ class IseDispatcher(BaseDispatcher):
                 outputs=[dest],
             )
 
-        for dest in self.context.filter_pending(file_type="ise-pnr-report"):
+        pnr_reports = list(self.context.filter_pending(file_type="ise-pnr-report"))
+        timing_summary = TimingSummaryTask.create(
+            self, IseTimingParser, [twr_resource], needed=bool(pnr_reports)
+        )
+        for dest in pnr_reports:
             task.AggregateReport(
                 dispatcher=self,
                 name="ise_pnr_report",
                 title="ISE PnR Report",
-                inputs=[par_log_resource, par_pad_resource, twr_resource],
+                inputs=[timing_summary, par_log_resource, par_pad_resource, twr_resource],
                 outputs=[dest],
             )
 

@@ -29,6 +29,7 @@ class DiamondEcp5Pass(BasePass):
         "bitstream",        "ecp5-bitstream",
         "synthesis-report", "diamond-synthesis-report",
         "pnr-report",       "diamond-pnr-report",
+        "timing-summary",
     }
 
     def __init__(self,

@@ -7,7 +7,8 @@ import re
 from ...build.task import Task, Resource, BuildError
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
-from ...report_aggregator import TextReport, aggregate_text
+from ...report_aggregator import HtmlFragment, TextReport, aggregate_text
+from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
 
 
 class NextpnrInvocation(MessageSubprocess):
@@ -159,7 +160,13 @@ class AggregatePnrReport(Task):
     async def work(self) -> None:
         tabs = []
         for rsrc in self.inputs:
-            tabs.append(TextReport.from_file(rsrc.path, title="Place & Route"))
+            if rsrc.file_type == TIMING_SUMMARY_FILE_TYPE:
+                tabs.append(HtmlFragment(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.fragment(rsrc.path),
+                ))
+            else:
+                tabs.append(TextReport.from_file(rsrc.path, title="Place & Route"))
 
         output, = self.outputs
         output.path.parent.mkdir(parents=True, exist_ok=True)

@@ -102,11 +102,17 @@ output:
 ```
 
 Terminal output types are the canonical shared names —
-`bitstream`, `simulator`, `synthesis-report`, `pnr-report`. The
+`bitstream`, `simulator`, `synthesis-report`, `pnr-report`,
+`timing-summary`. The
 planner picks whichever installed backend can produce them, so a
 single `type: bitstream` project can build with Vivado, openxc7,
 Gowin IDE, ISE, Quartus or Diamond depending on what's on the
 machine.
+
+`timing-summary` is a backend-neutral YAML file containing the overall
+constraint status and per-clock target frequency, Fmax, margin and setup
+slack where the tool reports them. The same summary is the first tab of
+every `pnr-report`.
 
 Working projects for every builtin backend live under `example/`:
 `example/ghdl/hello/` for a minimal simulation, `example/openxc7/`

@@ -433,12 +433,39 @@ Supported compression suffixes:
 All synthesis and place-and-route backends support report aggregation.
 These can be requested as output types:
 
+- ``synthesis-report`` - backend-selected aggregated synthesis report
+- ``pnr-report`` - backend-selected aggregated place-and-route report
+- ``timing-summary`` - backend-neutral YAML timing result
+
 - ``gowin-synthesis-report``, ``gowin-pnr-report``
 - ``vivado-synthesis-report``, ``vivado-pnr-report``
 - ``ise-synthesis-report``, ``ise-pnr-report``
 - ``yosys-synthesis-report``
 - ``nextpnr-pnr-report``
 - ``quartus-synthesis-report``, ``quartus-pnr-report``
+
+Every FPGA place-and-route backend supports ``timing-summary``. Its
+``status`` is one of ``pass``, ``fail``, ``unconstrained`` or ``unknown``;
+an unconstrained design is never reported as passing. Per-clock records
+contain the target frequency, estimated Fmax, margin and setup slack when
+the backend exposes them. ``fmax_source`` distinguishes a value reported
+by the tool from one computed from setup slack. The same normalized
+summary is rendered as the first tab of ``pnr-report``.
+
+.. code-block:: yaml
+
+   output:
+     - name: implementation
+       topcell: top
+       target:
+         part: xc7a35ticsg324-1L
+       outputs:
+         - type: bitstream
+           path: build/top.bit
+         - type: timing-summary
+           path: build/timing.yaml
+         - type: pnr-report
+           path: build/pnr.html
 
 Complete Examples
 -----------------

@@ -8,7 +8,8 @@ from pathlib import Path
 from ...build.task import Task, Resource
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
-from ...report_aggregator import TextReport, aggregate_text
+from ...report_aggregator import HtmlFragment, TextReport, aggregate_text
+from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
 
 
 class QuartusSubprocess(MessageSubprocess):
@@ -663,8 +664,14 @@ class AggregateReport(Task):
     async def work(self) -> None:
         tabs = []
         for rsrc in self.inputs:
-            tab_title = self.TAB_TITLES.get(rsrc.file_type, rsrc.path.stem)
-            tabs.append(TextReport.from_file(rsrc.path, title=tab_title))
+            if rsrc.file_type == TIMING_SUMMARY_FILE_TYPE:
+                tabs.append(HtmlFragment(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.fragment(rsrc.path),
+                ))
+            else:
+                tab_title = self.TAB_TITLES.get(rsrc.file_type, rsrc.path.stem)
+                tabs.append(TextReport.from_file(rsrc.path, title=tab_title))
 
         output, = self.outputs
         output.path.parent.mkdir(parents=True, exist_ok=True)

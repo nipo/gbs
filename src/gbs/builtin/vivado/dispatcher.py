@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ...timing_summary import TimingSummaryTask, VivadoTimingParser
 from .base import VivadoDispatcherBase
 from .task import NonProjectBuild, AggregateSynthesisReport, AggregatePnrReport
 
@@ -131,9 +132,18 @@ class VivadoDispatcher(VivadoDispatcherBase):
                 outputs=[dest],
             )
 
-        for dest in self.context.filter_pending(file_type="vivado-pnr-report"):
+        pnr_reports = list(self.context.filter_pending(file_type="vivado-pnr-report"))
+        timing_summary = TimingSummaryTask.create(
+            self,
+            VivadoTimingParser,
+            [intermediate_by_type["vivado-timing-report"]],
+            needed=bool(pnr_reports),
+        )
+
+        for dest in pnr_reports:
             inputs = [intermediate_by_type[t] for t in AggregatePnrReport.REPORT_TYPES
                        if t in intermediate_by_type]
+            inputs.insert(0, timing_summary)
             AggregatePnrReport(
                 dispatcher=self,
                 inputs=inputs,

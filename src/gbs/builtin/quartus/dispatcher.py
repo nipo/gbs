@@ -7,6 +7,7 @@ from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Resource, ResourceTypology, ConfigurationError
 from ...utils import expand_path
+from ...timing_summary import QuartusTimingParser, TimingSummaryTask
 from . import task
 
 
@@ -333,7 +334,7 @@ class QuartusDispatcher(BaseDispatcher):
             self.context.filter_pending(file_type=t)
             for t in ("quartus-sof", "quartus-jam", "quartus-rbf",
                       "quartus-hps-sof", "quartus-hps-jam", "quartus-hps-rbf",
-                      "quartus-synthesis-report", "quartus-pnr-report")
+                      "quartus-synthesis-report", "quartus-pnr-report", "timing-summary")
         )
         if not needs_synthesis:
             return
@@ -403,12 +404,16 @@ class QuartusDispatcher(BaseDispatcher):
                 outputs=[dest],
             )
 
-        for dest in self.context.filter_pending(file_type="quartus-pnr-report"):
+        pnr_reports = list(self.context.filter_pending(file_type="quartus-pnr-report"))
+        timing_summary = TimingSummaryTask.create(
+            self, QuartusTimingParser, [sta_report], needed=bool(pnr_reports)
+        )
+        for dest in pnr_reports:
             task.AggregateReport(
                 dispatcher=self,
                 name="quartus_pnr_report",
                 title="Quartus PnR Report",
-                inputs=[fit_report, fit_summary, pin_report, sta_report, sta_summary, flow_report],
+                inputs=[timing_summary, fit_report, fit_summary, pin_report, sta_report, sta_summary, flow_report],
                 outputs=[dest],
             )
 

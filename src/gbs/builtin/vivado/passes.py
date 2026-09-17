@@ -66,6 +66,7 @@ class VivadoSynthesizePass(VivadoPassBase):
         "bitstream",           "vivado-bitstream",
         "synthesis-report",    "vivado-synthesis-report",
         "pnr-report",          "vivado-pnr-report",
+        "timing-summary",
     }
 
     runs_pnr = True

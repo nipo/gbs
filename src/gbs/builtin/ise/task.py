@@ -12,6 +12,7 @@ from ...build.task import Task, Resource
 from ...ui.messages import MessageSeverity, ToolMessage
 from ...build.subprocess import MessageSubprocess
 from ...report_aggregator import TextReport, HtmlFragment, aggregate_text, csv_to_html_table
+from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
 
 
 def flags(defaults: dict, overrides: dict) -> list[str]:
@@ -565,6 +566,12 @@ class AggregateReport(Task):
     async def work(self) -> None:
         tabs = []
         for rsrc in self.inputs:
+            if rsrc.file_type == TIMING_SUMMARY_FILE_TYPE:
+                tabs.append(HtmlFragment(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.fragment(rsrc.path),
+                ))
+                continue
             tab_title = self.TAB_TITLES.get(rsrc.file_type, rsrc.path.stem)
             text = rsrc.path.read_text(errors="replace")
 

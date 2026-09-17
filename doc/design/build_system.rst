@@ -257,12 +257,17 @@ Terminal Output Types
 ~~~~~~~~~~~~~~~~~~~~~
 
 The types a user writes in ``outputs:`` — ``bitstream``,
-``synthesis-report``, ``pnr-report``, ``simulator`` — are canonical
+``synthesis-report``, ``pnr-report``, ``timing-summary``, ``simulator`` — are canonical
 shared names. Every backend that produces one of them advertises
 the canonical name alongside the historic vendor-prefixed sibling
 (``vivado-bitstream``, ``xilinx-bitstream``, ``ise-bitstream``,
 ``ecp5-bitstream``, ``gowin-fs``, …). This lets a project move
 between backends without renaming its output goals.
+
+``timing-summary`` has no historic vendor-prefixed siblings and therefore
+does not need an alias-registry entry. FPGA PnR backends produce it by
+post-processing their native timing artifact, and also feed it into the
+first tab of ``pnr-report``.
 
 The alias registry lives in :py:mod:`gbs.build.type_aliases`. It is
 consulted in three places:

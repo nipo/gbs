@@ -4,6 +4,7 @@ from pathlib import Path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ...timing_summary import DiamondTimingParser, TimingSummaryTask
 from . import task
 from ..ecp5_part import Ecp5Part
 from .diamondc import Session
@@ -235,12 +236,16 @@ class DiamondDispatcher(BaseDispatcher):
                 outputs=[dest],
             )
 
-        for dest in self.context.filter_pending(file_type="diamond-pnr-report"):
+        pnr_reports = list(self.context.filter_pending(file_type="diamond-pnr-report"))
+        timing_summary = TimingSummaryTask.create(
+            self, DiamondTimingParser, [twr_resource], needed=bool(pnr_reports)
+        )
+        for dest in pnr_reports:
             task.AggregateReport(
                 dispatcher=self,
                 name="diamond_pnr_report",
                 title="Diamond PnR Report",
-                inputs=[par_log_resource, pad_resource, twr_resource],
+                inputs=[timing_summary, par_log_resource, pad_resource, twr_resource],
                 outputs=[dest],
             )
 

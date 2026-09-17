@@ -33,6 +33,7 @@ class GowinSynthesizePass(BasePass):
         "bitstream",        "gowin-fs", "gowin-bin",
         "synthesis-report", "gowin-synthesis-report",
         "pnr-report",       "gowin-pnr-report",
+        "timing-summary",
     }
 
     def __init__(self,

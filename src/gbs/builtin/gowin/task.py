@@ -10,6 +10,7 @@ from ...build.task import Resource, Task, ExecutorTask, ResourceTypology
 from ...build import tcl
 from ...utils import expand_path
 from ...report_aggregator import ReportPage, aggregate_html
+from ...timing_summary import TIMING_SUMMARY_FILE_TYPE, TimingSummaryHtml
 from .gw_sh import *
 from ...build.subprocess import MessageSubprocess
 
@@ -416,6 +417,12 @@ class AggregatePnrReport(Task):
     async def work(self) -> None:
         pnr_dir = self.build_dir / "impl" / "pnr"
         pages = []
+        for resource in self.inputs:
+            if isinstance(resource, Resource) and resource.file_type == TIMING_SUMMARY_FILE_TYPE:
+                pages.append(ReportPage(
+                    title="Timing Summary",
+                    html=TimingSummaryHtml.document(resource.path),
+                ))
         for filename in self.REPORT_FILES:
             path = pnr_dir / filename.replace("project", self.output_base_name)
             if path.exists():

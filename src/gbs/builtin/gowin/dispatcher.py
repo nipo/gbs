@@ -7,6 +7,7 @@ from pathlib import Path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ...timing_summary import GowinTimingParser, TimingSummaryTask
 from . import task
 from .gw_sh import Session
 from .device_info import DeviceInfo, get_device_info
@@ -194,6 +195,12 @@ class GowinDispatcher(BaseDispatcher):
             typology=ResourceTypology.OUTPUT,
             generated_by=self.name
         )
+        timing_report_resource = self.context.get_resource(
+            self.context.output_path / "impl" / "pnr" / f"{output_base_name}.tr",
+            file_type="gowin-timing-report",
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+        )
 
         # Create HDL input resources with metadata
         hdl_input_resources = []
@@ -321,7 +328,7 @@ class GowinDispatcher(BaseDispatcher):
             dispatcher=self,
             session=session,
             inputs=[init_stamp_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
-            outputs=[bitstream_resource, bitstream_bin_resource]
+            outputs=[bitstream_resource, bitstream_bin_resource, timing_report_resource]
         )
 
         # Create report aggregation tasks for any requested report outputs
@@ -337,13 +344,19 @@ class GowinDispatcher(BaseDispatcher):
                 )
 
         pnr_report_outputs = list(self.context.filter_pending(file_type="gowin-pnr-report"))
+        timing_summary = TimingSummaryTask.create(
+            self,
+            GowinTimingParser,
+            [timing_report_resource],
+            needed=bool(pnr_report_outputs),
+        )
         if pnr_report_outputs:
             for dest in pnr_report_outputs:
                 task.AggregatePnrReport(
                     dispatcher=self,
                     output_base_name=output_base_name,
                     build_dir=self.context.output_path,
-                    inputs=[bitstream_resource],  # PnR must complete first
+                    inputs=[timing_summary, bitstream_resource],
                     outputs=[dest],
                 )
 
@@ -377,5 +390,3 @@ class GowinDispatcher(BaseDispatcher):
             if source.path not in existing_sdc_paths:
                 self.debug(f"Adding new .sdc constraint: {source.path}")
                 self._timing_sdc_task.add_input(source, consume = False)
-
-

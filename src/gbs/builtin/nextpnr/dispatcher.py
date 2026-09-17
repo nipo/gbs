@@ -8,6 +8,7 @@ from ...utils import expand_path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ...timing_summary import NextpnrTimingParser, TimingSummaryTask
 from . import task
 
 
@@ -188,11 +189,15 @@ class NextpnrDispatcher(BaseDispatcher):
             )
             self.attach_definition_dependencies(self._pnr_task)
 
-            # Aggregate on demand
-            for dest in self.context.filter_pending(file_type="nextpnr-pnr-report"):
+            pnr_reports = list(self.context.filter_pending(file_type="nextpnr-pnr-report"))
+            timing_summary = TimingSummaryTask.create(
+                self, NextpnrTimingParser, [log_resource], needed=bool(pnr_reports)
+            )
+
+            for dest in pnr_reports:
                 task.AggregatePnrReport(
                     dispatcher=self,
-                    inputs=[log_resource],
+                    inputs=[timing_summary, log_resource],
                     outputs=[dest],
                 )
 
