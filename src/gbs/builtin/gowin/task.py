@@ -68,9 +68,19 @@ class ProjectInit(GwShCommand):
         )
         self.output_base_name = output_base_name
         self.output_dir = output_dir
+        self.initialized = False
+
+    async def ensure_initialized(self, sources: list[Resource] | None = None) -> None:
+        """Restore project state when this build uses a fresh gw_sh session."""
+        if not self.initialized:
+            await self.initialize(sources)
 
     async def work(self) -> None:
         """Initialize Gowin project in gw_sh"""
+        await self.initialize()
+
+    async def initialize(self, sources: list[Resource] | None = None) -> None:
+        """Initialize the session from original HDL or a cached netlist."""
         try:
             # Compute values from context
             target = self.dispatcher.context.get_target()
@@ -107,18 +117,23 @@ class ProjectInit(GwShCommand):
                     await self.command_run(tcl.Command(["set_option", f"-use_{pin_name}_as_gpio", "1"]))
 
             # Filter inputs by type (only Resources have metadata, not VirtualResources)
-            hdl_inputs = [r for r in self.inputs
-                         if isinstance(r, Resource) and r.file_type in ('vhdl', 'verilog')]
+            source_inputs = list(self.inputs) if sources is None else sources
+            design_inputs = [r for r in source_inputs
+                             if isinstance(r, Resource)
+                             and r.file_type in ('vhdl', 'verilog', 'gowin-netlist')]
             csr_inputs = [r for r in self.inputs
                          if isinstance(r, Resource) and r.file_type == 'gowin-serdes-init']
 
-            # Add HDL files in dependency order
-            self.debug(f"Adding {len(hdl_inputs)} HDL source files...")
-            total = len(hdl_inputs)
-            for i, resource in enumerate(hdl_inputs):
+            # Add design files in dependency order
+            self.debug(f"Adding {len(design_inputs)} design source files...")
+            total = len(design_inputs)
+            for i, resource in enumerate(design_inputs):
                 # Get metadata attached to this resource
                 lib_name = resource.library
-                file_type = resource.file_type
+                file_type = (
+                    'netlist' if resource.file_type == 'gowin-netlist'
+                    else resource.file_type
+                )
                 file_path = resource.path
 
                 # Add file (use tcl.String for proper path escaping)
@@ -166,6 +181,7 @@ class ProjectInit(GwShCommand):
             await self.command_run(tcl.Command(["set_option", "-user_code", user_code.hex()]))
 
             self.info(f"Project initialization complete")
+            self.initialized = True
 
         except Exception as e:
             self.error(f"Project init failed with exception: {e}", exc_info=True)
@@ -179,6 +195,7 @@ class Synthesis(LongRunningCommand):
         self,
         dispatcher: "Dispatcher",
         session: Session,
+        project_init: ProjectInit,
         inputs: list,
         outputs: list
     ):
@@ -190,9 +207,11 @@ class Synthesis(LongRunningCommand):
             outputs = outputs,
             description = "Gowin synthesis"
         )
+        self.project_init = project_init
 
     async def prepare(self) -> None:
-        """Ensure output directory exists before synthesis"""
+        """Ensure the session is initialized and the output directory exists."""
+        await self.project_init.ensure_initialized()
         output, = self.outputs
         output.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -203,6 +222,7 @@ class PnR(LongRunningCommand):
         self,
         dispatcher: "Dispatcher",
         session: Session,
+        project_init: ProjectInit,
         inputs: list,
         outputs: list
     ):
@@ -214,9 +234,13 @@ class PnR(LongRunningCommand):
             outputs = outputs,
             description = "Gowin PnR"
         )
+        self.project_init = project_init
 
     async def prepare(self) -> None:
-        """Ensure output directory exists before PnR"""
+        """Ensure the session is initialized and the output directory exists."""
+        await self.project_init.ensure_initialized(
+            self.inputs_of_type("gowin-netlist")
+        )
         output = next(self.outputs)
         output.path.parent.mkdir(parents=True, exist_ok=True)
 

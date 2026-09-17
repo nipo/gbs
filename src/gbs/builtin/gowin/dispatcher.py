@@ -291,6 +291,7 @@ class GowinDispatcher(BaseDispatcher):
         synth_task = task.Synthesis(
             dispatcher=self,
             session=session,
+            project_init=init_task,
             inputs=[init_stamp_resource],
             outputs=[netlist_resource]
         )
@@ -327,6 +328,7 @@ class GowinDispatcher(BaseDispatcher):
         pnr_task = task.PnR(
             dispatcher=self,
             session=session,
+            project_init=init_task,
             inputs=[init_stamp_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
             outputs=[bitstream_resource, bitstream_bin_resource, timing_report_resource]
         )
