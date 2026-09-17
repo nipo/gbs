@@ -3,7 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
-library work, nsl_color, nsl_io, nsl_clocking, nsl_data, nsl_dvi, nsl_math, nsl_signal_generator, nsl_event, nsl_sipeed, nsl_indication;
+library work, nsl_video, nsl_color, nsl_io, nsl_clocking, nsl_data, nsl_dvi, nsl_math, nsl_signal_generator, nsl_event, nsl_sipeed, nsl_indication;
 use nsl_color.rgb.all;
 use nsl_math.fixed.all;
 use nsl_data.bytestream.all;
@@ -12,7 +12,10 @@ use nsl_indication.font.all;
 
 entity main is
   generic (
-    clock_i_hz_c : natural
+    clock_i_hz_c : natural;
+    -- Video mode, and the two clocks it calls for.  Both are exact:
+    -- the solver refuses a rate it cannot hold.
+    mode_c : nsl_video.mode.mode_t
     );
   port (
     clock_i : in std_ulogic;
@@ -28,54 +31,50 @@ entity main is
 end entity;
 
 architecture beh of main is
-  
-  -- Frame timings
-  constant v_fp_c   : integer := 5;
-  constant v_sync_c : integer := 5;
-  constant v_bp_c   : integer := 20;
-  constant v_act_c  : integer := 720;
-  constant h_fp_c   : integer := 440;
-  constant h_sync_c : integer := 40;
-  constant h_bp_c   : integer := 220;
-  constant h_act_c  : integer := 1280;
-  constant dvi_fps_c : real := 50.0;
 
-  -- Generate arbitrary pixel/serial clock by cascading MMCM and PLL.
-  -- MMCM generates a pixel clock with any ratio (using fractional divisor)
-  -- PLL does pixel clock x5 to get to serial clock.
-  constant mmcm_vco_freq_c : real := 1.125e9 / 2.0;
-  constant mmcm_ckin_div_c : integer := 2;
-  -- Pixel clock, derived from timings above
-  constant dvi_pixel_clock_freq_c : real := real((v_fp_c + v_sync_c + v_bp_c + v_act_c)
-                                                  * (h_fp_c + h_sync_c + h_bp_c + h_act_c))
-                                                  * dvi_fps_c;
-  constant dvi_serial_clock_freq_c : real := dvi_pixel_clock_freq_c * 5.0;
-  constant dvi_pll_vco_mult_c : integer := integer(1600.0e6 / dvi_serial_clock_freq_c);
-  constant dvi_pll_vco_freq_c : real := real(dvi_pll_vco_mult_c) * dvi_serial_clock_freq_c;
-  constant dvi_pll_ckin_div_c : integer := 1;
+  use nsl_video.mode.all;
+  use nsl_clocking.pll.all;
 
-  -- Translation to constants needed by components
-  constant v_fp_m1_c   : unsigned(3-1 downto 0)  := to_unsigned(v_fp_c-1, 3);
-  constant v_sync_m1_c : unsigned(3-1 downto 0)  := to_unsigned(v_sync_c-1, 3);
-  constant v_bp_m1_c   : unsigned(5-1 downto 0)  := to_unsigned(v_bp_c-1, 5);
-  constant v_act_m1_c  : unsigned(10-1 downto 0) := to_unsigned(v_act_c-1, 10);
-  constant h_fp_m1_c   : unsigned(9-1 downto 0)  := to_unsigned(h_fp_c-1, 9);
-  constant h_sync_m1_c : unsigned(6-1 downto 0)  := to_unsigned(h_sync_c-1, 6);
-  constant h_bp_m1_c   : unsigned(8-1 downto 0)  := to_unsigned(h_bp_c-1, 8);
-  constant h_act_m1_c  : unsigned(11-1 downto 0) := to_unsigned(h_act_c-1, 11);
+  -- 720p50 needs 74.25MHz, which no single ratio reaches from 50MHz:
+  -- the phase detector floor leaves the input divider at 1 or 2, and
+  -- neither 50MHz nor 25MHz times a whole number lands on a multiple
+  -- of 74.25MHz inside the VCO window.  Two stages do reach it: the
+  -- first gets to 562.5MHz, from where the second can divide by 25
+  -- and still stay above the floor.  This intermediate rate is
+  -- chosen for this mode; another mode may want another one, or none
+  -- at all.
+  constant intermediate_hz_c : natural := 562_500_000;
+
+  -- The second PLL takes this straight from the first one: the
+  -- global clock network does not carry a rate this far above what
+  -- fabric clocks run at, and a PLL reference does not need it to.
+  constant ref_config_c : pll_config_t := pll_config(
+    input_hz => clock_i_hz_c,
+    o0 => pll_output(intermediate_hz_c,
+                     routing => nsl_clocking.pll_backend.pll_routing_id("NONE")));
+
+  constant video_config_c : pll_config_t := pll_config(
+    input_hz => intermediate_hz_c,
+    o0 => pll_output(serial_clock_hz(mode_c)),
+    o1 => pll_output(pixel_clock_hz(mode_c)));
+
+  signal video_clock_s : std_ulogic_vector(0 to video_config_c.output_count-1);
   
   -- Interconnection
   signal blinker_s: unsigned(26 downto 0);
 
-  signal dvi_ref_clock_s, dvi_pll_reset, dvi_pll_feedback, dvi_pixel_clock_reset_n_s : std_ulogic;
+  signal dvi_ref_clock_s, dvi_pixel_clock_reset_n_s : std_ulogic;
   signal dvi_pixel_clock_s, dvi_serial_clock_s : std_ulogic;
-  signal dvi_pixel_clock_unb_s, dvi_serial_clock_unb_s : std_ulogic;
-  signal pll_locked_s, pll_feedback_s, pll_reset_s: std_ulogic;
+  signal pll_locked_s : std_ulogic;
 
   signal tmds_s : nsl_dvi.dvi.symbol_vector_t;
 
-  signal sol_s, sof_s, pixel_ready_s, pixel_valid_s : std_ulogic;
-  signal pixel_s : nsl_color.rgb.rgb24;
+  constant geometry_c : nsl_video.mode.geometry_t := nsl_video.mode.geometry(mode_c);
+  constant pixel_config_c : nsl_video.pixel_stream.config_t
+    := nsl_video.pixel_stream.config(pixels => 1);
+
+  signal pixel_s : nsl_video.pixel_stream.bus_t;
+  signal synced_s : std_ulogic;
 
 begin
 
@@ -90,40 +89,30 @@ begin
 
   led_o <= std_ulogic_vector(blinker_s(blinker_s'left downto blinker_s'left-1));
 
-  pll_reset_s <= not reset_n_i;
-
-  clock: work.top.stage1_pll
+  ref_pll: nsl_clocking.pll.pll_multi
+    generic map(
+      config_c => ref_config_c
+      )
     port map(
-      clkin => clock_i,
-      clkout0 => dvi_ref_clock_s,
-      mdclk => clock_i,
-      reset => pll_reset_s,
-      lock => pll_locked_s
+      clock_i => clock_i,
+      reset_n_i => reset_n_i,
+      clock_o(0) => dvi_ref_clock_s,
+      locked_o => pll_locked_s
       );
 
-  dvi_pll_reset <= not pll_locked_s;
-
-  dvi_clock_gen: work.top.dvi_pll
+  video_pll: nsl_clocking.pll.pll_multi
+    generic map(
+      config_c => video_config_c
+      )
     port map(
-      reset    => dvi_pll_reset,
-      clkin    => dvi_ref_clock_s,
-      clkout0  => dvi_serial_clock_unb_s,
-      clkout1  => dvi_pixel_clock_unb_s,
-      lock     => dvi_pixel_clock_reset_n_s,
-      mdclk    => clock_i
+      clock_i => dvi_ref_clock_s,
+      reset_n_i => pll_locked_s,
+      clock_o => video_clock_s,
+      locked_o => dvi_pixel_clock_reset_n_s
       );
 
-  serial_clockbuf: nsl_clocking.distribution.clock_buffer
-    port map (
-      clock_i => dvi_serial_clock_unb_s,
-      clock_o => dvi_serial_clock_s
-      );
-
-  pixel_clockbuf: nsl_clocking.distribution.clock_buffer
-    port map (
-      clock_i => dvi_pixel_clock_unb_s,
-      clock_o => dvi_pixel_clock_s
-      );
+  dvi_serial_clock_s <= video_clock_s(0);
+  dvi_pixel_clock_s <= video_clock_s(1);
 
   driver: nsl_dvi.transceiver.dvi_driver
     generic map(
@@ -139,25 +128,29 @@ begin
       );
   
    dvi_encoder: nsl_dvi.encoder.dvi_10_encoder
+     generic map(
+       config_c => pixel_config_c
+       )
      port map(
        reset_n_i => dvi_pixel_clock_reset_n_s,
        pixel_clock_i => dvi_pixel_clock_s,
   
-       v_fp_m1_i => v_fp_m1_c,
-       v_sync_m1_i => v_sync_m1_c,
-       v_bp_m1_i => v_bp_m1_c,
-       v_act_m1_i => v_act_m1_c,
+       v_fp_m1_i => v_fp_m1(mode_c),
+       v_sync_m1_i => v_sync_m1(mode_c),
+       v_bp_m1_i => v_bp_m1(mode_c),
+       v_act_m1_i => v_act_m1(mode_c),
 
-       h_fp_m1_i => h_fp_m1_c,
-       h_sync_m1_i => h_sync_m1_c,
-       h_bp_m1_i => h_bp_m1_c,
-       h_act_m1_i => h_act_m1_c,
+       h_fp_m1_i => h_fp_m1(mode_c),
+       h_sync_m1_i => h_sync_m1(mode_c),
+       h_bp_m1_i => h_bp_m1(mode_c),
+       h_act_m1_i => h_act_m1(mode_c),
+
+       vsync_i => mode_c.v.sync,
+       hsync_i => mode_c.h.sync,
   
-       sof_o => sof_s,
-       sol_o => sol_s,
-       pixel_ready_o => pixel_ready_s,
-       pixel_valid_i => pixel_valid_s,
-       pixel_i => pixel_s,
+       pixel_i => pixel_s.m,
+       pixel_o => pixel_s.s,
+       synced_o => synced_s,
   
        tmds_o => tmds_s
        );
@@ -168,9 +161,9 @@ begin
     constant font_hscale_c: natural := 4;
     constant font_vscale_c: natural := 4;
 
-    constant row_count_c: integer := v_act_c / font_height(font_c) / font_vscale_c;
+    constant row_count_c: integer := mode_c.v.active / font_height(font_c) / font_vscale_c;
     constant row_count_l2_c:natural := nsl_math.arith.log2(row_count_c);
-    constant column_count_c: integer := h_act_c / font_width(font_c) / font_hscale_c;
+    constant column_count_c: integer := mode_c.h.active / font_width(font_c) / font_hscale_c;
     constant column_count_l2_c: natural := nsl_math.arith.log2(column_count_c);
     constant character_count_l2_c: natural := 8;
 
@@ -195,7 +188,7 @@ begin
 
     signal r, rin: regs_t;
   begin    
-    generator: nsl_dvi.terminal.terminal_text_buffer
+    generator: nsl_video.terminal.terminal_text_buffer
       generic map(
         row_count_l2_c => row_count_l2_c,
         column_count_l2_c => column_count_l2_c,
@@ -204,17 +197,17 @@ begin
         font_c => font_c,
         underline_support_c => false,
         font_hscale_c => font_hscale_c,
-        font_vscale_c => font_vscale_c
+        font_vscale_c => font_vscale_c,
+        config_c => pixel_config_c,
+        geometry_c => geometry_c
         )
       port map(
         video_clock_i => dvi_pixel_clock_s,
         video_reset_n_i => dvi_pixel_clock_reset_n_s,
 
-        sof_i => sof_s,
-        sol_i => sol_s,
-        pixel_ready_i => pixel_ready_s,
-        pixel_valid_o => pixel_valid_s,
-        pixel_o => pixel_s,
+        video_enable_i => '1',
+        out_o => pixel_s.m,
+        out_i => pixel_s.s,
 
         term_clock_i => clock_i,
         term_reset_n_i => reset_n_i,

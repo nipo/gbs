@@ -2,42 +2,18 @@ name: dvi_terminal
 
 root:
   name: top
-  sources:
-    - file_type: vhdl
-      files:
-        - src/stage1_pll_mod.vhd
-        - src/stage1_pll.vhd
-        - src/dvi_pll_mod.vhd
-        - src/dvi_pll.vhd
-        - src/top.pkg.vhd
-        - src/boundary.vhd
-        - src/main.vhd
-    - file_type: verilog
-      files:
-        - src/stage1_pll_init.v
-        - src/dvi_pll_init.v
-    - file_type: gowin-cst
-      files:
-        - hdmi.cst
-        - done_led.cst
-        - ready_led.cst
-        - buttons.cst
-        - clk.cst
-        - uart.cst
-    - file_type: gowin-sdc
-      files:
-        - clk.sdc
-        - clocks.sdc
   deps:
+    - nsl_video.mode
+    - nsl_video.pixel_stream
     - nsl_digilent.pmod
     - nsl_clocking.async
     - nsl_clocking.distribution
     - nsl_event.tick
     - nsl_clocking.pll
     - nsl_dvi.transceiver
-    - nsl_dvi.pattern
+    - nsl_video.pattern
     - nsl_dvi.encoder
-    - nsl_dvi.terminal
+    - nsl_video.terminal
     - nsl_indication.font_6x8
     - nsl_indication.font_4x6
     - nsl_hwdep.clock
@@ -49,6 +25,24 @@ root:
     - nsl_math.fixed
     - nsl_signal_generator.trigonometry
     - nsl_uart.serdes
+  sources:
+    - file_type: vhdl
+      files:
+        - src/top.pkg.vhd
+        - src/boundary.vhd
+        - src/main.vhd
+    - file_type: gowin-cst
+      files:
+        - src/hdmi.cst
+        - src/done_led.cst
+        - src/ready_led.cst
+        - src/buttons.cst
+        - src/clk.cst
+        - src/uart.cst
+    - file_type: gowin-sdc
+      files:
+        - src/clk.sdc
+        - src/clocks.sdc
 
 output:
   - name: synthesis
@@ -63,3 +57,8 @@ output:
     outputs:
       - type: bitstream
         path: dvi_terminal.fs
+      - type: pnr-report
+        path: pnr-report.html
+      - type: timing-summary
+        path: timing.yaml
+        
