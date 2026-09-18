@@ -48,7 +48,8 @@ class RichBackend(FeedbackBackend):
         min_severity: MessageSeverity = MessageSeverity.WARNING,
         min_log_level: LogLevel = LogLevel.WARNING,
         force_terminal: Optional[bool] = None,
-        file_url_template: str = ""
+        file_url_template: str = "",
+        quiet: bool = False,
     ):
         """Initialize Rich backend
 
@@ -61,6 +62,7 @@ class RichBackend(FeedbackBackend):
             file_url_template: Template for file URLs in OSC 8 hyperlinks
                               Supports {path}, {line}, {column} placeholders
                               Should be provided by caller from GBSConfig.file_url_template
+            quiet: Suppress non-error status output
         """
         if not is_rich_available():
             raise ImportError(
@@ -76,6 +78,7 @@ class RichBackend(FeedbackBackend):
         self.min_severity = min_severity
         self.min_log_level = min_log_level
         self.file_url_template = file_url_template
+        self.quiet = quiet
 
         # Create console
         self.console = Console(
@@ -369,6 +372,9 @@ class RichBackend(FeedbackBackend):
 
     async def _render_build_status(self, msg: BuildStatus):
         """Render build status with colors"""
+        if self.quiet and msg.status not in {"failure", "error", "unplannable"}:
+            return
+
         # Choose style based on status
         status_styles = {
             "started": "blue",

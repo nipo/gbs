@@ -121,6 +121,11 @@ DEFAULT_MAX_LOG_COUNT = 10
     help="Enable debug output (DEBUG level)"
 )
 @click.option(
+    "-q", "--quiet",
+    is_flag=True,
+    help="Only show errors"
+)
+@click.option(
     "-P", "--no-progress",
     is_flag=True,
     help="Disable progress bars"
@@ -147,11 +152,24 @@ DEFAULT_MAX_LOG_COUNT = 10
          "May be given multiple times."
 )
 @click.pass_context
-async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progress: bool, log_dir: Path | None, tool_overrides, tool_version_overrides):
+async def cli(
+    ctx,
+    directory: Path | None,
+    verbose: bool,
+    debug: bool,
+    quiet: bool,
+    no_progress: bool,
+    log_dir: Path | None,
+    tool_overrides,
+    tool_version_overrides,
+):
     """GBS: Gateware Build System
 
     A build system for gateware projects.
     """
+    if quiet and (verbose or debug):
+        raise click.UsageError("--quiet cannot be combined with --verbose or --debug")
+
     # Change directory if -C specified
     import os
     original_cwd = None
@@ -160,7 +178,12 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
         os.chdir(directory)
 
     # Set up logging (after changing directory so logs go to correct location)
-    gbs_logger = setup_logging(verbose=verbose, debug=debug, log_dir=log_dir)
+    gbs_logger = setup_logging(
+        verbose=verbose,
+        debug=debug,
+        quiet=quiet,
+        log_dir=log_dir,
+    )
     logger = get_logger()
 
     if original_cwd is not None:
@@ -181,13 +204,16 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
     elif verbose:
         min_severity = MessageSeverity.INFO
         min_log_level = LogLevel.INFO
+    elif quiet:
+        min_severity = MessageSeverity.ERROR
+        min_log_level = LogLevel.ERROR
     else:
         min_severity = MessageSeverity.WARNING
         min_log_level = LogLevel.WARNING
 
     # Determine if progress bars should be shown
-    # Disable if: verbose, debug, or --no-progress flag
-    show_progress = not verbose and not debug and not no_progress
+    # Disable if: verbose, debug, quiet, or --no-progress flag
+    show_progress = not verbose and not debug and not quiet and not no_progress
 
     # Create FeedbackHub for unified UI output
     # Use RichBackend if available and stdout is a TTY, otherwise SimpleBackend
@@ -196,6 +222,7 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
             show_progress=show_progress,
             min_severity=min_severity,
             min_log_level=min_log_level,
+            quiet=quiet,
             file_url_template=gbs_config.file_url_template
         )
         logger.debug("Using RichBackend for fancy terminal output")
@@ -203,7 +230,8 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
         terminal_backend = SimpleBackend(
             show_progress=show_progress,
             min_severity=min_severity,
-            min_log_level=min_log_level
+            min_log_level=min_log_level,
+            quiet=quiet,
         )
         logger.debug("Using SimpleBackend for plain text output")
 
@@ -245,11 +273,13 @@ async def cli(ctx, directory: Path | None, verbose: bool, debug: bool, no_progre
     ctx.obj["logger"] = logger
     ctx.obj["log_file"] = get_log_file()
     ctx.obj["gbs_config"] = gbs_config
-    ctx.obj["allow_progress_bars"] = not verbose and not debug
+    ctx.obj["allow_progress_bars"] = not verbose and not debug and not quiet
     ctx.obj["feedback_hub"] = hub
     ctx.obj["_hub_cleanup"] = lambda: hub.__aexit__(None, None, None)
 
-    logger.debug(f"CLI invoked with verbose={verbose}, debug={debug}")
+    logger.debug(
+        f"CLI invoked with verbose={verbose}, debug={debug}, quiet={quiet}"
+    )
     logger.debug(f"Loaded {len(gbs_config.tools)} tools")
 
 

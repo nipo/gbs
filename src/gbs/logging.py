@@ -211,6 +211,7 @@ _logger_instance: Optional[GBSLogger] = None
 def setup_logging(
     verbose: bool = False,
     debug: bool = False,
+    quiet: bool = False,
     log_dir: Optional[Path] = None,
 ) -> GBSLogger:
     """Set up global GBS logging
@@ -218,6 +219,7 @@ def setup_logging(
     Args:
         verbose: Enable verbose console output (INFO level)
         debug: Enable debug console output (DEBUG level)
+        quiet: Restrict console output to errors
         log_dir: Custom log directory
 
     Returns:
@@ -230,6 +232,8 @@ def setup_logging(
         console_level = logging.DEBUG
     elif verbose:
         console_level = logging.INFO
+    elif quiet:
+        console_level = logging.ERROR
     else:
         console_level = logging.FATAL
 

@@ -35,7 +35,8 @@ class SimpleBackend(FeedbackBackend):
         error: Optional[TextIO] = None,
         show_progress: bool = True,
         min_severity: MessageSeverity = MessageSeverity.WARNING,
-        min_log_level: LogLevel = LogLevel.WARNING
+        min_log_level: LogLevel = LogLevel.WARNING,
+        quiet: bool = False,
     ):
         """Initialize simple backend
 
@@ -45,6 +46,7 @@ class SimpleBackend(FeedbackBackend):
             show_progress: Whether to show progress messages
             min_severity: Minimum severity for ToolMessages to display
             min_log_level: Minimum level for LogMessages to display
+            quiet: Suppress non-error status output
         """
         self.output = output or self._safe_stream(sys.stdout)
         self.error = error or self._safe_stream(sys.stderr)
@@ -52,6 +54,7 @@ class SimpleBackend(FeedbackBackend):
         self.show_progress = show_progress
         self.min_severity = min_severity
         self.min_log_level = min_log_level
+        self.quiet = quiet
 
         # Track active progress tasks for indentation and end-of-task
         # reporting. We only show progress start descriptions on
@@ -228,6 +231,9 @@ class SimpleBackend(FeedbackBackend):
         extra information once the task is done. Failure/error/skipped
         map to dedicated tags so the outcome is the first thing visible.
         """
+        if self.quiet and msg.status not in {"failure", "error", "unplannable"}:
+            return
+
         status_map = {
             "success": "[OK]",
             "failure": "[FAILED]",
