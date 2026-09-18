@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 from ...base import BasePass
 from ...protocol import Dispatcher
-from .. import xilinx_part
+from ..xilinx_part import XilinxPart
 from .dispatcher import IseDispatcher
 
 
@@ -64,7 +64,8 @@ class IseSynthesizePass(BasePass):
         part = target.get("part")
         if not part:
             raise ValueError("No target part")
-        if not xilinx_part.parse_part(part):
+        parsed = XilinxPart.parse(part)
+        if not parsed:
             raise ValueError(
                 f"Cannot parse ISE target part {part!r}, "
                 f"expected <die><-speed><package>"
@@ -81,9 +82,8 @@ class IseSynthesizePass(BasePass):
             "pnr_engine": "ise",
             "bitstream_engine": "ise",
             "vhdl_std": vhdl_std,
-            "part": part,
         }
-        ret.update(xilinx_part.filter_vars(part))
+        ret.update(parsed.filter_vars)
         return ret
 
     def dispatchers(self, context) -> list[Dispatcher]:

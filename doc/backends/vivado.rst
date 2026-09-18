@@ -127,14 +127,22 @@ The backend automatically extracts family information from part numbers:
 
 **UltraScale+:**
   - Zynq UltraScale+ (xczu*)
+  - Kria SOM (xck26*, xck24*)
   - Artix UltraScale+ (xcau*)
   - Kintex UltraScale+ (xckup*)
   - Virtex UltraScale+ (xcvup*)
 
 **Versal:**
-  - Versal AI Core (xcvm*)
-  - Versal Prime (xcvp*)
+  - Versal Prime (xcvm*)
+  - Versal Premium (xcvp*)
   - Versal AI Edge (xcve*)
+  - Versal AI Core (xcvc*)
+  - Versal HBM (xcvh*)
+  - Versal RF (xcvr*)
+
+Part numbers may use the middle-dash form ``xc7a35t-1cpg236``, the
+trailing-dash form ``xc7a35tcsg324-1``, or the fully dashed form
+``xczu9eg-ffvb1156-2-e`` used by UltraScale and later families.
 
 Filter Variables
 ----------------

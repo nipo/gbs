@@ -149,11 +149,10 @@ class YosysXilinxPass(YosysBasePass):
         """Match the vivado backend's technology-stack shape so a
         project builds the same sources under either flow.
         """
-        from .. import xilinx_part
+        from ..xilinx_part import XilinxPart
         ret = super().filter_vars()
         target = self.config.get("target", {})
         part = target.get("part")
         if part:
-            ret["part"] = part
-            ret.update(xilinx_part.filter_vars(part))
+            ret.update(XilinxPart.filter_vars_of(part))
         return ret

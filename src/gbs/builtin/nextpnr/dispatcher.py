@@ -120,7 +120,7 @@ class NextpnrDispatcher(BaseDispatcher):
                 or the .bin file does not exist.
         """
         from ...build.task import BuildError
-        from .. import xilinx_part
+        from ..xilinx_part import XilinxPart
         chipdb_root = self.get_tool_option("chipdb_root", None)
         if chipdb_root is None:
             raise BuildError(
@@ -128,13 +128,13 @@ class NextpnrDispatcher(BaseDispatcher):
                 f"install openxc7 via apio, or set it explicitly on "
                 f"tools:{self.tool_name}."
             )
-        key = xilinx_part.chipdb_key(self.part)
-        if key is None:
+        part = XilinxPart.parse(self.part)
+        if part is None:
             raise BuildError(
                 f"Cannot derive chipdb name from part '{self.part}'; "
                 f"expected the vivado-style xc<name>-<speed><package> form."
             )
-        chipdb_path = expand_path(chipdb_root) / f"{key}.bin"
+        chipdb_path = expand_path(chipdb_root) / f"{part.chipdb_key}.bin"
         if not chipdb_path.is_file():
             raise BuildError(
                 f"chipdb {chipdb_path} not found; the openxc7 install "

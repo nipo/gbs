@@ -18,7 +18,7 @@ from pathlib import Path
 
 from ..logging import get_logger
 from ..utils import expand_path
-from ..builtin import xilinx_part
+from ..builtin.xilinx_part import XilinxPart
 from .group import ReMatchGroup
 
 
@@ -89,14 +89,14 @@ async def chipdb_build(ctx, part: str, output_arg: Path | None, keep_bba: bool):
             + ", ".join(str(p.relative_to(install_root)) for p in missing)
         )
 
-    key = xilinx_part.chipdb_key(part)
-    m = xilinx_part.parse_part(part)
-    if key is None or m is None:
+    parsed = XilinxPart.parse(part)
+    if parsed is None:
         raise click.ClickException(
             f"Cannot parse part '{part}'; expected the vivado form "
             f"xc<name>-<speed><package> (e.g. xc7a35t-1cpg236)."
         )
-    speed = m.group("speed").lstrip("-")
+    key = parsed.chipdb_key
+    speed = parsed.speed.lstrip("-")
     export_device = f"{key}-{speed}"
 
     output = expand_path(str(output_arg)) if output_arg else chipdb_dir_default / f"{key}.bin"

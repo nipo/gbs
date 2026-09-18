@@ -7,7 +7,7 @@ from ...utils import expand_path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology, BuildError
-from .. import xilinx_part
+from ..xilinx_part import XilinxPart
 from . import task
 
 
@@ -41,18 +41,16 @@ class Openxc7Dispatcher(BaseDispatcher):
                 f"install openxc7 via apio or set it manually on "
                 f"tools:{self.tool_name}."
             )
-        family = xilinx_part.family_name(self.part)
-        chip_key = xilinx_part.chipdb_key(self.part)
-        if family is None or chip_key is None:
+        part = XilinxPart.parse(self.part)
+        if part is None or part.family is None:
             raise BuildError(
                 f"Cannot derive prjxray part directory: '{self.part}' is "
                 f"not a recognized Xilinx part name (want e.g. xc7a35t-1cpg236)."
             )
         # openxc7's prjxray-db includes speed grade in the leaf dir name:
         # `.../artix7/xc7a35tcpg236-1/part.json`.
-        m = xilinx_part.parse_part(self.part)
-        speed_digit = m.group("speed").lstrip("-")
-        part_dir = expand_path(db_root) / family / f"{chip_key}-{speed_digit}"
+        speed_digit = part.speed.lstrip("-")
+        part_dir = expand_path(db_root) / part.family / f"{part.chipdb_key}-{speed_digit}"
         if not part_dir.is_dir():
             raise BuildError(
                 f"prjxray part directory {part_dir} not found. Extend the "

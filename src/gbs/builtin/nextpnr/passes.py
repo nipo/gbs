@@ -178,14 +178,13 @@ class NextpnrXilinxPass(NextpnrBasePass):
     output_types = {"nextpnr-fasm", "nextpnr-pnr-report", "pnr-report", "timing-summary"}
 
     def filter_vars(self) -> dict[str, Any]:
-        from .. import xilinx_part
+        from ..xilinx_part import XilinxPart
         ret = super().filter_vars()
         ret["vendor"] = "xilinx"
         target = self.config.get("target", {})
         part = target.get("part")
         if part:
-            ret["part"] = part
-            ret.update(xilinx_part.filter_vars(part))
+            ret.update(XilinxPart.filter_vars_of(part))
         return ret
 
     def dispatchers(self, context) -> list[Dispatcher]:

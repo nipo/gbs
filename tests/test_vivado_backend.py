@@ -397,6 +397,21 @@ def test_pass_filter_vars(factory):
 
 
 @pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
+def test_pass_filter_vars_fully_dashed_part(factory, caplog):
+    config = {"target": {"part": "xczu9eg-ffvb1156-2-e"}}
+
+    filter_vars = factory(config).filter_vars()
+
+    assert filter_vars["part"] == "xczu9eg-ffvb1156-2-e"
+    assert filter_vars["family"] == "zynqusp"
+    assert filter_vars["die"] == "xczu9eg"
+    assert filter_vars["speed"] == "-2"
+    assert filter_vars["package"] == "ffvb1156"
+    assert filter_vars["temperature"] == "e"
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("factory", [VivadoSynthesizePass, VivadoIpPackagePass])
 def test_pass_filter_vars_unparsable_part(factory, caplog):
     config = {"target": {"part": "xc7a35t"}}
 

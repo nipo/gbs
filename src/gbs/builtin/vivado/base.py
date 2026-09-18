@@ -6,18 +6,15 @@ the planner the same way; this module holds what they share.
 """
 
 from __future__ import annotations
-import logging
 from typing import Any
 
 from ...base import BaseDispatcher, BasePass
 from ...build.context import BuildContext
 from ...utils import expand_path, resolve_tool_exe
-from .. import xilinx_part
+from ..xilinx_part import XilinxPart
 from .vivado_tcl import Session
 
 __all__ = ["VivadoDispatcherBase", "VivadoPassBase"]
-
-logger = logging.getLogger(__name__)
 
 
 class VivadoDispatcherBase(BaseDispatcher):
@@ -140,12 +137,6 @@ class VivadoPassBase(BasePass):
         target = self.config.get("target", {})
         device = target.get("part")
         if device:
-            filter_vars["part"] = device
-            filter_vars.update(xilinx_part.filter_vars(device))
-            if not xilinx_part.parse_part(device):
-                logger.warning(
-                    f"Cannot parse device <{device}>, should be "
-                    f"<part><-speed><package>"
-                )
+            filter_vars.update(XilinxPart.filter_vars_of(device))
 
         return filter_vars

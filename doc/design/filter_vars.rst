@@ -26,11 +26,11 @@ Absence semantics
 -----------------
 
 The technology-stack variables (``vendor``, ``family``, ``die``,
-``speed``, ``package``, ``part``) are only set when a hardware target
-is defined. This means a plain simulation build with no hardware
-target has all of them unset, which is how "compile against generic
-behavioural mockups" gets expressed: sources gated on any specific
-vendor do not match, and the ``default`` fallback picks up the
+``speed``, ``package``, ``temperature``, ``part``) are only set when a
+hardware target is defined. This means a plain simulation build with no
+hardware target has all of them unset, which is how "compile against
+generic behavioural mockups" gets expressed: sources gated on any
+specific vendor do not match, and the ``default`` fallback picks up the
 mockups.
 
 Variables
@@ -173,6 +173,11 @@ Technology stack
     Package code as vendors write it.
 
     Examples: ``csg324``, ``cabga256``, ``fpbga484``.
+
+``temperature``
+    Temperature grade as the vendor writes it. Xilinx values include
+    ``c``, ``i``, ``e``, and ``q``. Unset when the part number does not
+    carry a temperature grade.
 
 ``part``
     The raw part number string as the user provided it in the

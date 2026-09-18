@@ -6,7 +6,7 @@ import re
 from ...build.task import Task, BuildError
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
-from .. import xilinx_part
+from ..xilinx_part import XilinxPart
 
 
 class _ScriptInvocation(MessageSubprocess):
@@ -58,10 +58,10 @@ class Fasm2Frames(Task):
         fasm, = self.inputs
 
         family_dir = self.dispatcher._get_prjxray_family_dir()
-        chipdb = xilinx_part.chipdb_key(self.dispatcher.part)
-        m = xilinx_part.parse_part(self.dispatcher.part)
-        speed = m.group("speed").lstrip("-")
-        part_key = f"{chipdb}-{speed}"
+        part = XilinxPart.parse(self.dispatcher.part)
+        assert part is not None
+        speed = part.speed.lstrip("-")
+        part_key = f"{part.chipdb_key}-{speed}"
 
         cmd = [
             self.dispatcher._get_fasm2frames_executable(),
@@ -108,10 +108,10 @@ class Frames2Bit(Task):
         if not part_file.is_file():
             raise BuildError(f"prjxray part.yaml missing at {part_file}")
 
-        m = xilinx_part.parse_part(self.dispatcher.part)
-        chipdb = xilinx_part.chipdb_key(self.dispatcher.part)
-        speed = m.group("speed").lstrip("-")
-        part_name = f"{chipdb}-{speed}"
+        part = XilinxPart.parse(self.dispatcher.part)
+        assert part is not None
+        speed = part.speed.lstrip("-")
+        part_name = f"{part.chipdb_key}-{speed}"
 
         cmd = [
             self.dispatcher._get_xc7frames2bit_executable(),

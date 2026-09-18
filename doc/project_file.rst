@@ -262,7 +262,11 @@ backend's config automatically.
 
      - name: xilinx_synthesis
        target:
-         part: xc6slx9-2tqg144          # Xilinx
+         part: xc6slx9-2tqg144          # Xilinx legacy form
+
+     - name: xilinx_ultrascale_synthesis
+       target:
+         part: xczu9eg-ffvb1156-2-e     # Xilinx fully dashed form
 
 **Common options:**
 
