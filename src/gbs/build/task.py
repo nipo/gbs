@@ -40,8 +40,20 @@ class ResourceTypology(Enum):
     DEFINITION = "definition"   # Build-influencing metadata file (not an error if unused)
 
 class BuildError(Exception):
-    """Error during build execution"""
-    pass
+    """Error during build execution
+
+    `report` carries the plain-text failure summary the build context
+    rendered, and `headline` its one-line form, for callers that never
+    see the terminal — a suite run writing JUnit XML, say. Both are
+    empty when the failure was raised before any summary existed.
+    """
+
+    def __init__(self, *args,
+                 report: Optional[list[str]] = None,
+                 headline: str = ""):
+        super().__init__(*args)
+        self.report: list[str] = list(report) if report else []
+        self.headline: str = headline
 
 class MissingToolError(BuildError):
     """Required tool not found or not executable

@@ -10,7 +10,6 @@ import time
 import sys
 from pathlib import Path
 from typing import Optional, TextIO
-from io import StringIO
 
 from .model import (
     Suite, ProjectReference, ProjectResult, SuiteResult,
@@ -294,16 +293,6 @@ class SuiteExecutor(UIReporter):
             elif self.suite.settings.max_parallel_tasks is not None:
                 project.set_max_parallel(self.suite.settings.max_parallel_tasks)
 
-            # Capture output
-            output_buffer = StringIO()
-            log_file = None
-
-            if self.suite.settings.output.save_logs and self.suite.settings.output.log_dir:
-                log_dir = self.suite.settings.output.log_dir
-                log_dir.mkdir(parents=True, exist_ok=True)
-                log_file = log_dir / f"{proj_ref.name}.log"
-
-            # Build project (capturing output is complex, for now just build)
             await project.build()
 
             # Get source files for filtering
@@ -327,13 +316,19 @@ class SuiteExecutor(UIReporter):
                 project=proj_ref,
                 status=ProjectStatus.SUCCESS,
                 duration=duration,
-                log_file=log_file,
                 source_files=source_files
             )
 
         except Exception as e:
             duration = time.time() - start_time
-            error_msg = str(e)
+            # The build context renders a structured diagnostic —
+            # which task failed, the command, the tool's own output —
+            # and until now only a terminal ever saw it: a suite run
+            # reported the bare "Build failed" and left the reader to
+            # go digging. Keep it with the result so JUnit XML and the
+            # per-project log carry it too.
+            report = list(getattr(e, "report", []) or [])
+            error_msg = getattr(e, "headline", "") or str(e)
 
             # PlanningError means the planner rejected the project up
             # front (typically because the required backend or tool
@@ -386,12 +381,42 @@ class SuiteExecutor(UIReporter):
                 message=error_msg
             )
 
+            log_file = self._write_project_log(proj_ref, report)
+
             return ProjectResult(
                 project=proj_ref,
                 status=ProjectStatus.ERROR,
                 duration=duration,
-                error_message=error_msg
+                log_file=log_file,
+                error_message=error_msg,
+                output_tail=report,
             )
+
+    def _project_log_path(self, proj_ref) -> Optional[Path]:
+        """Where this project's log goes, or None when logs are off."""
+        output = self.suite.settings.output
+        if not (output.save_logs and output.log_dir):
+            return None
+        return output.log_dir / f"{proj_ref.name}.log"
+
+    def _write_project_log(self, proj_ref, report: list[str]) -> Optional[Path]:
+        """Save a failed project's diagnostic next to the suite results.
+
+        Returns the path written, or None when there was nothing to
+        write or logs are turned off.
+        """
+        log_file = self._project_log_path(proj_ref)
+        if log_file is None or not report:
+            return None
+
+        try:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            log_file.write_text("\n".join(report) + "\n", encoding="utf-8")
+        except OSError as e:
+            logger.warning(f"Could not write log for '{proj_ref.name}': {e}")
+            return None
+
+        return log_file
 
     def _find_project_file(self, path: Path) -> Path:
         """Find project file from path (file or directory)

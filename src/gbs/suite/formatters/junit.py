@@ -84,28 +84,24 @@ def write_junit_xml(result: SuiteResult, output_path: Path) -> None:
         testcase.set('name', 'build')
         testcase.set('time', f'{project_result.duration:.3f}')
 
-        # Add failure/error/skip elements as needed
-        if project_result.status == ProjectStatus.FAILURE:
-            failure = ET.SubElement(testcase, 'failure')
-            failure.set('message', 'Build failed')
-            if project_result.error_message:
-                failure.set('type', 'BuildFailure')
-                failure.text = project_result.error_message
+        # Add failure/error/skip elements as needed. The message
+        # attribute is all a CI web view shows before the reader
+        # expands anything, so it names what failed rather than
+        # repeating the status; the body carries the full diagnostic.
+        if project_result.status in (ProjectStatus.FAILURE, ProjectStatus.ERROR):
+            failed = project_result.status == ProjectStatus.FAILURE
+            element = ET.SubElement(testcase,
+                                    'failure' if failed else 'error')
+            element.set('type', 'BuildFailure' if failed else 'BuildError')
+            element.set('message',
+                        project_result.error_message
+                        or ('Build failed' if failed else 'Build error'))
 
-            # Add output tail if available
-            if project_result.output_tail:
-                failure.text = '\n'.join(project_result.output_tail)
-
-        elif project_result.status == ProjectStatus.ERROR:
-            error = ET.SubElement(testcase, 'error')
-            error.set('message', 'Build error')
-            if project_result.error_message:
-                error.set('type', 'BuildError')
-                error.text = project_result.error_message
-
-            # Add output tail if available
-            if project_result.output_tail:
-                error.text = '\n'.join(project_result.output_tail)
+            body = list(project_result.output_tail)
+            if not body and project_result.error_message:
+                body = [project_result.error_message]
+            if body:
+                element.text = '\n'.join(body)
 
         elif project_result.status == ProjectStatus.SKIPPED:
             skipped = ET.SubElement(testcase, 'skipped')

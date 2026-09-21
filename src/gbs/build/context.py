@@ -102,6 +102,13 @@ class BuildContext(UIReporter):
 
         # Build result flag
         self.build_failed = False
+        # Plain-text rendering of the last failure summary, kept so a
+        # caller that is not a terminal — a suite run feeding JUnit
+        # XML, say — can report what failed instead of just that
+        # something did, plus a one-line form of it for wherever only
+        # one line fits.
+        self.failure_report: list[str] = []
+        self.failure_headline: str = ""
 
         # Progress tracking for UI
         self._total_steps = 0
@@ -535,7 +542,25 @@ class BuildContext(UIReporter):
             if hub is not None:
                 await hub.flush()
 
-    def _print_failure_detail(self, exc: Exception, indent: str = "    ") -> None:
+    def _summary_emitter(self, sink: list[str]):
+        """Build the emit() used by the failure summary.
+
+        Lines go to the feedback hub as before and are appended to
+        `sink` as plain text, so the terminal rendering and whatever a
+        non-interactive caller reports cannot drift apart.
+        """
+        from ..ui.hub import get_global_hub
+
+        hub = get_global_hub()
+
+        def emit(text: str = "", **kwargs) -> None:
+            sink.append(text)
+            if hub is not None:
+                hub.summary(text, **kwargs)
+
+        return emit
+
+    def _print_failure_detail(self, exc: Exception, emit, indent: str = "    ") -> None:
         """Emit a structured failure diagnostic through the feedback hub.
 
         ToolFailure expands into command/cwd/exit code/output tail.
@@ -548,11 +573,7 @@ class BuildContext(UIReporter):
         it can lay out).
         """
         from .task import ToolFailure, MissingToolError
-        from ..ui.hub import get_global_hub
         import shlex
-
-        hub = get_global_hub()
-        emit = hub.summary if hub is not None else lambda *a, **k: None
 
         if isinstance(exc, ToolFailure):
             emit(f"{indent}Tool '{exc.tool}' failed", fg="red")
@@ -585,6 +606,44 @@ class BuildContext(UIReporter):
         if exc_msg:
             emit(f"{indent}Reason: {exc_msg}", fg="red")
 
+    @staticmethod
+    def _failure_headline(tasks_with_messages, task_to_exc, root_causes) -> str:
+        """Name the failure in one line.
+
+        A CI web view lists that line and nothing else until the
+        reader expands the entry, so it has to carry the task that
+        failed and what it said — "make dsp_pid: mismatching vector
+        length" rather than "Build failed".
+        """
+        from .task import Task
+
+        task = None
+        if tasks_with_messages:
+            task = next(iter(tasks_with_messages))
+        else:
+            for step, _ in root_causes:
+                if isinstance(step, Task):
+                    task = step
+                    break
+
+        if task is None:
+            return ""
+
+        what = task.description or task.name
+
+        for msg in tasks_with_messages.get(task, []):
+            if msg.severity in (MessageSeverity.ERROR, MessageSeverity.FATAL):
+                text = (msg.message or "").strip()
+                if text:
+                    return f"{what}: {text.splitlines()[0]}"
+
+        exc = task_to_exc.get(task)
+        reason = str(exc).strip() if exc is not None else ""
+        if reason and reason != "Build failed":
+            return f"{what}: {reason.splitlines()[0]}"
+
+        return what
+
     def _print_failure_summary(self, failed_steps: list[tuple['BuildStep', Exception]]):
         """Print structured summary of build failures
 
@@ -598,10 +657,10 @@ class BuildContext(UIReporter):
             failed_steps: List of (BuildStep, Exception) tuples for failed steps
         """
         from .task import Task, Resource, PrerequisiteFailed, MissingToolError, BuildError, ToolFailure
-        from ..ui.hub import get_global_hub
 
-        hub = get_global_hub()
-        emit = hub.summary if hub is not None else lambda *a, **k: None
+        self.failure_report = []
+        self.failure_headline = ""
+        emit = self._summary_emitter(self.failure_report)
 
         # Warnings were already streamed to the terminal as they were
         # emitted; repeating the accumulated list here would drown the
@@ -672,6 +731,9 @@ class BuildContext(UIReporter):
                                       m.severity in (MessageSeverity.WARNING, MessageSeverity.ERROR, MessageSeverity.FATAL)]
                     tasks_with_messages[step] = task_messages
 
+        self.failure_headline = self._failure_headline(
+            tasks_with_messages, task_to_exc, root_causes)
+
         # Print root cause failures
         if root_causes or tasks_with_messages:
             emit("Root Cause Failures:", fg="red", bold=True)
@@ -694,7 +756,7 @@ class BuildContext(UIReporter):
                 # Render structured failure detail (command, exit code, tail
                 # for ToolFailure; reason text for plain BuildError).
                 if task in task_to_exc:
-                    self._print_failure_detail(task_to_exc[task])
+                    self._print_failure_detail(task_to_exc[task], emit)
 
                 # Show all warnings and errors from this task
                 emit(f"    Messages:", fg="yellow")
@@ -724,7 +786,7 @@ class BuildContext(UIReporter):
                     if step.description and step.description != step.name:
                         emit(f"    {step.description}")
 
-                    self._print_failure_detail(exc)
+                    self._print_failure_detail(exc, emit)
 
                     # Show warnings and errors from this task
                     task_messages = [m for m in self.__messages

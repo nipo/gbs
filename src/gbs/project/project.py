@@ -743,7 +743,9 @@ class PlanRealization:
 
             # After cleanup, check if build failed and raise if needed
             if self.build_ctx.build_failed:
-                raise BuildError("Build failed")
+                raise BuildError("Build failed",
+                                 report=self.build_ctx.failure_report,
+                                 headline=self.build_ctx.failure_headline)
 
     def task_graph_show(self, print_func = None):
         from ..build.task import Resource, VirtualResource, Task
