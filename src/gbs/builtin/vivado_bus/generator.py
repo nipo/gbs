@@ -129,7 +129,7 @@ class Xml:
 
 class Side:
     PRESENCES = ("required", "optional", "illegal")
-    DIRECTIONS = ("in", "out")
+    DIRECTIONS = ("in", "out", "inout")
 
     def __init__(self, presence, direction):
         self.presence = presence
@@ -166,6 +166,7 @@ class Role:
         return {
             "m2s": cls("m2s", Side("required", "out"), Side("required", "in")),
             "s2m": cls("s2m", Side("required", "in"), Side("required", "out")),
+            "io": cls("io", Side("required", "inout"), Side("required", "inout")),
         }
 
     @classmethod
