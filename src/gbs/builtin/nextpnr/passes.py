@@ -94,6 +94,8 @@ class NextpnrIce40Pass(NextpnrBasePass):
             context=context,
             target=self.target,
             nextpnr_tool=nextpnr_tool,
+            seed=self.config.get("seed"),
+            args=self.config.get("args"),
             part=device,
             package=package,
         )]
@@ -148,6 +150,8 @@ class NextpnrEcp5Pass(NextpnrBasePass):
             context=context,
             target=self.target,
             nextpnr_tool=nextpnr_tool,
+            seed=self.config.get("seed"),
+            args=self.config.get("args"),
             part=device,
             package=package,
             speed=part.nextpnr_speed,
@@ -196,6 +200,8 @@ class NextpnrXilinxPass(NextpnrBasePass):
             context=context,
             target=self.target,
             nextpnr_tool=nextpnr_tool,
+            seed=self.config.get("seed"),
+            args=self.config.get("args"),
             part=part,
             package="",
         )]

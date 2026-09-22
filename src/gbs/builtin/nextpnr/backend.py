@@ -22,6 +22,10 @@ class NextpnrBackend(BaseBackend):
           separate `package` (e.g. "hx1k" / "tq144"); ECP5 takes the
           full Lattice ordering part number (e.g. "LFE5U-25F-6BG256C")
           and derives the device flag, package and speed grade from it.
+        - seed: Placer seed.  What the placer reaches depends on it, so
+          pinning it is what makes a build that met its constraint meet
+          it again.
+        - args: Extra arguments appended to the command line.
         - Constraint files: PCF for ice40, LPF for ecp5
     """
 

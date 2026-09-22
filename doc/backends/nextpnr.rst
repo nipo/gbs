@@ -94,6 +94,8 @@ In project file, specify device in the output group:
    backend_config:
      nextpnr:
        tool: nextpnr-ice40          # Tool identifier for lookup
+       seed: 6                      # Placer seed
+       args: ["--timing-allow-fail"]  # Appended to the command line
 
    output_groups:
      - name: bitstream
@@ -103,6 +105,15 @@ In project file, specify device in the output group:
        outputs:
          - type: ice40-asc
            path: build/design.asc
+
+``seed`` pins the placer's starting point.  What the placer reaches
+depends on it, and a design close to the edge of what the fabric can
+do meets its frequency constraint on some seeds and misses it on
+others.  A build that closed closes again when the seed it closed on
+is written down.
+
+``args`` is appended to the command line as given, for the flags that
+have no key of their own.
 
 Example Project
 ---------------

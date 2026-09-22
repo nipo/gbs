@@ -95,6 +95,14 @@ class PlaceAndRoute(Task):
             if self.dispatcher.speed:
                 cmd += ["--speed", self.dispatcher.speed]
 
+        # The placer starts from a seed, and what it reaches depends on
+        # it: a design that misses its constraint on one seed can meet
+        # it on another.  Pinning the seed is what makes a build that
+        # closed close again.
+        if self.dispatcher.seed is not None:
+            cmd += ["--seed", str(self.dispatcher.seed)]
+        cmd += self.dispatcher.args
+
         # Always generate log file
         log_outputs = self.outputs_of_type("nextpnr-log")
         if log_outputs:

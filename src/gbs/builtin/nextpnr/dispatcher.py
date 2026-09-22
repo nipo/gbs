@@ -87,12 +87,16 @@ class NextpnrDispatcher(BaseDispatcher):
             part: str = "",
             package: str = "",
             speed: str = "",
+            seed: int | None = None,
+            args: list[str] | None = None,
     ):
         self.target_config = NEXTPNR_TARGETS[target]
         super().__init__(context, f"nextpnr-{target}", tool_name=nextpnr_tool)
         self.part = part
         self.package = package
         self.speed = speed
+        self.seed = seed
+        self.args = list(args) if args else []
         self._nextpnr_executable: str | None = None
         self._pnr_task: task.PlaceAndRoute | None = None
 
