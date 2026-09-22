@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Any
 
 from ...base import BasePass
+from ...build.task import BuildError
 from ...protocol import Dispatcher
+from ..tcl_interp import TclInterpreter
 from .dispatcher import XdcTranspileDispatcher
 from .transpiler import DEFAULT_PORT_PROPERTIES
 
@@ -28,6 +30,11 @@ class XdcTranspilePass(BasePass):
             IOSTANDARD, SLEW, DRIVE, PULLUP, PULLDOWN). Case-insensitive.
         extra_port_properties: Names added to the set in force. Use this
             to opt into further properties a given nextpnr build accepts.
+        tcl_tool: Identifier of the tclsh tool hosting the evaluation,
+            when one is configured. Defaults to ``tclsh``; without a
+            configured tool the interpreter is discovered on PATH.
+        tool: Identifier of the yosys used as interpreter of last
+            resort. Defaults to ``yosys``.
 
     Input types: xilinx-netlist-json, xilinx-xdc
     Output types: nextpnr-xdc
@@ -45,7 +52,15 @@ class XdcTranspilePass(BasePass):
                 f"target part {part!r} is not 7-series; the XDC transpiler "
                 f"only feeds the nextpnr-xilinx flow"
             )
-        return self.probe_tool("yosys")
+        return TclInterpreter.rejection_reason(
+            self.gbs_config,
+            self.tcl_identifier(),
+            self.resolve_tool_identifier("yosys"),
+        )
+
+    def tcl_identifier(self) -> str:
+        """Identifier of the configured tclsh tool, if the user named one."""
+        return self.config.get("tcl_tool", "tclsh")
 
     def filter_vars(self) -> dict[str, Any]:
         from ..xilinx_part import XilinxPart
@@ -65,8 +80,20 @@ class XdcTranspilePass(BasePass):
 
     def dispatchers(self, context) -> list[Dispatcher]:
         yosys_tool = self.resolve_tool_identifier("yosys")
+        tcl_tool = self.tcl_identifier()
+        interpreter = TclInterpreter.resolve(
+            self.gbs_config, tcl_tool, yosys_tool
+        )
+        if interpreter is None:
+            raise BuildError(TclInterpreter.rejection_reason(
+                self.gbs_config, tcl_tool, yosys_tool
+            ))
+        # Environment (licences, library paths) comes from whichever
+        # tool actually ends up hosting the evaluation.
+        host_tool = yosys_tool if interpreter.host == "yosys" else tcl_tool
         return [XdcTranspileDispatcher(
             context=context,
-            yosys_tool=yosys_tool,
+            interpreter=interpreter,
+            host_tool=host_tool,
             port_properties=self.port_properties(),
         )]

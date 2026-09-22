@@ -8,10 +8,10 @@ to consume.
 
 from __future__ import annotations
 
-from ...utils import expand_path
 from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import ResourceTypology
+from ..tcl_interp import TclInterpreter
 from . import task
 
 
@@ -21,20 +21,14 @@ class XdcTranspileDispatcher(BaseDispatcher):
     def __init__(
         self,
         context: BuildContext,
-        yosys_tool: str,
+        interpreter: TclInterpreter,
+        host_tool: str,
         port_properties: frozenset[str],
     ):
-        super().__init__(context, "xdc-transpile", tool_name=yosys_tool)
+        super().__init__(context, "xdc-transpile", tool_name=host_tool)
+        self.interpreter = interpreter
         self.port_properties = port_properties
-        self._yosys_executable: str | None = None
         self._task: task.Transpile | None = None
-
-    def get_yosys_executable(self) -> str:
-        if self._yosys_executable is None:
-            executable = self.get_tool_option("executable", "yosys")
-            self._yosys_executable = str(expand_path(executable))
-            self.debug(f"Using yosys executable: {self._yosys_executable}")
-        return self._yosys_executable
 
     async def process(self) -> None:
         if self._task is not None:

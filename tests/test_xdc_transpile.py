@@ -1,11 +1,11 @@
 """Tests for the Vivado XDC to nextpnr-xilinx constraint transpiler."""
 
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from gbs.builtin.tcl_interp import TclInterpreter
 from gbs.builtin.xdc_transpile import transpiler as T
 
 
@@ -200,22 +200,19 @@ def test_render_tcl_data():
 
 # --- Integration: real interpreter ------------------------------------------
 
-def _find_yosys():
-    from os import environ
-    for candidate in (environ.get("GBS_TEST_YOSYS"), "/opt/oss-cad-suite/bin/yosys"):
-        if candidate and Path(candidate).is_file():
-            return candidate
-    return shutil.which("yosys")
+interpreter = TclInterpreter.resolve(None, yosys_identifier=None)
+requires_tcl = pytest.mark.skipif(
+    interpreter is None, reason="no Tcl interpreter available")
 
 
-yosys_bin = _find_yosys()
-requires_yosys = pytest.mark.skipif(
-    yosys_bin is None, reason="yosys with TCL support not available")
+def _run_tcl(script: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        interpreter.argv(script), capture_output=True, text=True)
 
 
-@requires_yosys
+@requires_tcl
 def test_end_to_end_resolution(tmp_path):
-    """Globs, -dict, foreach and unsupported targets through real yosys TCL."""
+    """Globs, -dict, foreach and unsupported targets through a real Tcl."""
     ports = T.NetlistPorts(
         ["led", "data[0]", "data[1]", "data[2]", "data[3]", "clk"],
         {"data": ["data[0]", "data[1]", "data[2]", "data[3]"]},
@@ -235,9 +232,7 @@ def test_end_to_end_resolution(tmp_path):
     preamble = tmp_path / "pre.tcl"
     preamble.write_text(T.build_preamble(ports, [xdc], records_path))
 
-    result = subprocess.run(
-        [yosys_bin, "-q", "-p", f"tcl {preamble}"],
-        capture_output=True, text=True)
+    result = _run_tcl(preamble)
     assert result.returncode == 0, result.stderr
 
     records = T.parse_records(records_path.read_text())
@@ -260,7 +255,7 @@ def test_end_to_end_resolution(tmp_path):
     assert any("unsupported_cmd" in d.message for d in diags)
 
 
-@requires_yosys
+@requires_tcl
 def test_end_to_end_malformed_raises(tmp_path):
     ports = T.NetlistPorts(["led"], {})
     xdc = tmp_path / "bad.xdc"
@@ -269,9 +264,7 @@ def test_end_to_end_malformed_raises(tmp_path):
     preamble = tmp_path / "pre.tcl"
     preamble.write_text(T.build_preamble(ports, [xdc], records_path))
 
-    result = subprocess.run(
-        [yosys_bin, "-q", "-p", f"tcl {preamble}"],
-        capture_output=True, text=True)
+    result = _run_tcl(preamble)
     assert result.returncode == 0, result.stderr
 
     records = T.parse_records(records_path.read_text())

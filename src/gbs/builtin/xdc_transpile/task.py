@@ -1,10 +1,9 @@
 """XDC transpile task.
 
-Evaluates the Vivado XDC constraint files through yosys' embedded TCL
-interpreter and writes the reduced nextpnr-xilinx constraint file. The
-interpreter is hosted by yosys because it is guaranteed to be present in
-the yosys -> nextpnr flow that produced the netlist; the transpiler
-logic itself lives in :mod:`.transpiler`.
+Evaluates the Vivado XDC constraint files in a real Tcl interpreter and
+writes the reduced nextpnr-xilinx constraint file. Which interpreter
+hosts the run is decided by :mod:`gbs.builtin.tcl_interp`; the
+transpiler logic itself lives in :mod:`.transpiler`.
 """
 
 from __future__ import annotations
@@ -17,12 +16,12 @@ from ...ui.messages import MessageSeverity, ToolMessage
 from . import transpiler
 
 
-class YosysTclInvocation(MessageSubprocess):
-    """yosys run whose stdout/stderr are only kept for diagnostics.
+class TclInvocation(MessageSubprocess):
+    """Interpreter run whose stdout/stderr are only kept for diagnostics.
 
     The transpiler exchanges data with the interpreter through a record
-    file, so yosys' own console output is demoted to debug level and
-    surfaces only when the run fails.
+    file, so the interpreter's own console output is demoted to debug
+    level and surfaces only when the run fails.
     """
 
     async def stdout_transform(self, lines):
@@ -78,33 +77,39 @@ class Transpile(Task):
             transpiler.build_preamble(ports, xdc_paths, records_path)
         )
 
+        interpreter = self.dispatcher.interpreter
         self.info(
             f"Transpiling {len(xdc_paths)} XDC file(s) to nextpnr "
-            f"constraints via yosys TCL"
+            f"constraints using {interpreter}"
         )
 
-        yosys = self.dispatcher.get_yosys_executable()
-        process = YosysTclInvocation(
-            argv=[yosys, "-q", "-p", f"tcl {preamble_path}"],
+        process = TclInvocation(
+            argv=interpreter.argv(preamble_path),
             env=self.dispatcher.tool_env or None,
         )
         async for msg in process:
             await self.add_message_obj(msg)
 
         if process.returncode != 0:
+            hint = ""
+            if interpreter.host == "yosys":
+                hint = (
+                    " This run used yosys' embedded interpreter, which needs "
+                    "a yosys built with TCL support (the 'tcl' command); "
+                    "installing Tcl provides a standalone tclsh instead."
+                )
             raise process.failure(
-                tool="yosys",
+                tool=interpreter.host,
                 message=(
-                    f"yosys failed to evaluate the XDC (exit code "
-                    f"{process.returncode}); the constraint transpiler needs "
-                    f"a yosys built with TCL support (the 'tcl' command)."
+                    f"{interpreter.executable} failed to evaluate the XDC "
+                    f"(exit code {process.returncode}).{hint}"
                 ),
             )
 
         if not records_path.exists():
             raise BuildError(
                 f"XDC transpile produced no record file at {records_path}; "
-                f"yosys did not run the transpile script."
+                f"{interpreter.executable} did not run the transpile script."
             )
 
         records = transpiler.parse_records(records_path.read_text())

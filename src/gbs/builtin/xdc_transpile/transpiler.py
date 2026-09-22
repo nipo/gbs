@@ -15,9 +15,9 @@ nextpnr-xilinx accepts:
 - ``create_clock`` is passed through with its resolved port target.
 
 XDC is a TCL program, so it is evaluated by a real TCL interpreter
-rather than pattern-matched. The interpreter is hosted by yosys (its
-``tcl`` command), which is always available in the yosys -> nextpnr
-flow. This module owns the two halves that do not need the interpreter:
+rather than pattern-matched. Finding one is
+:mod:`gbs.builtin.tcl_interp`'s job. This module owns the two halves
+that do not need the interpreter:
 building the port universe from the netlist JSON and generating the TCL
 preamble (:class:`NetlistPorts`, :func:`build_preamble`), and turning the
 interpreter's neutral output records into the final constraint file
