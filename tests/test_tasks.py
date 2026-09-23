@@ -34,7 +34,8 @@ class TestBuildContext:
         assert len(ctx._resources) == 0
         assert len(ctx._virtual_resources) == 0
 
-    def test_resource_singleton(self):
+    @pytest.mark.asyncio
+    async def test_resource_singleton(self):
         """Test that get_resource returns same instance for same path"""
         ctx = BuildContext()
         path = Path("/test/file.txt")
@@ -44,7 +45,8 @@ class TestBuildContext:
 
         assert res1 is res2
 
-    def test_virtual_resource_singleton(self):
+    @pytest.mark.asyncio
+    async def test_virtual_resource_singleton(self):
         """Test that get_virtual_resource returns same instance for same name"""
         ctx = BuildContext()
 
@@ -57,7 +59,8 @@ class TestBuildContext:
 class TestResource:
     """Tests for Resource"""
 
-    def test_resource_creation(self):
+    @pytest.mark.asyncio
+    async def test_resource_creation(self):
         """Test creating a resource"""
         ctx = BuildContext()
         res = ctx.get_resource(Path("/test/file.txt"))
@@ -99,7 +102,8 @@ class TestResource:
 class TestVirtualResource:
     """Tests for VirtualResource"""
 
-    def test_virtual_resource_creation(self):
+    @pytest.mark.asyncio
+    async def test_virtual_resource_creation(self):
         """Test creating a virtual resource"""
         ctx = BuildContext()
         vres = ctx.get_virtual_resource("data")

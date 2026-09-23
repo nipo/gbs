@@ -358,7 +358,8 @@ def test_dispatcher_session_without_install(tmp_path, factory):
         dispatcher.session_get()
 
 
-def test_ip_dispatcher_input_order(tmp_path):
+@pytest.mark.asyncio
+async def test_ip_dispatcher_input_order(tmp_path):
     ctx = context_make(tmp_path)
     by_name = {r.path.name: r for r in sources_make(ctx, tmp_path)}
     ordered = [
