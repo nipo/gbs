@@ -23,9 +23,11 @@ output:
         tool: quartus-prime
     outputs:
       - type: bitstream
-        path: design.sof
+        path: blink.sof
       - type: quartus-jam
-        path: design.jam
+        path: blink.jam
+      - type: quartus-rbf
+        path: blink.rbf
       - type: synthesis-report
         path: synthesis-report.html
       - type: pnr-report
