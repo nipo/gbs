@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 import asyncio
+import ctypes
+import ctypes.wintypes
+import msvcrt
 import os
 import re
 import subprocess
@@ -225,3 +228,65 @@ class ProcessControl:
             )
         except FileNotFoundError:
             pass
+
+
+class _Overlapped(ctypes.Structure):
+    _fields_ = [
+        ("Internal", ctypes.c_size_t),
+        ("InternalHigh", ctypes.c_size_t),
+        ("Offset", ctypes.wintypes.DWORD),
+        ("OffsetHigh", ctypes.wintypes.DWORD),
+        ("hEvent", ctypes.wintypes.HANDLE),
+    ]
+
+
+class FileLockPrimitive:
+    """Advisory whole-file locks using LockFileEx.
+
+    Windows byte-range locks are mandatory: a locked range cannot be
+    read or written through another handle. The lock therefore covers a
+    single byte far past the end of the file, leaving the file content
+    readable and writable by every holder and waiter. Windows drops the
+    lock when the handle is closed, including on process death.
+    """
+
+    LOCKFILE_FAIL_IMMEDIATELY = 0x1
+    LOCKFILE_EXCLUSIVE_LOCK = 0x2
+    ERROR_LOCK_VIOLATION = 33
+    REGION_OFFSET_HIGH = 0x40000000
+
+    __kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    @classmethod
+    def __region(cls) -> _Overlapped:
+        overlapped = _Overlapped()
+        overlapped.OffsetHigh = cls.REGION_OFFSET_HIGH
+        return overlapped
+
+    @classmethod
+    def try_lock(cls, fd: int, exclusive: bool) -> bool:
+        """Take the lock without blocking; return whether it was taken."""
+        flags = cls.LOCKFILE_FAIL_IMMEDIATELY
+        if exclusive:
+            flags |= cls.LOCKFILE_EXCLUSIVE_LOCK
+        overlapped = cls.__region()
+        ok = cls.__kernel32.LockFileEx(
+            ctypes.wintypes.HANDLE(msvcrt.get_osfhandle(fd)),
+            flags, 0, 1, 0, ctypes.byref(overlapped),
+        )
+        if ok:
+            return True
+        error = ctypes.get_last_error()
+        if error == cls.ERROR_LOCK_VIOLATION:
+            return False
+        raise ctypes.WinError(error)
+
+    @classmethod
+    def unlock(cls, fd: int) -> None:
+        overlapped = cls.__region()
+        ok = cls.__kernel32.UnlockFileEx(
+            ctypes.wintypes.HANDLE(msvcrt.get_osfhandle(fd)),
+            0, 1, 0, ctypes.byref(overlapped),
+        )
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())

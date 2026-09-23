@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import asyncio
+import fcntl
 import os
 import pty
 import signal
@@ -171,3 +172,27 @@ class ProcessControl:
             os.kill(pid, sig)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+class FileLockPrimitive:
+    """Advisory whole-file locks using flock(2).
+
+    A lock belongs to the open file description, so two descriptors
+    opened separately on the same file contend even within a process.
+    The kernel drops the lock when the last descriptor is closed,
+    including on process death.
+    """
+
+    @staticmethod
+    def try_lock(fd: int, exclusive: bool) -> bool:
+        """Take the lock without blocking; return whether it was taken."""
+        op = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        try:
+            fcntl.flock(fd, op | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return True
+
+    @staticmethod
+    def unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
