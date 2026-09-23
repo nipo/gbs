@@ -31,21 +31,11 @@ _GHDL_BACKENDS = ('jit', 'mcode', 'gcc', 'llvm')
 
 
 @functools.lru_cache(maxsize=None)
-def detect_ghdl_backend(ghdl_executable: str) -> str:
-    """Detect GHDL backend type (mcode, gcc, llvm, or jit).
-
-    Invokes ``ghdl --version`` and parses the "code generator" line. The
-    result is cached per executable path so passes and dispatchers can call
-    it freely without re-spawning ghdl.
-
-    Args:
-        ghdl_executable: Path to GHDL executable.
-
-    Returns:
-        "mcode", "gcc", "llvm", or "jit".
+def ghdl_version(ghdl_executable: str) -> str:
+    """Output of ``ghdl --version``, cached per executable path.
 
     Raises:
-        RuntimeError: If ghdl is not found or version cannot be parsed.
+        RuntimeError: If ghdl is not found or fails.
     """
     try:
         result = subprocess.run(
@@ -58,8 +48,27 @@ def detect_ghdl_backend(ghdl_executable: str) -> str:
         raise RuntimeError(f"GHDL executable not found: {ghdl_executable}")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"GHDL --version failed: {e}")
+    return result.stdout
 
-    for line in result.stdout.split('\n'):
+
+@functools.lru_cache(maxsize=None)
+def detect_ghdl_backend(ghdl_executable: str) -> str:
+    """Detect GHDL backend type (mcode, gcc, llvm, or jit).
+
+    Parses the "code generator" line of ``ghdl --version``. The result is
+    cached per executable path so passes and dispatchers can call it
+    freely without re-spawning ghdl.
+
+    Args:
+        ghdl_executable: Path to GHDL executable.
+
+    Returns:
+        "mcode", "gcc", "llvm", or "jit".
+
+    Raises:
+        RuntimeError: If ghdl is not found or version cannot be parsed.
+    """
+    for line in ghdl_version(ghdl_executable).split('\n'):
         if 'code generator' not in line.lower():
             continue
         words = line.lower().split()
@@ -208,18 +217,17 @@ class GHDLBaseDispatcher(BaseDispatcher):
         Used to give elaboration its own writeable workdir while reusing the
         analyzed cf and any compiled object files from the shared cache.
 
-        Each cache-derived file is forced to track the current cache content.
-        The elaboration workdir is keyed by the cache signature, but a given
-        signature dir persists across builds and an mtime bump on an unchanged
-        source re-analyses the library in place (same signature, new analysis
-        timestamp), so a destination cf left over from a previous build can
-        still be stale. GHDL records an analysis timestamp inside each cf and
-        reports the root library as "obsoleted by" a dependency whenever the
-        root's recorded analysis predates a dependency's — exactly what a stale
-        root cf produces once the cache is re-analyzed. Re-linking stale
-        entries keeps the workdir's cf and analysis objects consistent with the
-        dependencies pulled from the cache. Files only present in dest_workdir
-        (elaboration outputs the cache never held) are left untouched.
+        Hardlinking is safe because a published cache entry is never
+        modified, and elaboration does not write through the links either:
+        GHDL leaves an up-to-date library file alone, and when it does
+        rewrite one (re-analysis of a unit by ghdl -m) it writes a new file
+        in place of the link rather than into the shared inode.
+
+        A destination file that is not the cache file is replaced. This
+        happens when the cache entry was rebuilt after being cleaned or
+        left partial by an interrupted run, or when elaboration rewrote
+        the file. Files only present in dest_workdir (elaboration outputs
+        the cache never held) are left untouched.
         """
         dest_workdir.mkdir(parents=True, exist_ok=True)
         if not source_workdir.exists():
@@ -229,8 +237,6 @@ class GHDLBaseDispatcher(BaseDispatcher):
                 continue
             dst = dest_workdir / src.name
             if dst.exists():
-                # Already the current cache file (same inode) — nothing to do.
-                # Otherwise it is a stale leftover that must be replaced.
                 if dst.samefile(src):
                     continue
                 dst.unlink()
@@ -310,6 +316,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             "vhdl_std": self.vhdl_std,
             "ghdl_vhdl_version": self.ghdl_vhdl_version,
             "backend": backend,
+            "ghdl_version": ghdl_version(self._get_ghdl_executable()),
             "analyze_args": analyze_args,
             "sources": [
                 {

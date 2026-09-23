@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from ...build.task import Task, BuildError
+from ...build.task import Task, Resource, BuildError
+from ...build.lock import FileLock
 from ...build.subprocess import MessageSubprocess
 from ...ui.messages import MessageSeverity, ToolMessage
 from ...validation_report import (
@@ -11,6 +12,7 @@ from ...validation_report import (
 import re
 import asyncio
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -72,7 +74,21 @@ class GhdlInvocation(MessageSubprocess):
             yield multiline
 
 class Import(Task):
-    """GHDL import task (ghdl -i + ghdl -a)"""
+    """GHDL import task (ghdl -i + ghdl -a) filling a shared cache entry.
+
+    The entry directory is content-addressed by the library signature,
+    which covers everything that affects the analysis output. Its
+    content is therefore either absent, partial (an interrupted or
+    failed analysis), or final. The final state is published by writing
+    a marker file last; once published an entry is never written again,
+    so other runs may use it concurrently, including through hardlinks.
+
+    Analysis runs in the entry directory itself, under an exclusive lock
+    on a sibling lock file, so that concurrent runs needing the same
+    entry analyse it once and never see it half-written.
+    """
+
+    MARKER_NAME = ".complete"
 
     def __init__(
         self,
@@ -90,26 +106,66 @@ class Import(Task):
         )
         self.library_name = library_name
 
+    @property
+    def workdir(self) -> Path:
+        cf_out, = self.outputs_of_type("ghdl-cf")
+        return cf_out.path.parent
+
+    @property
+    def marker_path(self) -> Path:
+        return self.workdir / self.MARKER_NAME
+
+    @property
+    def lock_path(self) -> Path:
+        return self.workdir.with_name(self.workdir.name + ".lock")
+
+    def is_published(self) -> bool:
+        """Whether the cache entry holds a complete analysis.
+
+        Declared outputs are checked as well as the marker because
+        cleaning a project removes task outputs, including the ones in
+        the shared cache, but not the marker.
+        """
+        if not self.marker_path.exists():
+            return False
+        return all(o.exists() for o in self.outputs if isinstance(o, Resource))
+
+    def is_rebuild_needed(self) -> bool:
+        """Rebuild unless the entry is published.
+
+        Timestamps are irrelevant: the entry path already encodes the
+        content of the sources and dependencies.
+        """
+        return not self.is_published()
+
     async def work(self) -> None:
+        async with FileLock(self.lock_path, exclusive=True, reporter=self):
+            if self.is_published():
+                self.info(f"{self.workdir} published by another run")
+                return
+            if self.workdir.exists():
+                shutil.rmtree(self.workdir)
+            await self.analyse()
+            self.marker_path.touch()
+
+    async def analyse(self) -> None:
         """Execute GHDL import"""
         sources = []
         p_flags = []
         ghdl_executable = self.dispatcher._get_ghdl_executable()
         analyze_args = list(self.dispatcher.get_tool_option("analyze_args", []))
 
-        cf_out, = self.outputs_of_type("ghdl-cf")
         diagnostics_out, = self.outputs_of_type(DIAGNOSTICS_FILE_TYPE)
         # Everything the analysis says about this library, kept so it can
         # be replayed from the cache by a later validation run that finds
         # the analysis up to date and therefore never re-runs GHDL.
         captured: list[ToolMessage] = []
-        workdir = cf_out.path.parent
+        workdir = self.workdir
 
         for i in self.inputs:
             if i.file_type == "vhdl":
                 sources.append(i.path.resolve())
             elif i.file_type == "ghdl-cf":
-                i.path.parent.mkdir(parents=True, exist_ok=True)
                 p_flags.append(f"-P{i.path.parent.resolve()}")
             else:
                 raise ValueError(f"Unknown input type {i}")
