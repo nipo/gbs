@@ -8,6 +8,7 @@ from ...build.context import BuildContext
 from ...build.task import Resource, ResourceTypology, ConfigurationError
 from ...utils import expand_path
 from ...timing_summary import QuartusTimingParser, TimingSummaryTask
+from ...planner.planner import strip_type_suffixes
 from . import task
 
 
@@ -83,6 +84,14 @@ class QuartusDispatcher(BaseDispatcher):
         never be cleaned.
         """
         return super().get_clean_paths() | self._project_export_paths
+
+    def output_requested(self, file_type: str) -> bool:
+        """Whether a pending resource asks for ``file_type``, either
+        directly or through a transform suffix (``quartus-rbf+gzip``)."""
+        if self.context.filter_pending(file_type=file_type):
+            return True
+        return any(strip_type_suffixes(r.file_type) == file_type
+                   for r in self.context.get_pending_unsatisfied_outputs())
 
     @property
     def is_pro(self) -> bool:
@@ -309,7 +318,7 @@ class QuartusDispatcher(BaseDispatcher):
         hps_fsbl_resources = self.context.filter_pending(file_type="quartus-hps-fsbl")
         requested_hps_types = [
             t for t in ("quartus-hps-sof", "quartus-hps-jam", "quartus-hps-rbf")
-            if self.context.filter_pending(file_type=t)
+            if self.output_requested(t)
         ]
         if len(hps_fsbl_resources) > 1: # only one FSBL file is accepted, as only one HPS instance can exist in a design
             raise ConfigurationError(
@@ -331,7 +340,7 @@ class QuartusDispatcher(BaseDispatcher):
             )
 
         needs_synthesis = any(
-            self.context.filter_pending(file_type=t)
+            self.output_requested(t)
             for t in ("quartus-sof", "quartus-jam", "quartus-rbf",
                       "quartus-hps-sof", "quartus-hps-jam", "quartus-hps-rbf",
                       "quartus-synthesis-report", "quartus-pnr-report", "timing-summary")
@@ -417,7 +426,7 @@ class QuartusDispatcher(BaseDispatcher):
                 outputs=[dest],
             )
 
-        for dest in self.context.filter_pending(file_type="quartus-jam"):
+        if self.output_requested("quartus-jam"):
             jam_resource = intermediate(output_files / f"{pn}.jam", "quartus-jam")
             task.QuartusPfgConvert(
                 dispatcher=self,
@@ -427,7 +436,7 @@ class QuartusDispatcher(BaseDispatcher):
                 outputs=[jam_resource],
             )
 
-        for dest in self.context.filter_pending(file_type="quartus-rbf"):
+        if self.output_requested("quartus-rbf"):
             rbf_resource = intermediate(output_files / f"{pn}.rbf", "quartus-rbf")
             task.QuartusPfgConvert(
                 dispatcher=self,
@@ -448,7 +457,7 @@ class QuartusDispatcher(BaseDispatcher):
             ("quartus-hps-rbf", f"{pn}_hps.rbf", "quartus_hps_rbf", "Generate HPS RBF"),
         )
         for file_type, filename, task_name, title in hps_conversions:
-            for dest in self.context.filter_pending(file_type=file_type):
+            if self.output_requested(file_type):
                 hps_resource = intermediate(output_files / filename, file_type)
                 hps_task = task.QuartusPfgConvert(
                     dispatcher=self,
