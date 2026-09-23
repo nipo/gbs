@@ -95,6 +95,7 @@ class OutputInventory:
         if output_group.partition:
             record["partition"] = output_group.partition
 
+        plan = None
         try:
             plan = self._planner(output_group).plan(output_group)
         except PlanningError as e:
@@ -112,7 +113,8 @@ class OutputInventory:
             record["backends"] = sorted({pm.backend_name for pm in plan.passes})
 
         record["outputs"] = [
-            {"type": of.type, "path": str(of.path)}
+            {"type": of.type,
+             "path": str(of.path if plan is None else plan.output_path(of))}
             for of in output_group.outputs
         ]
         return record

@@ -4,6 +4,7 @@ Concrete base class for passes. Subclass this to create new passes.
 """
 
 from __future__ import annotations
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -162,6 +163,25 @@ class BasePass:
         Default: accept.
         """
         return None
+
+    def output_path(self, file_type: str, path: Path) -> Path:
+        """Adjust a declared output path to what this pass's tool must produce.
+
+        Called at planning time for every output goal whose type this
+        pass produces, directly or through a terminal-type alias, before
+        the goal resource exists. Output goals carrying transform
+        suffixes are written by the conversion and never reach here.
+
+        Default: keep the declared path.
+
+        Args:
+            file_type: Output type as declared by the output group
+            path: Declared output path
+
+        Returns:
+            Path the output goal is created at.
+        """
+        return path
 
     def dispatchers(self, context: BuildContext) -> list[Dispatcher]:
         """Create dispatchers for executing this pass transformations

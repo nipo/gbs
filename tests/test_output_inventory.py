@@ -15,7 +15,11 @@ from gbs.suite.output_inventory import SuiteOutputInventory
 
 
 FakePass = namedtuple("FakePass", ["backend_name"])
-FakePlan = namedtuple("FakePlan", ["passes"])
+
+
+class FakePlan(namedtuple("FakePlan", ["passes"])):
+    def output_path(self, output):
+        return output.path
 
 
 @pytest.fixture

@@ -622,7 +622,7 @@ class PlanRealization:
         # written with any name in that family still matches whichever
         # producer name the picked backend chose.
         for output in self.plan.output_group.outputs:
-            output_path = output.path.resolve()
+            output_path = self.plan.output_path(output).resolve()
             output_resource = self.build_ctx.get_resource(
                 output_path,
                 file_type=output.type,

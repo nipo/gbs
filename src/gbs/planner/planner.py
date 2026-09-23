@@ -92,6 +92,37 @@ class BuildPlan(UIReporter):
         self.repositories = repositories
         self.types_with_library = types_with_library
 
+    def output_path(self, output: OutputFile) -> Path:
+        """Path an output goal is created at.
+
+        Every plan pass producing the output type, directly or through
+        a terminal-type alias, may adjust the declared path. Those
+        passes must agree on the result.
+
+        Raises:
+            PlanningError: If producing passes disagree on the path.
+        """
+        if strip_type_suffixes(output.type) != output.type:
+            return output.path
+
+        from ..build.type_aliases import sibling_aliases
+        types = {output.type} | sibling_aliases(output.type)
+
+        paths = {
+            pm.name: pm.pass_obj.output_path(output.type, output.path)
+            for pm in self.passes
+            if pm.output_types & types
+        }
+        distinct = set(paths.values())
+        if len(distinct) > 1:
+            raise PlanningError(
+                f"Passes disagree on the path of output {output}: "
+                + ", ".join(f"{name} -> {path}" for name, path in sorted(paths.items()))
+            )
+        if distinct:
+            return distinct.pop()
+        return output.path
+
     def __str__(self) -> str:
         return (
             f"BuildPlan("

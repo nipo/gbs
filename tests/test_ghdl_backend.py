@@ -129,3 +129,37 @@ def test_ghdl_simulate_pass_filter_vars_default():
     assert filter_vars["simulation_engine"].startswith("ghdl_")
     assert filter_vars["vhdl_frontend"].startswith("ghdl_")
     assert filter_vars["vhdl_std"] == "1993"
+
+
+class TestGhdlSimulatorOutputPath:
+    """Simulator output naming per platform and GHDL flavor"""
+
+    @staticmethod
+    def adjusted(monkeypatch, platform, flavor, name):
+        from gbs.builtin.ghdl import passes
+        monkeypatch.setattr(passes.sys, "platform", platform)
+        monkeypatch.setattr(passes._GhdlFlavorProbe, "flavor",
+                            classmethod(lambda cls, config, gbs_config: flavor))
+        return GHDLSimulatePass({}).output_path("simulator", Path("out") / name)
+
+    @pytest.mark.parametrize("flavor", ["mcode", "jit"])
+    def test_batch_flavor_appends_cmd(self, monkeypatch, flavor):
+        assert self.adjusted(monkeypatch, "win32", flavor, "sim") == Path("out/sim.cmd")
+
+    @pytest.mark.parametrize("name", ["sim.bat", "sim.cmd", "sim.CMD"])
+    def test_batch_suffix_kept(self, monkeypatch, name):
+        assert self.adjusted(monkeypatch, "win32", "mcode", name) == Path("out") / name
+
+    def test_batch_flavor_appends_to_other_suffix(self, monkeypatch):
+        assert self.adjusted(monkeypatch, "win32", "mcode", "sim.exe") == Path("out/sim.exe.cmd")
+
+    @pytest.mark.parametrize("flavor", ["gcc", "llvm"])
+    def test_native_flavor_appends_exe(self, monkeypatch, flavor):
+        assert self.adjusted(monkeypatch, "win32", flavor, "sim") == Path("out/sim.exe")
+
+    def test_native_suffix_kept(self, monkeypatch):
+        assert self.adjusted(monkeypatch, "win32", "llvm", "sim.EXE") == Path("out/sim.EXE")
+
+    @pytest.mark.parametrize("flavor", ["mcode", "llvm"])
+    def test_posix_unchanged(self, monkeypatch, flavor):
+        assert self.adjusted(monkeypatch, "linux", flavor, "sim") == Path("out/sim")

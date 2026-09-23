@@ -1,6 +1,8 @@
 """GHDL Pass definitions"""
 
 from __future__ import annotations
+import sys
+from pathlib import Path
 from typing import Any
 
 from ...base import BasePass
@@ -13,6 +15,9 @@ from .dispatcher import (
     detect_ghdl_backend,
 )
 from ...protocol import Dispatcher
+from ...logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class _GhdlFlavorProbe:
@@ -153,6 +158,32 @@ class GHDLSimulatePass(BasePass):
             "simulation_engine": engine,
             "vhdl_std": vhdl_std,
         }
+
+    # Windows only runs a batch script named .cmd/.bat and an executable
+    # named .exe. A shell invoking `sim` still finds `sim.cmd` or
+    # `sim.exe`, so projects keep a platform-neutral output name.
+    WINDOWS_RUNNABLE_SUFFIXES = {
+        "mcode": (".cmd", {".cmd", ".bat"}),
+        "jit": (".cmd", {".cmd", ".bat"}),
+        "gcc": (".exe", {".exe"}),
+        "llvm": (".exe", {".exe"}),
+    }
+
+    def output_path(self, file_type: str, path: Path) -> Path:
+        """Give the simulator a runnable extension on Windows.
+
+        mcode/jit emit a batch wrapper around ghdl -r, gcc/llvm a native
+        executable.
+        """
+        if sys.platform != "win32":
+            return path
+        flavor = _GhdlFlavorProbe.flavor(self.config, self.gbs_config)
+        appended, accepted = self.WINDOWS_RUNNABLE_SUFFIXES[flavor]
+        if path.suffix.lower() in accepted:
+            return path
+        adjusted = path.with_name(path.name + appended)
+        logger.debug(f"Simulator output {path} produced as {adjusted}")
+        return adjusted
 
     def dispatchers(self, context) -> list[Dispatcher]:
         """Create GHDL simulation dispatcher

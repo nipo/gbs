@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from .dispatcher import Dispatcher
     from ..build.context import BuildContext
     from ..config.model import GBSConfig
@@ -89,5 +90,11 @@ class Pass(Protocol):
         non-empty string drops it and is stored as the rejection
         reason for the plan-failure diagnostic. See BasePass.probe
         for what belongs in this check.
+        """
+        ...
+
+    def output_path(self, file_type: str, path: Path) -> Path:
+        """Adjust a declared output path to what this pass's tool must
+        produce. See BasePass.output_path.
         """
         ...
