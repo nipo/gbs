@@ -4,10 +4,13 @@ import asyncio
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
+from gbs.build.context import BuildContext
 from gbs.build.lock import FileLock
+from gbs.utils import clean_paths
 
 
 HOLDER_SCRIPT = """
@@ -179,6 +182,8 @@ async def test_cancelled_waiter_holds_nothing(lock_path, holders):
     await asyncio.to_thread(other.release)
 
 
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="A lock file in use cannot be deleted on Windows")
 async def test_lock_file_replaced_while_waiting(lock_path, holders):
     holder = holders(lock_path, exclusive=True)
     lock = FileLock(lock_path, exclusive=True, reporter=Reporter())
@@ -204,3 +209,27 @@ async def test_double_acquire_rejected(lock_path):
             await lock.acquire()
     with pytest.raises(RuntimeError):
         lock.release()
+
+
+async def test_clean_under_tree_locks_keeps_lock_files(tmp_path, monkeypatch, holders):
+    monkeypatch.chdir(tmp_path)
+    ctx = BuildContext(base_output_path=Path("gbs-build"))
+    ctx.output_path = Path("gbs-build") / "group"
+    for guarded in (ctx.output_path, ctx.shared_cache_root):
+        (guarded / "sub").mkdir(parents=True)
+        (guarded / "sub" / "artifact").write_text("x")
+    group_lock = Path("gbs-build") / "group.lock"
+
+    async with ctx.tree_locks(cache_exclusive=True):
+        other = holders(tmp_path / group_lock, exclusive=True, wait_locked=False)
+        clean_paths({ctx.output_path, ctx.shared_cache_root})
+        assert not ctx.output_path.exists()
+        assert not ctx.shared_cache_root.exists()
+        assert group_lock.exists()
+        assert (Path("gbs-build") / "cache.lock").exists()
+        locked = asyncio.create_task(asyncio.to_thread(other.wait_locked))
+        await asyncio.sleep(0.5)
+        assert not locked.done()
+
+    await asyncio.wait_for(locked, timeout=5)
+    await asyncio.to_thread(other.release)

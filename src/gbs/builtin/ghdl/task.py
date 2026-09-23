@@ -115,10 +115,6 @@ class Import(Task):
     def marker_path(self) -> Path:
         return self.workdir / self.MARKER_NAME
 
-    @property
-    def lock_path(self) -> Path:
-        return self.workdir.with_name(self.workdir.name + ".lock")
-
     def is_published(self) -> bool:
         """Whether the cache entry holds a complete analysis.
 
@@ -139,7 +135,7 @@ class Import(Task):
         return not self.is_published()
 
     async def work(self) -> None:
-        async with FileLock(self.lock_path, exclusive=True, reporter=self):
+        async with FileLock.beside(self.workdir, exclusive=True, reporter=self):
             if self.is_published():
                 self.info(f"{self.workdir} published by another run")
                 return

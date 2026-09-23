@@ -35,11 +35,16 @@ class FileLock:
     which the OS drops when its holder exits, so a crashed holder never
     leaves a stale lock.
 
-    Should the lock file be unlinked while a waiter is blocked on it
-    (e.g. the directory holding it gets wiped), the waiter would end up
-    holding a lock nobody else can see. After acquisition the open file
-    is therefore checked to still be the one at the path, and the
-    acquisition is retried on the new file otherwise.
+    A lock file sits beside the file or directory it guards, never
+    inside it, so wiping the guarded directory under the lock leaves
+    the lock file alone. gbs never deletes lock files; on Windows, a
+    lock file cannot even be deleted while any run has it open.
+
+    Should the lock file still be unlinked while a waiter is blocked on
+    it, the waiter would end up holding a lock nobody else can see.
+    After acquisition the open file is therefore checked to still be
+    the one at the path, and the acquisition is retried on the new file
+    otherwise.
     """
 
     POLL_INTERVAL = 0.1
@@ -57,6 +62,11 @@ class FileLock:
         self.exclusive = exclusive
         self.reporter = reporter or logger
         self.__fd: Optional[int] = None
+
+    @classmethod
+    def beside(cls, guarded: Path, exclusive: bool = True, reporter=None) -> FileLock:
+        """Lock guarding a file or directory, stored as its ``.lock`` sibling."""
+        return cls(guarded.with_name(guarded.name + ".lock"), exclusive, reporter)
 
     @property
     def mode(self) -> str:

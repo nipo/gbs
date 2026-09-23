@@ -1333,8 +1333,8 @@ class BuildContext(UIReporter):
         exclusively by anything deleting from it.
         """
         return LockSet([
-            FileLock(self.output_path / ".lock", exclusive=True, reporter=self),
-            FileLock(self.shared_cache_root / ".lock", exclusive=cache_exclusive, reporter=self),
+            FileLock.beside(self.output_path, exclusive=True, reporter=self),
+            FileLock.beside(self.shared_cache_root, exclusive=cache_exclusive, reporter=self),
         ])
 
     def to_clean(self) -> set(Path):

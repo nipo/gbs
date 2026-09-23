@@ -701,20 +701,15 @@ class SuiteExecutor(UIReporter):
         # Wipe the suite-shared cache root so subsequent builds start cold.
         # Per-project dispatchers don't own it (it lives outside their
         # base_output_path), so the suite executor cleans it itself.
-        # Builds hold the root lock shared while they use the cache; the
-        # lock file itself is kept so that runs waiting on it and runs
-        # starting after the wipe all contend on the same file.
+        # Builds hold the root lock shared while they use the cache.
         if self._suite_cache_root.exists():
             from contextlib import nullcontext
             from ..build.lock import FileLock
             from ..utils import clean_paths
-            lock_path = self._suite_cache_root / ".lock"
-            lock = nullcontext() if dry_run else FileLock(lock_path, exclusive=True, reporter=self)
+            lock = (nullcontext() if dry_run
+                    else FileLock.beside(self._suite_cache_root, exclusive=True, reporter=self))
             async with lock:
-                entries = {
-                    p for p in self._suite_cache_root.iterdir() if p != lock_path
-                }
-                clean_paths(entries, dry_run=dry_run, echo_func=click.echo)
+                clean_paths({self._suite_cache_root}, dry_run=dry_run, echo_func=click.echo)
 
         return results
 
