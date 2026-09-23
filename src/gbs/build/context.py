@@ -8,6 +8,7 @@ from ..ui import get_global_hub
 from ..ui.reporter import UIReporter
 from ..ui.messages import MessageSeverity, ToolMessage
 from .task import VirtualResource, Resource, Stamp
+from .lock import FileLock, LockSet
 import asyncio
 
 class BuildContext(UIReporter):
@@ -1323,6 +1324,19 @@ class BuildContext(UIReporter):
     def build(self):
         return ContextBuildManager(self)
 
+    def tree_locks(self, cache_exclusive: bool) -> LockSet:
+        """Locks guarding this context's part of the build tree.
+
+        The output group directory is locked exclusively, so concurrent
+        runs on the same group are serialized. The shared cache root is
+        locked shared by builds, which may all use it at once, and
+        exclusively by anything deleting from it.
+        """
+        return LockSet([
+            FileLock(self.output_path / ".lock", exclusive=True, reporter=self),
+            FileLock(self.shared_cache_root / ".lock", exclusive=cache_exclusive, reporter=self),
+        ])
+
     def to_clean(self) -> set(Path):
         from ..build.task import Task, Resource
         ret = set()
@@ -1336,9 +1350,14 @@ class BuildContext(UIReporter):
 class ContextBuildManager:
     def __init__(self, context):
         self.context = context
+        self.locks = context.tree_locks(cache_exclusive=False)
 
     async def __aenter__(self):
+        await self.locks.acquire()
         await self.context._launch()
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self.context._cleanup()
+        try:
+            await self.context._cleanup()
+        finally:
+            self.locks.release()

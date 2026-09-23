@@ -7,6 +7,7 @@ import sys
 import asyncio
 import asyncclick as click
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, AsyncIterable
 from dataclasses import dataclass, field
@@ -420,7 +421,12 @@ class Project(UIReporter):
 
         # Clean each realization by asking its dispatchers what to clean
         async for realization in self.realizations():
-            cleaned_paths = realization.clean(dry_run)
+            # Cleaning deletes this group's outputs and the shared cache
+            # entries it produced, so it waits for any run using either.
+            locks = (nullcontext() if dry_run
+                     else realization.build_ctx.tree_locks(cache_exclusive=True))
+            async with locks:
+                cleaned_paths = realization.clean(dry_run)
             all_cleaned_paths |= cleaned_paths
             
     async def show_graph(self, diagram_path: Optional[Path] = None):
