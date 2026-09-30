@@ -44,6 +44,7 @@ class PluginRegistry:
     def __init__(self):
         """Initialize empty plugin registry"""
         self._plugins: dict[str, Plugin] = {}  # name -> Plugin
+        self.__modules: dict[str, str] = {}  # plugin name -> module name
 
     def discover_plugins(self):
         """Discover and load all plugins
@@ -140,19 +141,25 @@ class PluginRegistry:
                 )
                 continue
 
-            self._register_plugin(plugin)
+            self._register_plugin(plugin, module_name)
 
-    def _register_plugin(self, plugin: Plugin):
+    def _register_plugin(self, plugin: Plugin, module_name: Optional[str] = None):
         """Register a plugin instance
 
         Args:
             plugin: Plugin instance to register
+            module_name: Module whose gbs_register() returned the
+                plugin, None for a plugin registered directly
         """
         # Check for duplicate names
         if plugin.name in self._plugins:
             logger.warning(f"Plugin {plugin.name} already registered, replacing")
 
         self._plugins[plugin.name] = plugin
+        if module_name is None:
+            self.__modules.pop(plugin.name, None)
+        else:
+            self.__modules[plugin.name] = module_name
         logger.info(f"Registered plugin: {plugin.name} v{plugin.version}")
 
     def get_plugin(self, name: str) -> Optional[Plugin]:
@@ -165,6 +172,15 @@ class PluginRegistry:
             Plugin instance or None if not found
         """
         return self._plugins.get(name)
+
+    def plugin_module(self, name: str) -> Optional[str]:
+        """Module a plugin was registered from
+
+        Returns:
+            Name of the module whose gbs_register() returned the
+            plugin, None if the plugin was registered directly
+        """
+        return self.__modules.get(name)
 
     def list_plugins(self) -> list[str]:
         """List all registered plugin names

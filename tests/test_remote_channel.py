@@ -10,7 +10,7 @@ from gbs.config.model import GBSConfig, ToolConfig
 from gbs.remote import (
     ChannelClosed, Frame, FrameChannel, FrameError, Identity, LocalToolHost,
     MethodError, Peer, RemoteError, RemoteHost, RemoteToolHost, Reply,
-    ToolDescription, HandshakeError, WireFormat,
+    SourceDigest, ToolDescription, HandshakeError, WireError, WireFormat,
 )
 
 
@@ -275,15 +275,59 @@ class TestPeer:
 
 class TestIdentity:
     def test_mismatch_lists_everything(self):
-        mine = Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"})
-        theirs = Identity(WireFormat.VERSION, "1.1", {"p": "1", "q": "3", "r": "1"})
+        mine = Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
+                        {"gbs": "aa", "p": "11", "q": "22"})
+        theirs = Identity(WireFormat.VERSION, "1.1", {"p": "1", "q": "3", "r": "1"},
+                          {"gbs": "ab", "p": "11", "q": "23", "r": "33"})
         with pytest.raises(HandshakeError) as e:
             mine.check(theirs, "local host", "srv")
         text = str(e.value)
         assert "gbs version: 1.0 on local host, 1.1 on srv" in text
         assert "plugin q: 2 on local host, 3 on srv" in text
         assert "plugin r: missing on local host, 1 on srv" in text
-        mine.check(Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"}), "a", "b")
+        assert "gbs sources: aa on local host, ab on srv" in text
+        assert "plugin q sources: 22 on local host, 23 on srv" in text
+        assert "plugin r sources: missing on local host, 33 on srv" in text
+        assert "plugin p sources" not in text
+        mine.check(Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
+                            {"gbs": "aa", "p": "11", "q": "22"}), "a", "b")
+
+    def test_json_round_trip(self):
+        local = Identity.local()
+        assert Identity.from_json(local.to_json()) == local
+        assert set(local.sources) == {"gbs"} | set(local.plugins)
+        bad = local.to_json()
+        bad["sources"] = {"gbs": 1}
+        with pytest.raises(WireError, match="gbs sources digest"):
+            Identity.from_json(bad)
+
+    def test_source_digest(self, tmp_path):
+        tree = tmp_path / "pkg"
+        (tree / "sub" / "__pycache__").mkdir(parents=True)
+        (tree / "a.py").write_text("a = 1\n")
+        (tree / "sub" / "b.py").write_text("b = 2\n")
+        (tree / "sub" / "__pycache__" / "c.py").write_text("ignored\n")
+        (tree / "data.txt").write_text("ignored\n")
+        digest = SourceDigest.tree([tree])
+        assert SourceDigest.tree([tree]) == digest
+
+        moved = tmp_path / "moved"
+        (moved / "sub").mkdir(parents=True)
+        (moved / "a.py").write_text("a = 1\n")
+        (moved / "sub" / "b.py").write_text("b = 2\n")
+        assert SourceDigest.tree([moved]) == digest
+
+        renamed = tmp_path / "renamed"
+        renamed.mkdir()
+        (renamed / "a.py").write_text("a = 1\n")
+        (renamed / "b.py").write_text("b = 2\n")
+        assert SourceDigest.tree([renamed]) != digest
+
+        changed = tmp_path / "changed"
+        (changed / "sub").mkdir(parents=True)
+        (changed / "a.py").write_text("a = 1\n")
+        (changed / "sub" / "b.py").write_text("b = 3\n")
+        assert SourceDigest.tree([changed]) != digest
 
     def test_protocol_checked_first(self):
         with pytest.raises(HandshakeError, match="Protocol version 999"):
@@ -313,7 +357,7 @@ class TestToolHost:
             for t in (ToolDescription("vivado", None, "2024.2"),
                       ToolDescription("quartus", "prime", None, "no licence"))
         ]
-        host = RemoteToolHost("srv", tools)
+        host = RemoteToolHost("srv", tools, None)
         assert host.tool_probe("vivado") is None
         assert host.tool_probe("quartus:prime") == "no licence"
         assert "not configured on srv" in host.tool_probe("diamond")

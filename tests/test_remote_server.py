@@ -61,6 +61,7 @@ def remote(tmp_path):
 
     Remote.env = env
     Remote.tmp = tmp_path
+    Remote.work = work
     return Remote
 
 
@@ -81,12 +82,32 @@ async def test_mismatch_refused(remote):
     local = Identity.local()
     plugins = dict(local.plugins)
     plugins["gbs.builtin.ghdl"] = "0.0.1"
-    fake = Identity(local.protocol, "0.0.0-fake", plugins)
+    fake = Identity(local.protocol, "0.0.0-fake", plugins, local.sources)
     with pytest.raises(RemoteHostError) as e:
         await remote.connect(identity=fake)
     text = str(e.value)
     assert f"gbs version: 0.0.0-fake on local host, {gbs.__version__} on test" in text
     assert f"plugin gbs.builtin.ghdl: 0.0.1 on local host, {local.plugins['gbs.builtin.ghdl']} on test" in text
+
+
+async def test_source_mismatch_refused(remote):
+    local = Identity.local()
+    sources = dict(local.sources)
+    sources["gbs"] = "0" * 64
+    sources["gbs.builtin.yosys"] = "1" * 64
+    fake = Identity(local.protocol, local.gbs, local.plugins, sources)
+    with pytest.raises(RemoteHostError) as e:
+        await remote.connect(identity=fake)
+    text = str(e.value)
+    assert f"gbs sources: {'0' * 64} on local host, {local.sources['gbs']} on test" in text
+    assert "plugin gbs.builtin.yosys sources: " in text
+    assert "gbs version" not in text
+
+
+async def test_serve_leaves_cwd_untouched(remote):
+    async with await remote.connect() as host:
+        await host.peer.request("blob.have", {"digests": []})
+    assert list(remote.work.iterdir()) == []
 
 
 async def test_server_refuses_before_and_after_bad_hello(remote):
@@ -96,7 +117,7 @@ async def test_server_refuses_before_and_after_bad_hello(remote):
         with pytest.raises(RemoteError) as e:
             await peer.request("blob.have", {"digests": []})
         assert e.value.type == "HandshakeRequired"
-        fake = Identity(WireFormat.VERSION, "0.0.0-fake", {})
+        fake = Identity(WireFormat.VERSION, "0.0.0-fake", {}, {})
         await peer.request("hello", fake.to_json())
         with pytest.raises(RemoteError) as e:
             await peer.request("blob.have", {"digests": []})
