@@ -91,6 +91,9 @@ class VivadoIpDispatcher(VivadoDispatcherBase):
         # business; claiming it would overwrite it.
         outputs = self.context.filter_pending(
             file_type=list(IP_TYPES), typology=ResourceTypology.OUTPUT)
+        for output in outputs:
+            if output.file_type == "vivado-ip-dir":
+                self.context.get_resource(output.path, directory=True)
 
         if not outputs:
             outputs = [self.context.get_resource(
