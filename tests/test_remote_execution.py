@@ -204,7 +204,7 @@ class RemoteBuild:
         self.remote_tmp = root / "remote" / "tmp"
         self.remote_tmp.mkdir()
 
-        local_home = root / "local"
+        self.local_home = local_home = root / "local"
         (local_home / ".config").mkdir(parents=True)
         (local_home / ".config" / "gbs.yaml").write_text(
             "tools:\n"
@@ -412,32 +412,32 @@ class PluginTrees:
 
 
 class TestPluginCompatibility:
-    async def test_local_generic_dispatchers_need_the_plugin_remotely(self, tmp_path):
+    async def test_local_generic_dispatchers_skipped_remotely(self, tmp_path):
         rt = RemoteBuild(tmp_path, local_plugins=(PLUGIN, EXTRA))
         code, out, err = await rt.build()
-        assert code == 1
-        assert ("Cannot dispatch rt-gen on fake:\n"
-                "  plugin gbs.plugin.remoteextra is not installed on fake: install or update it "
-                "on fake, or exclude its dispatchers with exclude_dispatchers: [rt-extra]") in out + err
-        assert not (rt.remote_cache / "gbs" / "remote-blobs").exists() \
-            or not any((rt.remote_cache / "gbs" / "remote-blobs").rglob("*"))
+        assert code == 0, out + err
+        assert ("rt-gen on fake: skipping dispatchers rt-extra: "
+                "plugin gbs.plugin.remoteextra is not installed on fake") in out + err
+        assert (rt.project / "report.txt").read_text() == f"home {rt.remote_home}\n"
+        assert (rt.local_home / "rt-extra-ran").exists()
+        assert not (rt.remote_home / "rt-extra-ran").exists()
 
-        rt.exclude("rt-extra")
+    async def test_remote_generic_dispatchers_skipped(self, tmp_path):
+        rt = RemoteBuild(tmp_path, remote_plugins=(PLUGIN, EXTRA))
         code, out, err = await rt.build()
         assert code == 0, out + err
         assert (rt.project / "report.txt").read_text() == f"home {rt.remote_home}\n"
+        assert not (rt.remote_home / "rt-extra-ran").exists()
 
-    async def test_remote_generic_dispatchers_need_the_plugin_locally(self, tmp_path):
-        rt = RemoteBuild(tmp_path, remote_plugins=(PLUGIN, EXTRA))
-        code, out, err = await rt.build()
-        assert code == 1
-        assert ("Cannot dispatch rt-gen on fake: plugin gbs.plugin.remoteextra is not installed "
-                "on client, but has generic dispatchers here; "
-                "exclude them with exclude_dispatchers: [rt-extra]") in out + err
-
-        rt.exclude("rt-extra")
+    async def test_generic_plugin_versions_differ(self, tmp_path):
+        rt = RemoteBuild(tmp_path, local_plugins=(PLUGIN, EXTRA),
+                         remote_plugins=(PLUGIN, PluginTrees.versioned(tmp_path)))
         code, out, err = await rt.build()
         assert code == 0, out + err
+        assert ("rt-gen on fake: skipping dispatchers rt-extra: "
+                "plugin gbs.plugin.remoteextra version 0.0.1 here, 0.0.2 on fake") in out + err
+        assert (rt.local_home / "rt-extra-ran").exists()
+        assert not (rt.remote_home / "rt-extra-ran").exists()
 
     async def test_backend_plugin_sources_differ(self, tmp_path):
         modified = PluginTrees.modified(tmp_path)
@@ -471,24 +471,26 @@ class TestPluginCompatibility:
         assert lines.index("tools:") > index
         assert "  rtgen" in lines
 
-    def test_segment_generic_dispatchers_checked_remotely(self):
+    def test_segment_generic_dispatchers_selected_remotely(self):
         mine = Identity(WireFormat.VERSION, "1.0", {"a": "1", "b": "1"}, {"gbs": "g", "a": "a", "b": "b"})
         theirs = Identity(WireFormat.VERSION, "1.0", {"a": "1", "c": "1"}, {"gbs": "g", "a": "a", "c": "c"})
         dispatcher = SimpleNamespace(name="d")
 
-        def check(expected, generic):
+        def select(listed, generic):
             run = SimpleNamespace(
-                descriptor=SimpleNamespace(generic_plugins=frozenset(expected)),
+                descriptor=SimpleNamespace(generic_plugins=frozenset(listed)),
                 compatibility=PluginCompatibility(mine, theirs, "client", True))
-            SegmentRun.generic_check(run, {name: [dispatcher] for name in generic})
+            return SegmentRun.generic_select(run, {name: [dispatcher] for name in generic})
 
-        check({"a"}, {"a"})
+        assert select({"a"}, {"a"}) == {"a": [dispatcher]}
+        assert select({"a"}, {"a", "b"}) == {"a": [dispatcher]}
+        assert select(set(), {"a"}) == {}
         with pytest.raises(MethodError) as e:
-            check({"a", "c"}, {"a"})
+            select({"a", "c"}, {"a"})
         assert e.value.type == "IncompatiblePlugin"
         assert str(e.value) == ("plugin c is not installed here, "
                                 "but client registers its generic dispatchers")
         with pytest.raises(MethodError) as e:
-            check({"a"}, {"a", "b"})
-        assert str(e.value) == ("plugin b is not installed on client, but has generic "
-                                "dispatchers here; exclude them with exclude_dispatchers: [d]")
+            select({"a", "b"}, {"a", "b"})
+        assert str(e.value) == ("plugin b is not installed on client, "
+                                "but client registers its generic dispatchers")

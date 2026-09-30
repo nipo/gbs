@@ -103,9 +103,10 @@ class RemoteServer:
         segment.dispatch: SegmentDescriptor -> SegmentDispatchReply:
             materialize the inputs of the descriptor manifest, and
             dispatch the segment in a directory of the workspace.
-            Passes of plugins incompatible with the client, and
-            generic dispatchers other than those of the plugins the
-            client lists, are refused with IncompatiblePlugin.
+            Passes of plugins incompatible with the client are
+            refused with IncompatiblePlugin, as are listed generic
+            plugins; generic dispatchers of plugins the client does
+            not list are skipped.
         segment.execute: {id, manifest} -> {manifest}: bring the
             segment inputs to the manifest, build, and answer with the
             content of the outputs, whose blobs are then in the store.

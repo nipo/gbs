@@ -193,11 +193,12 @@ class SegmentRun:
         if problems:
             raise MethodError("IncompatiblePlugin", "; ".join(problems))
 
-    def generic_check(self, generic: dict[str, list]) -> None:
-        """Refuse generic dispatchers differing from the client's
+    def generic_select(self, generic: dict[str, list]) -> dict[str, list]:
+        """Generic dispatchers of the plugins the client lists
 
-        The plugins whose generic dispatchers are registered here must
-        be those the client registers, and be compatible with it.
+        Those of other plugins do not run in the client build, so they
+        are skipped. A listed plugin must be compatible with the
+        client, which never lists another one.
 
         Args:
             generic: Generic dispatchers of this host, by plugin name
@@ -205,23 +206,18 @@ class SegmentRun:
         Raises:
             MethodError: IncompatiblePlugin
         """
-        expected = self.descriptor.generic_plugins
-        problems = []
-        for plugin in sorted(set(generic) | expected):
-            if plugin not in expected:
-                names = ", ".join(d.name for d in generic[plugin])
-                reason = self.compatibility.problem(plugin) or f"plugin {plugin} is not active on client"
-                problems.append(f"{reason}, but has generic dispatchers here; "
-                                f"exclude them with exclude_dispatchers: [{names}]")
-            elif plugin not in generic:
-                reason = self.compatibility.problem(plugin) or f"plugin {plugin} is not active here"
-                problems.append(f"{reason}, but client registers its generic dispatchers")
-            else:
-                reason = self.compatibility.problem(plugin)
-                if reason is not None:
-                    problems.append(f"{reason}; its generic dispatchers are registered on both hosts")
+        listed = self.descriptor.generic_plugins
+        problems = [
+            f"{problem}, but client registers its generic dispatchers"
+            for plugin in sorted(listed)
+            if (problem := self.compatibility.problem(plugin)) is not None
+        ]
         if problems:
             raise MethodError("IncompatiblePlugin", "; ".join(problems))
+        for plugin in sorted(set(generic) - listed):
+            names = ", ".join(d.name for d in generic[plugin])
+            logger.info(f"Skipping generic dispatchers {names}: client does not use plugin {plugin}")
+        return {plugin: dispatchers for plugin, dispatchers in generic.items() if plugin in listed}
 
     async def dispatch(self) -> SegmentDispatchReply:
         """Check plugins, materialize the inputs sent along, then
@@ -233,9 +229,9 @@ class SegmentRun:
         on the client.
 
         Raises:
-            MethodError: IncompatiblePlugin, if the segment would
-                involve plugins incompatible with the client, or
-                generic dispatchers differing from the client's.
+            MethodError: IncompatiblePlugin, if the segment passes
+                or the generic dispatchers the client lists belong to
+                plugins incompatible with the client.
         """
         from ..project.project import PlanRealization
 
@@ -258,8 +254,7 @@ class SegmentRun:
             topcell_library=descriptor.output_group.topcell_library,
             output_group=output_group,
         )
-        generic = PlanRealization.generic_dispatchers_of(context, output_group)
-        self.generic_check(generic)
+        generic = self.generic_select(PlanRealization.generic_dispatchers_of(context, output_group))
 
         if descriptor.manifest is not None:
             await asyncio.to_thread(self.materialize, descriptor.manifest)

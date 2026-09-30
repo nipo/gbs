@@ -299,9 +299,10 @@ class RemoteSegmentDispatcher(BaseDispatcher):
     - output goals of the segment output types that no other pass
       produces.
 
-    The plugins of the segment passes, and those whose generic
-    dispatchers are registered locally, must be compatible with the
-    host, which registers the generic dispatchers of the same plugins.
+    The plugins of the segment passes must be compatible with the
+    host. The generic dispatchers registered locally run in the
+    segment too, those of plugins incompatible with the host excepted:
+    they are skipped with a warning.
 
     The remote dispatches the segment and answers with what it
     produces: the goals, and resources of the types other passes
@@ -374,9 +375,9 @@ class RemoteSegmentDispatcher(BaseDispatcher):
 
         host = self.realization.project.remote_host(self.segment.host)
         what = f"{', '.join(pm.name for pm in self.segment.passes)} on {host.name}"
-        generic = self.realization.generic_dispatchers
         try:
-            await self.plugins_check(host, what, generic)
+            await self.passes_check(host, what)
+            generic = await self.generic_select(host, what)
             table = RootTable.from_realization(self.realization)
             inputs = self.inputs_select()
             definitions, local = self.definitions_select(table)
@@ -416,39 +417,55 @@ class RemoteSegmentDispatcher(BaseDispatcher):
         self.task = task
         self.known = {r.path for r in transferred} | {table.path_of(d.location) for d in outputs}
 
-    async def plugins_check(self, host: Any, what: str, generic: dict[str, list[str]]) -> None:
-        """Refuse a segment involving plugins incompatible with its host
+    async def passes_check(self, host: Any, what: str) -> None:
+        """Refuse a segment whose passes belong to plugins incompatible
+        with its host
 
         Args:
             host: RemoteHost the segment runs on
             what: The segment, for messages
-            generic: Names of the generic dispatchers registered
-                locally, by plugin
 
         Raises:
-            ConfigurationError: Naming each incompatible plugin, why,
-                and what to do about it.
+            ConfigurationError: Naming each incompatible plugin and why.
         """
         registry = get_plugin_registry()
-        remedies: dict[str, str] = {}
+        plugins = set()
         for pm in self.segment.passes:
             plugin = registry.backend_plugin(pm.backend_name)
             if plugin is None:
                 raise ConfigurationError(
                     f"Cannot dispatch {what}: backend {pm.backend_name} belongs to no plugin here")
-            remedies[plugin] = f"install or update it on {host.name}"
-        for plugin, names in generic.items():
-            remedies.setdefault(plugin, (
-                f"install or update it on {host.name}, or exclude its dispatchers "
-                f"with exclude_dispatchers: [{', '.join(names)}]"))
+            plugins.add(plugin)
         lines = []
-        for plugin in sorted(remedies):
+        for plugin in sorted(plugins):
             problem = await host.plugin_problem(plugin)
             if problem:
-                lines.append(f"  {problem[0]}: {remedies[plugin]}")
+                lines.append(f"  {problem[0]}: install or update it on {host.name}")
                 lines.extend(f"    {line}" for line in problem[1:])
         if lines:
             raise ConfigurationError(f"Cannot dispatch {what}:\n" + "\n".join(lines))
+
+    async def generic_select(self, host: Any, what: str) -> list[str]:
+        """Plugins whose generic dispatchers run in the segment
+
+        Those of the plugins with generic dispatchers registered
+        locally that are compatible with the host. The others are
+        warned about.
+
+        Args:
+            host: RemoteHost the segment runs on
+            what: The segment, for messages
+        """
+        selected = []
+        for plugin, names in sorted(self.realization.generic_dispatchers.items()):
+            problem = await host.plugin_problem(plugin)
+            if not problem:
+                selected.append(plugin)
+                continue
+            self.warning("\n".join(
+                [f"{what}: skipping dispatchers {', '.join(names)}: {problem[0]}"]
+                + [f"  {line}" for line in problem[1:]]))
+        return selected
 
     @staticmethod
     def present(table: RootTable, descriptor: ResourceDescriptor) -> bool:

@@ -237,9 +237,9 @@ class SegmentDescriptor:
         goals: Resources the segment must produce
         exported_types: File types of the resources the segment
             produces that passes of other segments consume
-        generic_plugins: Plugins whose generic dispatchers the client
-            registers for the output group; the segment must register
-            those of the same plugins
+        generic_plugins: Plugins whose generic dispatchers run in the
+            segment: those the client registers for the output group,
+            of plugins compatible with the host
         manifest: Content of the inputs, None until it is computed
             (inputs produced by earlier passes may not exist when the
             segment is described)
@@ -300,8 +300,8 @@ class SegmentDescriptor:
             manifest: Content of the inputs, if already computed
             exported_types: Types of the produced resources other
                 segments consume
-            generic_plugins: Plugins whose generic dispatchers the
-                realization registers
+            generic_plugins: Plugins whose generic dispatchers run in
+                the segment
         """
         plan = realization.plan
         ctx = realization.build_ctx

@@ -360,8 +360,8 @@ class PluginCompatibility:
     A plugin is compatible when it is installed on both sides with the
     same version and, when sources are checked, the same source digest.
     A plugin that is not is left out of what the other side does for
-    this one: its backends contribute no pass there, and a segment
-    whose dispatch would involve it is refused.
+    this one: its backends contribute no pass there, and its generic
+    dispatchers are skipped in segments dispatched there.
 
     Attributes:
         mine: Identity of this side
