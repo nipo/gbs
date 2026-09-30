@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ..logging import setup_logging, get_logger, get_log_file
-from ..config.model import GBSConfig
+from ..config.model import ConfigError, GBSConfig
 from ..ui import FeedbackHub, SimpleBackend, set_global_hub
 from ..ui.messages import MessageSeverity, LogLevel
 from .group import ReMatchGroup
@@ -197,7 +197,10 @@ async def cli(
 
     # Load GBS configuration
     logger.debug("Loading GBS configuration...")
-    gbs_config = GBSConfig.load()
+    try:
+        gbs_config = GBSConfig.load()
+    except ConfigError as e:
+        raise click.ClickException(str(e)) from e
 
     # Cleanup old logs based on config (0 = keep all)
     max_log_count = gbs_config.max_log_count if gbs_config.max_log_count is not None else DEFAULT_MAX_LOG_COUNT

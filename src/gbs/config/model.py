@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+import shlex
 import yaml
 
 from ..logging import get_logger
@@ -95,6 +96,11 @@ class ToolchainSpec:
         return self.type
 
 
+class ConfigError(Exception):
+    """A configuration file is invalid"""
+    pass
+
+
 @dataclass
 class RemoteHostConfig:
     """A `remote_hosts:` config entry: how to reach a remote gbs
@@ -102,12 +108,14 @@ class RemoteHostConfig:
     Attributes:
         name: Name the host is selected by
         ssh: ssh arguments, including the destination
-        command: Command line of gbs on the remote host
+        command: Shell command line running gbs on the remote host,
+            interpreted by the remote shell, so `~` and variables
+            expand there
         origin: Config file this entry was declared in
     """
     name: str
     ssh: list[str]
-    command: list[str] = field(default_factory=lambda: ["gbs"])
+    command: str = "gbs"
     origin: Optional[Path] = None
 
 
@@ -458,39 +466,44 @@ class GBSConfig:
     def _parse_remote_hosts(path: Path, data: Any) -> dict[str, RemoteHostConfig]:
         """Parse `remote_hosts:`, a mapping of host name to ssh and command
 
-        Integers in argument lists are taken as strings, so a port
-        number needs no quoting.
+        `ssh` is a destination, or a list of ssh arguments including
+        the destination; integers in the list are taken as strings, so
+        a port number needs no quoting. `command` is a remote shell
+        command line, or a list of arguments quoted for that shell.
+
+        Raises:
+            ConfigError: If an entry is invalid. A host silently left
+                out would only show up as an unknown ssh destination.
         """
         if not isinstance(data, dict):
-            logger.warning(f"remote_hosts must be a mapping in {path}, ignoring")
-            return {}
+            raise ConfigError(f"{path}: remote_hosts must be a mapping")
 
-        def argv(name, key, value):
-            if (not isinstance(value, list) or not value
-                    or not all(isinstance(a, (str, int)) and not isinstance(a, bool) for a in value)):
-                logger.warning(
-                    f"remote_hosts {name!r} {key} must be a non-empty list of "
-                    f"strings in {path}, ignoring host"
-                )
-                return None
-            return [str(a) for a in value]
+        def invalid(name, message):
+            return ConfigError(f"{path}: remote_hosts {name!r}: {message}")
+
+        def words(name, key, value) -> list[str]:
+            if isinstance(value, str) and value:
+                return [value]
+            if (isinstance(value, list) and value
+                    and all(isinstance(a, (str, int)) and not isinstance(a, bool) for a in value)):
+                return [str(a) for a in value]
+            raise invalid(name, f"{key} must be a string or a non-empty list of strings")
 
         hosts = {}
         for name, spec in data.items():
             if not isinstance(name, str) or not isinstance(spec, dict):
-                logger.warning(f"Invalid remote_hosts entry {name!r} in {path}, skipping")
-                continue
+                raise invalid(name, "must be a mapping with 'ssh' and optionally 'command'")
             unknown = set(spec) - {'ssh', 'command'}
-            if unknown or 'ssh' not in spec:
-                logger.warning(
-                    f"remote_hosts {name!r} in {path} must have 'ssh' and "
-                    f"optionally 'command', skipping"
-                )
-                continue
-            ssh = argv(name, 'ssh', spec['ssh'])
-            command = argv(name, 'command', spec.get('command', ['gbs']))
-            if ssh is None or command is None:
-                continue
+            if unknown:
+                raise invalid(name, f"unknown keys {', '.join(sorted(map(str, unknown)))}")
+            if 'ssh' not in spec:
+                raise invalid(name, "missing 'ssh'")
+            ssh = words(name, 'ssh', spec['ssh'])
+            command = spec.get('command', 'gbs')
+            if not isinstance(command, str):
+                command = shlex.join(words(name, 'command', command))
+            elif not command.strip():
+                raise invalid(name, "command is empty")
             hosts[name] = RemoteHostConfig(name, ssh, command, origin=path.resolve())
         return hosts
 

@@ -71,7 +71,7 @@ class RemoteHost:
         host = None if gbs_config is None else gbs_config.remote_hosts.get(destination)
         if host is None:
             host = RemoteHostConfig(destination, [destination])
-        remote = shlex.join(host.command + cls.SERVE_ARGS + (["--keep"] if keep else []))
+        remote = host.command + " " + shlex.join(cls.SERVE_ARGS + (["--keep"] if keep else []))
         return host.name, ["ssh", "-T", *host.ssh, "--", remote]
 
     @classmethod

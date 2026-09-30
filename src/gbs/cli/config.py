@@ -91,7 +91,7 @@ async def dump(ctx):
             origin = f"  # from {host.origin}" if host.origin else ""
             lines.append(f"  {host.name}:{origin}")
             lines.append(f"    ssh: {host.ssh}")
-            lines.append(f"    command: {host.command}")
+            lines.append(f"    command: {host.command!r}")
 
     click.echo('\n'.join(lines))
 

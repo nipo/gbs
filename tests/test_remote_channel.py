@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from gbs.config.model import GBSConfig, ToolConfig
+from gbs.config.model import ConfigError, GBSConfig, ToolConfig
 from gbs.remote import (
     ChannelClosed, Frame, FrameChannel, FrameError, Identity, LocalToolHost,
     MethodError, Peer, RemoteError, RemoteHost, RemoteToolHost, Reply,
@@ -371,11 +371,12 @@ class TestRemoteHostConfig:
             "  buildsrv:\n"
             "    ssh: [user@buildsrv, -p, 2222]\n"
             "    command: [/opt/gbs env/bin/gbs, -v]\n"
-            "  bad:\n"
-            "    command: [gbs]\n"
+            "  shellsrv:\n"
+            "    ssh: shellsrv.example\n"
+            "    command: PATH=~/.local/bin:$PATH gbs\n"
         )
         config = GBSConfig._parse_config_file(path)
-        assert list(config.remote_hosts) == ["buildsrv"]
+        assert list(config.remote_hosts) == ["buildsrv", "shellsrv"]
         host = config.remote_hosts["buildsrv"]
         assert host.ssh == ["user@buildsrv", "-p", "2222"]
 
@@ -383,6 +384,9 @@ class TestRemoteHostConfig:
         assert name == "buildsrv"
         assert argv == ["ssh", "-T", "user@buildsrv", "-p", "2222", "--",
                         "'/opt/gbs env/bin/gbs' -v remote serve --stdio"]
+        name, argv = RemoteHost.ssh_argv("shellsrv", config)
+        assert argv == ["ssh", "-T", "shellsrv.example", "--",
+                        "PATH=~/.local/bin:$PATH gbs remote serve --stdio"]
         name, argv = RemoteHost.ssh_argv("other.example", config)
         assert name == "other.example"
         assert argv == ["ssh", "-T", "other.example", "--", "gbs remote serve --stdio"]
@@ -395,3 +399,17 @@ class TestRemoteHostConfig:
         merged = GBSConfig._merge_configs(
             GBSConfig._parse_config_file(base), GBSConfig._parse_config_file(top))
         assert {n: h.ssh for n, h in merged.remote_hosts.items()} == {"x": ["c"], "y": ["b"]}
+
+    @pytest.mark.parametrize("entry, message", [
+        ("x: {command: gbs}", "missing 'ssh'"),
+        ("x: {ssh: a, cmd: gbs}", "unknown keys cmd"),
+        ("x: {ssh: [], command: gbs}", "ssh must be"),
+        ("x: {ssh: a, command: {a: b}}", "command must be"),
+        ("x: {ssh: a, command: ' '}", "command is empty"),
+        ("x: [a]", "must be a mapping"),
+    ])
+    def test_invalid_entry_is_an_error(self, tmp_path, entry, message):
+        path = tmp_path / "gbs.yaml"
+        path.write_text(f"remote_hosts: {{{entry}}}\n")
+        with pytest.raises(ConfigError, match=message):
+            GBSConfig._parse_config_file(path)
