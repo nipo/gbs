@@ -169,6 +169,11 @@ class BuildContext(UIReporter):
         return self._semaphore
 
     @property
+    def base_output_path(self) -> Path:
+        """Directory under which every output group of the build writes."""
+        return self._base_output_path
+
+    @property
     def shared_cache_root(self) -> Path:
         """Root for content-addressed artifacts shared via the resource registry."""
         return self._shared_cache_root
