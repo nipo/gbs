@@ -95,3 +95,29 @@ async def test_pnr_report_is_read_from_the_declared_report_directory(tmp_path):
     await aggregate.work()
 
     assert "resource usage" in dest.path.read_text()
+
+
+class TestGowinPassDevice:
+    PART = "GW5AT-LV60PG484AC1/I0"
+
+    @classmethod
+    def gowin_pass(cls, tmp_path, part):
+        from gbs.builtin.gowin.passes import GowinSynthesizePass
+        from gbs.config.model import GBSConfig, ToolConfig
+        device_dir = tmp_path / "IDE" / "data" / "device"
+        device_dir.mkdir(parents=True)
+        (device_dir / "device_info.csv").write_text(
+            f"GW5AT-LV60PG484A,{cls.PART},x,GW5AT-60,x,B,PBGA484A,LV,C1/I0\n")
+        gbs_config = GBSConfig(tools=[ToolConfig(name="gowin", config={"path": str(tmp_path)})])
+        return GowinSynthesizePass({"target": {"part": part}}, gbs_config=gbs_config)
+
+    def test_device_resolved_without_probe(self, tmp_path):
+        pass_obj = self.gowin_pass(tmp_path, self.PART + "#B")
+        dispatcher, = pass_obj.dispatchers(SimpleNamespace())
+        assert dispatcher.device_info.family == "GW5AT-60"
+        assert pass_obj.probe() is None
+
+    def test_rejected_part_reported_by_probe(self, tmp_path):
+        pass_obj = self.gowin_pass(tmp_path, "GW1N-LV1QN48C6/I5")
+        assert pass_obj.device_info is None
+        assert "rejected part" in pass_obj.probe()

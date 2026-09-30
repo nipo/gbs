@@ -54,6 +54,17 @@ class GowinSynthesizePass(BasePass):
                 from ...utils import expand_path
                 self.gowin_path = expand_path(_tool_config.config["path"])
 
+        # Resolved at construction, so a pass re-created without being
+        # probed is as complete as a probed one. A part Gowin's device
+        # CSV rejects is reported by probe().
+        self.__device_error = None
+        if (self.device or "").lower().startswith("gw") and self.gowin_path is not None:
+            from .device_info import get_device_info
+            try:
+                self.device_info = get_device_info(self.gowin_path, self.device)
+            except ValueError as e:
+                self.__device_error = str(e)
+
     def probe(self) -> str | None:
         part = (self.device or "").lower()
         if not part.startswith("gw"):
@@ -75,17 +86,11 @@ class GowinSynthesizePass(BasePass):
                 f"registered `gowin` refers to a different binary "
                 f"(e.g. gowin_pack)."
             )
-        # Resolve the device now that we know the target really is a
-        # Gowin part and the IDE install root is known. If Gowin's own
-        # device CSV rejects the string, surface that as a probe
-        # rejection so the plan-failure diagnostic can list us
-        # alongside every other backend's reason instead of crashing
-        # the whole planner.
-        from .device_info import get_device_info
-        try:
-            self.device_info = get_device_info(self.gowin_path, self.device)
-        except ValueError as e:
-            return f"Gowin device CSV rejected part {self.device!r}: {e}"
+        # A part Gowin's own device CSV rejects is a probe rejection, so
+        # the plan-failure diagnostic lists it alongside every other
+        # backend's reason instead of crashing the whole planner.
+        if self.__device_error is not None:
+            return f"Gowin device CSV rejected part {self.device!r}: {self.__device_error}"
         return None
 
     def filter_vars(self) -> dict[str, Any]:
