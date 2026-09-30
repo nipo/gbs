@@ -1,7 +1,7 @@
  library ieee;
 use ieee.std_logic_1164.all;
 
-library nsl_hwdep;
+library nsl_clocking;
 
 entity clock_internal is
   port(

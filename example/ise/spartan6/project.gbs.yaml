@@ -10,7 +10,7 @@ root:
       files:
         - led.ucf
   deps:
-    - nsl_hwdep.clock
+    - nsl_clocking.oscillator
 
 output:
   - name: synthesis
