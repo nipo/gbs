@@ -354,8 +354,21 @@ class BuildPlanner(UIReporter):
                              output_group: OutputGroup,
                              source_types: set(str),
                              partial_plan: PartialPlan) -> list[PartialPlan]:
-        if not (source_types - partial_plan.acceptable):
+        """Enumerate chains extending partial_plan back to the sources.
+
+        A chain is only complete once it both consumes every source
+        type and produces every requested output. Consuming the sources
+        alone is not enough: an output group may request outputs made by
+        unrelated passes, and stopping at the first one would leave the
+        others without a producer.
+        """
+        if self._plan_complete(source_types, partial_plan):
             return [partial_plan]
+
+        # Once the sources are consumed, the only reason to extend the
+        # chain is a missing output. Passes that do not make one would
+        # only add redundant chains for plan() to prune.
+        sources_covered = not (source_types - partial_plan.acceptable)
 
         self.debug(
             f"{' '*len(partial_plan.passes)} to go: {partial_plan.required}/{partial_plan.acceptable} with {partial_plan.passes}"
@@ -380,6 +393,10 @@ class BuildPlanner(UIReporter):
                 self.debug(f"{' '*len(partial_plan.passes)} does not fit {p}")
                 continue
 
+            if sources_covered and not (p.output_types & partial_plan.required):
+                self.debug(f"{' '*len(partial_plan.passes)} produces no missing output {p}")
+                continue
+
             # Calculate the new set of types we can accept
             # - Remove what this pass produces from required
             # - Add what this pass accepts as acceptable
@@ -392,7 +409,7 @@ class BuildPlanner(UIReporter):
                             required = required,
                             passes = partial_plan.passes + [p])
             for sub in self._progress_to_sources(output_group, source_types, n):
-                if ((source_types & sub.acceptable) == source_types
+                if (self._plan_complete(source_types, sub)
                         or self._partial_plan_acceptable(source_types, sub)):
                     ret.append(sub)
 
@@ -405,12 +422,23 @@ class BuildPlanner(UIReporter):
 
         return ret
 
+    @staticmethod
+    def _plan_complete(source_types: set, plan: PartialPlan) -> bool:
+        """Whether a chain consumes every source type and yields every
+        requested output.
+
+        A requested output of a source type needs no producer: it is
+        copied from the sources.
+        """
+        return (not (source_types - plan.acceptable)
+                and not (plan.required - source_types))
+
     def _partial_plan_acceptable(self, source_types: set, plan: PartialPlan) -> bool:
         """Whether a chain leaving some source types unconsumed will do.
 
         Only in partial coverage mode, and only for a chain that:
 
-        - produces every requested output,
+        - produces every requested output not copied from the sources,
         - consumes at least one type the repositories provide — a chain
           reading nothing validates nothing,
         - and gives every one of its passes something to read, either
@@ -420,7 +448,7 @@ class BuildPlanner(UIReporter):
         """
         if not self.partial_source_coverage:
             return False
-        if plan.required or not plan.passes:
+        if (plan.required - source_types) or not plan.passes:
             return False
         if not (source_types & plan.acceptable):
             return False
