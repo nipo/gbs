@@ -146,9 +146,14 @@ class QsysGenerate(Task):
     than in the .qsys itself — qsys-generate looks for these at
     ip/<system_name>/<system_name>_<instance>.ip, resolved relative to
     the .qsys file it's generating, and silently skips generating an
-    implementation for any instance whose .ip file it can't find. So an
-    ip/<system_name>/ directory next to the source .qsys, if present, is
-    staged alongside the copy too.
+    implementation for any instance whose .ip file it can't find. So the
+    ip/<system_name>/ directory input, if any, is staged alongside the
+    copy too.
+
+    Besides the .qip, the system directory holding it and the directory
+    of broken out IP cores, ip/<system_name>/ beside it, are outputs.
+    The latter only exists when the system has such cores; it is created
+    empty otherwise so that the declared output always exists.
 
     Without an associated project, qsys-generate warns "Quartus project
     not specified" on every run — left as-is (not worth the coordination
@@ -187,15 +192,12 @@ class QsysGenerate(Task):
         staged_qsys.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(qsys_input.path, staged_qsys)
 
-        # Stage any Generic Component .ip files (ip/<system_name>/) that
-        # sit next to the source .qsys, so qsys-generate can find them
-        # relative to the staged copy in the same layout.
-        system_name = qsys_input.path.stem
-        source_ip_dir = qsys_input.path.parent / "ip" / system_name
-        if source_ip_dir.is_dir():
-            staged_ip_dir = staged_qsys.parent / "ip" / system_name
-            shutil.copytree(source_ip_dir, staged_ip_dir, dirs_exist_ok=True)
-            self.info(f"Staged Generic Component .ip files from {source_ip_dir}")
+        # Stage the Generic Component .ip files so qsys-generate can find
+        # them relative to the staged copy in the same layout.
+        generated_ip_dir, = self.outputs_of_type("quartus-qsys-generated-ip-dir")
+        for source_ip_dir in self.inputs_of_type("quartus-qsys-ip-dir"):
+            shutil.copytree(source_ip_dir.path, generated_ip_dir.path, dirs_exist_ok=True)
+            self.info(f"Staged Generic Component .ip files from {source_ip_dir.path}")
 
         cmd = [
             str(resolve_tool_exe(self.qsys_bin / "qsys-generate")),
@@ -219,6 +221,8 @@ class QsysGenerate(Task):
                 tool="qsys-generate",
                 message=f"qsys-generate failed with return code {process.returncode}",
             )
+
+        generated_ip_dir.path.mkdir(parents=True, exist_ok=True)
 
         self.info("qsys-generate complete")
 
@@ -288,9 +292,8 @@ class QsysScript(Task):
         # any system's ip/ subfolder, not just their own — so stage the
         # whole ip/ tree next to the source script, not just one system's
         # slice of it.
-        source_ip_dir = script_input.path.parent / "ip"
-        if source_ip_dir.is_dir():
-            shutil.copytree(source_ip_dir, staging_dir / "ip")
+        for source_ip_tree in self.inputs_of_type("quartus-qsys-ip-tree"):
+            shutil.copytree(source_ip_tree.path, staging_dir / "ip")
 
         cmd = [
             str(resolve_tool_exe(self.qsys_bin / "qsys-script")),
@@ -422,13 +425,12 @@ class ProjectSetup(Task):
                     # registers those with a Quartus project automatically
                     # when given one via --quartus-project, which GBS
                     # doesn't do, so they need their own QIP_FILE
-                    # assignments here too.
-                    nested_ip_dir = rsrc.path.parent.parent / "ip" / rsrc.path.parent.name
-                    if nested_ip_dir.is_dir():
-                        for nested_qip in sorted(nested_ip_dir.rglob("*.qip")):
-                            lines.append(
-                                f'set_global_assignment -name QIP_FILE {nested_qip}'
-                            )
+                    # assignments here too. Their names are only known once
+                    # the system is generated.
+                    for nested_qip in self.nested_qips(rsrc):
+                        lines.append(
+                            f'set_global_assignment -name QIP_FILE {nested_qip}'
+                        )
 
         # Append pin assignment fragments verbatim
         for rsrc in self.inputs:
@@ -441,6 +443,14 @@ class ProjectSetup(Task):
         qsf_path.write_text('\n'.join(lines) + '\n')
 
         self.info(f"Generated {qpf_path.name} and {qsf_path.name}")
+
+    def nested_qips(self, qip: Resource) -> list[Path]:
+        """.qip files of the IP cores broken out of a generated system"""
+        nested_ip_dir = qip.path.parent.parent / "ip" / qip.path.parent.name
+        for rsrc in self.inputs_of_type("quartus-qsys-generated-ip-dir"):
+            if rsrc.path == nested_ip_dir:
+                return sorted(nested_ip_dir.rglob("*.qip"))
+        return []
 
 
 class QuartusMap(QuartusTask):

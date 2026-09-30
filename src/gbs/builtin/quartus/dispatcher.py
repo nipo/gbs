@@ -61,6 +61,8 @@ class QuartusDispatcher(BaseDispatcher):
         self._sta_task = None
         self._qsys_qip = {}
         self._qsys_scripts = {}
+        self.__qsys_generated_dirs = []
+        self.__staged_ip_dirs: dict[Path, Resource] = {}
         self._project_export_paths = set()
 
     def _get_quartus_bin(self) -> Path:
@@ -130,11 +132,15 @@ class QuartusDispatcher(BaseDispatcher):
                        + project setup (lists paths in QSF, consume=False)
         - Pin assignments → project setup (appended verbatim into QSF)
         - SDC constraints → project setup (path listed in QSF, consume=False)
-                           + quartus_sta (reads actual content, consume=False)
+                           + quartus_map/fit/sta (read actual content, consume=False)
         - Qsys systems → qsys_generate (produces a .qip)
                        → project setup (.qip path listed in QSF, consume=False)
+                       + quartus_map (reads the .qip, consume=False)
         - Qsys scripts → qsys_script (produces a .qsys)
                        → qsys_generate → project setup (as above)
+        - Qsys generated directories → project setup (nested .qip files
+                       listed in QSF, consume=False)
+                       + quartus_map (reads the generated HDL)
 
         _map_task/_sta_task are None when only quartus-project was
         requested (no synthesis pipeline was built) — sources still get
@@ -143,6 +149,7 @@ class QuartusDispatcher(BaseDispatcher):
         """
         existing_map = {r.path for r in self._map_task.inputs} if self._map_task else set()
         existing_setup = {r.path for r in self._setup_task.inputs}
+        existing_fit = {r.path for r in self._fit_task.inputs} if self._fit_task else set()
         existing_sta = {r.path for r in self._sta_task.inputs} if self._sta_task else set()
 
         for resource in self.context.filter_pending(file_type=["vhdl", "verilog"]):
@@ -158,6 +165,10 @@ class QuartusDispatcher(BaseDispatcher):
         for resource in self.context.filter_pending(file_type=["quartus-sdc"]):
             if resource.path not in existing_setup:
                 self._setup_task.add_input(resource, consume=False)
+            if self._map_task and resource.path not in existing_map:
+                self._map_task.add_input(resource, consume=False)
+            if self._fit_task and resource.path not in existing_fit:
+                self._fit_task.add_input(resource, consume=False)
             if self._sta_task and resource.path not in existing_sta:
                 self._sta_task.add_input(resource, consume=False)
 
@@ -174,6 +185,14 @@ class QuartusDispatcher(BaseDispatcher):
         for qip_resource in self._qsys_qip.values():
             if qip_resource.path not in existing_setup:
                 self._setup_task.add_input(qip_resource, consume=False)
+            if self._map_task and qip_resource.path not in existing_map:
+                self._map_task.add_input(qip_resource, consume=False)
+
+        for generated in self.__qsys_generated_dirs:
+            if generated.path not in existing_setup:
+                self._setup_task.add_input(generated, consume=False)
+            if self._map_task and generated.path not in existing_map:
+                self._map_task.add_input(generated, consume=False)
 
     def _create_qsys_script_task(self, tcl_resource: Resource) -> Resource:
         """Create a qsys_script task for a single .tcl file, returning its generated .qsys output
@@ -187,9 +206,11 @@ class QuartusDispatcher(BaseDispatcher):
         across systems would risk deleting a sibling's output mid-build.
 
         The whole ip/ tree next to the source .tcl (not just
-        ip/<system_name>/) is tracked here too, since a script's
+        ip/<system_name>/) is an input too, since a script's
         add_component calls can reference any system's .ip files by
-        relative path, not just its own.
+        relative path, not just its own. The staged copy of
+        ip/<system_name>/ is declared as an output, for the
+        qsys_generate task of the resulting system to read.
         """
         system_name = tcl_resource.path.stem
         qsys_out_dir = self.context.output_path / "output_files" / "qsys" / "scripts" / system_name
@@ -210,11 +231,23 @@ class QuartusDispatcher(BaseDispatcher):
 
         source_ip_dir = tcl_resource.path.parent / "ip"
         if source_ip_dir.is_dir():
-            for ip_file in sorted(source_ip_dir.rglob("*.ip")):
-                ip_resource = self.context.get_resource(
-                    ip_file, file_type="quartus-qsys-ip", typology=ResourceTypology.SOURCE,
+            script_task.add_input(self.context.get_resource(
+                source_ip_dir,
+                file_type="quartus-qsys-ip-tree",
+                typology=ResourceTypology.SOURCE,
+                directory=True,
+            ), consume=False)
+
+            if (source_ip_dir / system_name).is_dir():
+                staged_ip_dir = self.context.get_resource(
+                    qsys_out_dir / "ip" / system_name,
+                    file_type="quartus-qsys-ip-dir",
+                    typology=ResourceTypology.INTERMEDIATE,
+                    generated_by=self.name,
+                    directory=True,
                 )
-                script_task.add_input(ip_resource, consume=False)
+                script_task.add_output(staged_ip_dir)
+                self.__staged_ip_dirs[qsys_resource.path] = staged_ip_dir
 
         return qsys_resource
 
@@ -231,11 +264,18 @@ class QuartusDispatcher(BaseDispatcher):
         so the .qip Resource can be declared at the build-scoped
         sibling location computed below.
 
-        Any ip/<system_name>/*.ip Generic Component files next to the
-        source .qsys are attached as non-consuming inputs too (not
-        declared as project sources, so filter_pending never sees them —
-        they have to be picked up here instead), so editing one marks
-        this task stale the same way editing the .qsys itself would.
+        An ip/<system_name>/ directory of Generic Component .ip files
+        next to the source .qsys is attached as a non-consuming input
+        too (not declared as project sources, so filter_pending never
+        sees it — it has to be picked up here instead), so editing a
+        file there marks this task stale the same way editing the .qsys
+        itself would. For a .qsys produced by qsys_script, that
+        directory is the one the script task declares.
+
+        qsys-generate writes the system HDL next to the .qip, and breaks
+        catalog IP cores out under ip/<system_name>/ beside the system
+        directory. Both directories are outputs, read by project setup
+        and synthesis.
         """
         system_name = qsys_resource.path.stem
         qsys_out_dir = self.context.output_path / "output_files" / "qsys" / system_name
@@ -246,21 +286,41 @@ class QuartusDispatcher(BaseDispatcher):
             generated_by=self.name,
         )
 
+        generated = [
+            self.context.get_resource(
+                path,
+                file_type=file_type,
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+                directory=True,
+            )
+            for path, file_type in (
+                (qsys_out_dir, "quartus-qsys-generated-dir"),
+                (qsys_out_dir.parent / "ip" / system_name, "quartus-qsys-generated-ip-dir"),
+            )
+        ]
+        self.__qsys_generated_dirs += generated
+
         qsys_task = task.QsysGenerate(
             dispatcher=self,
             qsys_bin=self._get_qsys_bin(),
             inputs=[qsys_resource],
-            outputs=[qip_resource],
+            outputs=[qip_resource] + generated,
         )
         self.attach_definition_dependencies(qsys_task)
 
-        source_ip_dir = qsys_resource.path.parent / "ip" / system_name
-        if source_ip_dir.is_dir():
-            for ip_file in sorted(source_ip_dir.glob("*.ip")):
-                ip_resource = self.context.get_resource(
-                    ip_file, file_type="quartus-qsys-ip", typology=ResourceTypology.SOURCE,
+        ip_dir = self.__staged_ip_dirs.get(qsys_resource.path)
+        if ip_dir is None:
+            source_ip_dir = qsys_resource.path.parent / "ip" / system_name
+            if source_ip_dir.is_dir():
+                ip_dir = self.context.get_resource(
+                    source_ip_dir,
+                    file_type="quartus-qsys-ip-dir",
+                    typology=ResourceTypology.SOURCE,
+                    directory=True,
                 )
-                qsys_task.add_input(ip_resource, consume=False)
+        if ip_dir is not None:
+            qsys_task.add_input(ip_dir, consume=False)
 
         return qip_resource
 

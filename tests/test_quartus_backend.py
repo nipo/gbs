@@ -218,7 +218,8 @@ async def test_project_setup_emits_qip_file_for_nested_ip(tmp_path):
     automatically from the top-level .qip alone (confirmed against a
     real Agilex 5 design: instances stayed "undefined entity" errors
     until each nested .qip got its own QIP_FILE assignment), so
-    ProjectSetup needs to discover and list them all.
+    ProjectSetup needs to discover and list them all, in the generated
+    directory it takes as an input.
     """
     ctx = BuildContext(base_output_path=tmp_path)
     ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
@@ -238,12 +239,18 @@ async def test_project_setup_emits_qip_file_for_nested_ip(tmp_path):
     other_nested.parent.mkdir(parents=True)
     other_nested.touch()
 
+    nested_dir_resource = ctx.get_resource(
+        qsys_root / "ip" / "sys",
+        file_type="quartus-qsys-generated-ip-dir",
+        directory=True,
+    )
+
     setup_task = ProjectSetup(
         dispatcher=MockDispatcher(ctx),
         device="10CL025YU256C8G",
         vhdl_std="1993",
         project_name="project",
-        inputs=[qip_resource],
+        inputs=[qip_resource, nested_dir_resource],
         outputs=[],
     )
 
@@ -292,13 +299,13 @@ async def test_create_qsys_generate_task_places_qip_under_gbs_build(tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_qsys_generate_task_tracks_generic_component_ip_files(tmp_path):
-    """Test that ip/<system_name>/*.ip files are attached as inputs to qsys_generate
+    """Test that the ip/<system_name>/ directory is a directory input of qsys_generate
 
     Generic Component (IP implementation type) instances store their
     configuration in a per-instance .ip file next to the .qsys rather
     than in the .qsys itself. Those files aren't declared as project
     sources, so nothing else would ever mark qsys_generate stale when one
-    changes — this task must pick them up directly off disk.
+    changes — this task must pick the directory up directly off disk.
     """
     ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
     ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
@@ -321,11 +328,14 @@ async def test_create_qsys_generate_task_tracks_generic_component_ip_files(tmp_p
     qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
 
     qsys_task, = qip_resource.depends_on
-    ip_inputs = {r.path for r in qsys_task.inputs if r.file_type == "quartus-qsys-ip"}
-    assert ip_inputs == {
-        ip_dir / "my_system_some_instance.ip",
-        ip_dir / "my_system_other_instance.ip",
-    }
+    ip_input, = qsys_task.inputs_of_type("quartus-qsys-ip-dir")
+    assert ip_input.path == ip_dir
+    assert ip_input.directory
+    assert ip_input.typology == ResourceTypology.SOURCE
+
+    generated = {r.path for r in qsys_task.outputs if r.directory}
+    qsys_root = ctx.output_path / "output_files" / "qsys"
+    assert generated == {qsys_root / "my_system", qsys_root / "ip" / "my_system"}
 
 
 @pytest.mark.asyncio
@@ -346,7 +356,7 @@ async def test_create_qsys_generate_task_without_ip_dir(tmp_path):
     qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
 
     qsys_task, = qip_resource.depends_on
-    assert [r for r in qsys_task.inputs if r.file_type == "quartus-qsys-ip"] == []
+    assert qsys_task.inputs_of_type("quartus-qsys-ip-dir") == []
 
 
 @pytest.mark.asyncio
@@ -392,7 +402,7 @@ async def test_create_qsys_script_task_wires_into_qsys_generate(tmp_path):
 
 @pytest.mark.asyncio
 async def test_create_qsys_script_task_tracks_whole_ip_tree(tmp_path):
-    """Test that _create_qsys_script_task tracks every .ip file under ip/, not just its own system's
+    """Test that _create_qsys_script_task takes the whole ip/ tree, not just its own system's
 
     A qsys-script's add_component calls can reference any system's .ip
     files by relative path (confirmed against a real script exported
@@ -424,11 +434,46 @@ async def test_create_qsys_script_task_tracks_whole_ip_tree(tmp_path):
     qsys_resource = dispatcher._create_qsys_script_task(tcl_resource)
 
     script_task, = qsys_resource.depends_on
-    ip_inputs = {r.path for r in script_task.inputs if r.file_type == "quartus-qsys-ip"}
-    assert ip_inputs == {
-        own_ip_dir / "my_system_some_instance.ip",
-        other_ip_dir / "other_system_some_instance.ip",
-    }
+    ip_tree, = script_task.inputs_of_type("quartus-qsys-ip-tree")
+    assert ip_tree.path == source_dir / "ip"
+    assert ip_tree.directory
+
+
+@pytest.mark.asyncio
+async def test_create_qsys_script_task_hands_staged_ip_dir_to_qsys_generate(tmp_path):
+    """Test that the script's staged ip/<system_name>/ copy feeds qsys_generate
+
+    qsys_script stages the ip/ tree beside the .qsys it produces, where
+    qsys-generate looks for the system's Generic Component .ip files.
+    That staged copy does not exist when the graph is built, so it must
+    be a declared output of qsys_script and an input of qsys_generate.
+    """
+    ctx = BuildContext(base_output_path=tmp_path, gbs_config=FakeGBSConfig())
+    ctx.set_output_group_context(topcell="top", output_group=SimpleNamespace(name=""))
+
+    dispatcher = QuartusDispatcher(
+        context=ctx,
+        vhdl_std="1993",
+        tool="quartus",
+        target={"part": "10CL025YU256C8G"},
+    )
+
+    source_dir = tmp_path / "hdl"
+    own_ip_dir = source_dir / "ip" / "my_system"
+    own_ip_dir.mkdir(parents=True)
+    (own_ip_dir / "my_system_some_instance.ip").write_text("<ipxact:component/>")
+
+    tcl_resource = ctx.get_resource(source_dir / "my_system.tcl", file_type="quartus-qsys-script")
+
+    qsys_resource = dispatcher._create_qsys_script_task(tcl_resource)
+    script_task, = qsys_resource.depends_on
+    staged, = script_task.outputs_of_type("quartus-qsys-ip-dir")
+    assert staged.path == qsys_resource.path.parent / "ip" / "my_system"
+    assert staged.directory
+
+    qip_resource = dispatcher._create_qsys_generate_task(qsys_resource)
+    qsys_task, = qip_resource.depends_on
+    assert qsys_task.inputs_of_type("quartus-qsys-ip-dir") == [staged]
 
 
 @pytest.mark.asyncio
