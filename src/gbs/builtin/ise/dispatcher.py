@@ -184,7 +184,7 @@ class IseDispatcher(BaseDispatcher):
         # Place and Route
         self.par_task = task.Par(
             dispatcher=self,
-            inputs=[env_resource, map_resource],
+            inputs=[env_resource, map_resource, pcf_resource],
             outputs=[par_resource, par_log_resource, par_pad_resource],
             options=self.par_options,
         )

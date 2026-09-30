@@ -1,6 +1,7 @@
 """Tests for the ISE backend, chiefly the per-project step options"""
 
 import pytest
+from types import SimpleNamespace
 
 from gbs.base import BaseBackend
 from gbs.builtin.ise.backend import IseBackend
@@ -97,3 +98,30 @@ def test_pass_forwards_step_options_to_its_dispatcher(tmp_path):
 
     assert synth.config.get("map_options") == {"pr": "b"}
     assert synth.config.get("par_options") == {"ol": "std"}
+
+
+@pytest.mark.asyncio
+async def test_par_is_handed_the_declared_physical_constraints(tmp_path):
+    """PAR would otherwise look for the .pcf beside its input netlist"""
+    from gbs.build import BuildContext
+
+    ctx = BuildContext(base_output_path=tmp_path)
+    ncd = ctx.get_resource(tmp_path / "map" / "project.map.ncd",
+                           file_type="ise-netlist-partial")
+    pcf = ctx.get_resource(tmp_path / "map" / "project.map.pcf",
+                           file_type="ise-physical-constraints")
+    out = ctx.get_resource(tmp_path / "par" / "project.par.ncd",
+                           file_type="ise-netlist-full")
+    par = Par(dispatcher=SimpleNamespace(context=ctx, name="ise"),
+              inputs=[ncd, pcf], outputs=[out])
+
+    commands = []
+
+    async def run_command(cmd, cwd):
+        commands.append(cmd)
+
+    par.run_command = run_command
+    await par.work()
+
+    cmd, = commands
+    assert cmd[-3:] == [str(ncd.path), str(out.path), str(pcf.path)]

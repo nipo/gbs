@@ -394,7 +394,7 @@ class Map(IseTask):
 class Par(IseTask):
     """Run PAR (Place and Route)
 
-    Executes: par -ol high -xe c -w <map.ncd> -o <par.ncd>
+    Executes: par -ol high -xe c -w <map.ncd> <par.ncd> <map.pcf>
     Produces: .par.ncd file
 
     `options` behaves as for Map.
@@ -424,6 +424,7 @@ class Par(IseTask):
     async def work(self) -> None:
         """Run PAR"""
         in_ncd, = self.inputs_of_type("ise-netlist-partial")
+        in_pcf, = self.inputs_of_type("ise-physical-constraints")
         out_ncd, = self.outputs_of_type("ise-netlist-full")
 
         cmd = [
@@ -432,6 +433,7 @@ class Par(IseTask):
             "-w",
             str(in_ncd.path),
             str(out_ncd.path),
+            str(in_pcf.path),
         ]
 
         output_dir = out_ncd.path.parent
