@@ -55,13 +55,15 @@ class RemoteHost:
         self.__stderr_task = asyncio.create_task(self.__stderr_forward())
 
     @classmethod
-    def ssh_argv(cls, destination: str, gbs_config: Optional[GBSConfig]) -> tuple[str, list[str]]:
+    def ssh_argv(cls, destination: str, gbs_config: Optional[GBSConfig],
+                 keep: bool = False) -> tuple[str, list[str]]:
         """Command line reaching a destination
 
         Args:
             destination: Name of a configured remote host, or else an
                 ssh destination
             gbs_config: Configuration holding remote host definitions
+            keep: Have the remote keep its workspace
 
         Returns:
             Host name and command line
@@ -69,13 +71,14 @@ class RemoteHost:
         host = None if gbs_config is None else gbs_config.remote_hosts.get(destination)
         if host is None:
             host = RemoteHostConfig(destination, [destination])
-        remote = shlex.join(host.command + cls.SERVE_ARGS)
+        remote = shlex.join(host.command + cls.SERVE_ARGS + (["--keep"] if keep else []))
         return host.name, ["ssh", "-T", *host.ssh, "--", remote]
 
     @classmethod
-    async def open(cls, destination: str, gbs_config: Optional[GBSConfig]) -> RemoteHost:
+    async def open(cls, destination: str, gbs_config: Optional[GBSConfig],
+                   keep: bool = False) -> RemoteHost:
         """Connect to a destination over ssh, see ssh_argv()"""
-        name, argv = cls.ssh_argv(destination, gbs_config)
+        name, argv = cls.ssh_argv(destination, gbs_config, keep)
         return await cls.connect(name, argv)
 
     @classmethod
@@ -129,7 +132,7 @@ class RemoteHost:
         except BaseException:
             await host.close()
             raise
-        host.tool_host = RemoteToolHost(name, host.hello.tools)
+        host.tool_host = RemoteToolHost(name, host.hello.tools, host.peer)
         return host
 
     def failure_describe(self, message: str) -> str:

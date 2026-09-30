@@ -9,6 +9,7 @@ Python code nor tool subprocesses can corrupt or consume the channel.
 
 from __future__ import annotations
 import asyncio
+import copy
 import os
 import shutil
 import sys
@@ -18,10 +19,12 @@ from typing import Any, Optional
 
 from ..config.model import GBSConfig
 from ..logging import get_logger
+from ..plugins import get_plugin_registry
 from .channel import FrameChannel
 from .handshake import HandshakeError, HelloReply, Identity
 from .manifest import BlobStore
 from .peer import Call, MethodError, Peer
+from .planning import PassContribution
 from .toolhost import LocalToolHost
 from .wire import WireObject
 
@@ -75,6 +78,10 @@ class RemoteServer:
             leave the session unusable.
         blob.have: {digests: [sha256...]} -> {missing: [sha256...]}
         blob.put: {digest} with the content as body -> {}
+        passes.contribute: {backend, config, requested_types,
+            project_config} -> {passes: [PassContribution...]}: ask a
+            backend for passes with the configuration of this host,
+            and probe them here.
         shutdown: Answer, then close the connection.
     """
 
@@ -89,6 +96,7 @@ class RemoteServer:
         self.peer.method_register("hello", self.hello)
         self.peer.method_register("blob.have", self.blob_have)
         self.peer.method_register("blob.put", self.blob_put)
+        self.peer.method_register("passes.contribute", self.passes_contribute)
         self.peer.method_register("shutdown", self.shutdown)
 
     @staticmethod
@@ -143,6 +151,26 @@ class RemoteServer:
         reader.finish()
         await asyncio.to_thread(self.blob_store.bytes_add, call.body, digest)
         return {}
+
+    async def passes_contribute(self, call: Call) -> Any:
+        self.session_check()
+        reader = WireObject(call.params, "passes.contribute params")
+        name = reader.field("backend", str)
+        config = reader.field("config", dict)
+        requested_types = set(reader.string_list("requested_types"))
+        project_config = reader.field("project_config", dict)
+        reader.finish()
+
+        backends = [b for b in get_plugin_registry().get_all_backends() if b.name == name]
+        if len(backends) != 1:
+            raise MethodError("UnknownBackend", f"{len(backends)} backend(s) named {name!r} here")
+        backend, = backends
+        contributed = await LocalToolHost(self.gbs_config).passes_contribute(
+            backend, copy.deepcopy(config), requested_types, project_config)
+        return PassContribution.list_to_json([
+            PassContribution.from_pass(pass_obj, problem, name, config, requested_types)
+            for pass_obj, problem in contributed
+        ])
 
     async def shutdown(self, call: Call) -> Any:
         call.closing()

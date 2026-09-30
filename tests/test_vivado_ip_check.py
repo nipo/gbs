@@ -525,7 +525,7 @@ class FakePlannerConfig:
 
 class TestPlanner:
     @staticmethod
-    def plan(tmp_path, source_types, output_types):
+    async def plan(tmp_path, source_types, output_types):
         template = PartitionTemplate(
             name="top",
             groups=[ConditionalGroup(
@@ -546,7 +546,7 @@ class TestPlanner:
             outputs=[OutputFile(type=t, path=Path(t))
                      for t in sorted(output_types)],
         )
-        return sorted(p.name for p in planner.plan(og).passes)
+        return sorted(p.name for p in (await planner.plan(og)).passes)
 
     # These combine two passes producing unrelated outputs, and rely on
     # the planner requiring every requested output to be produced.
@@ -554,23 +554,23 @@ class TestPlanner:
         {"vivado-ip-zip", "vivado-ip-synthesis-report"},
         {"vivado-ip-dir", "vivado-ip-synthesis-report"},
     ])
-    def test_package_and_report(self, tmp_path, outputs):
-        assert self.plan(tmp_path, {"vhdl", "xilinx-xdc"}, outputs) == [
+    async def test_package_and_report(self, tmp_path, outputs):
+        assert await self.plan(tmp_path, {"vhdl", "xilinx-xdc"}, outputs) == [
             "vivado-ip-package", "vivado-ip-synthesize"]
 
-    def test_report_only(self, tmp_path):
-        assert self.plan(tmp_path, {"vhdl"},
+    async def test_report_only(self, tmp_path):
+        assert await self.plan(tmp_path, {"vhdl"},
                          {"vivado-ip-synthesis-report"}) == [
             "vivado-ip-package", "vivado-ip-synthesize"]
 
-    def test_zip_source(self, tmp_path):
+    async def test_zip_source(self, tmp_path):
         sources = {"vivado-ip-zip", "vivado-ip-repository", "vivado-bus-zip"}
-        assert self.plan(tmp_path, sources,
+        assert await self.plan(tmp_path, sources,
                          {"vivado-ip-synthesis-report"}) == [
             "vivado-ip-synthesize"]
 
-    def test_package_only(self, tmp_path):
-        assert self.plan(tmp_path, {"vhdl"}, {"vivado-ip-zip"}) == [
+    async def test_package_only(self, tmp_path):
+        assert await self.plan(tmp_path, {"vhdl"}, {"vivado-ip-zip"}) == [
             "vivado-ip-package"]
 
 

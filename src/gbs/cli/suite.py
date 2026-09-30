@@ -394,7 +394,7 @@ async def outputs(ctx, fmt, tags, exclude_tags):
             tags=tags if tags else None,
             exclude_tags=exclude_tags if exclude_tags else None,
         )
-        records = inventory.records()
+        records = await inventory.records()
     except Exception as e:
         logger.exception("Failed to list suite outputs")
         click.echo(f"Failed to list suite outputs: {e}", err=True)

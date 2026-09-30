@@ -7,7 +7,7 @@ import sys
 import asyncio
 import asyncclick as click
 
-from contextlib import nullcontext
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, AsyncIterable
 from dataclasses import dataclass, field
@@ -85,6 +85,9 @@ class Project(UIReporter):
         self.base_output_path = None  # Can be set for suite builds to scope output directories
         self.shared_cache_root = shared_cache_root  # Suite-shared cache root, None for single-project
         self.__realizations = None
+        self.__remote_destination: Optional[str] = None
+        self.__remote_keep = False
+        self.__remote_host = None
 
         # Shared resource registry for cross-output-group dependencies.
         # When a suite passes one in, it spans the whole suite so identical
@@ -152,6 +155,73 @@ class Project(UIReporter):
             shared_cache_root: Suite-scoped cache root path
         """
         self.shared_cache_root = shared_cache_root
+
+    def remote_set(self, destination: str, keep: bool = False) -> None:
+        """Plan with a remote host, see gbs.remote.RemoteHost.open()
+
+        Args:
+            destination: Configured remote host name or ssh destination
+            keep: Have the remote keep its workspace
+        """
+        if self.__remote_host is not None:
+            raise RuntimeError("Cannot change the remote host while it is connected")
+        self.__remote_destination = destination
+        self.__remote_keep = keep
+
+    @asynccontextmanager
+    async def hosts_open(self):
+        """Keep the remote host connected, if any, for the enclosed work
+
+        Nested uses share the connection of the outermost one, which
+        closes it on exit, whatever the outcome.
+
+        Raises:
+            RemoteHostError: If the remote host cannot be reached.
+        """
+        if self.__remote_destination is None or self.__remote_host is not None:
+            yield
+            return
+        from ..remote.client import RemoteHost
+        host = await RemoteHost.open(self.__remote_destination, self.gbs_config, self.__remote_keep)
+        self.__remote_host = host
+        try:
+            yield
+        finally:
+            self.__remote_host = None
+            await host.close()
+
+    @property
+    def tool_hosts(self) -> list:
+        """Hosts to plan on, in order of preference
+
+        Raises:
+            RuntimeError: If a remote host is set but not connected,
+                see hosts_open().
+        """
+        from ..remote.toolhost import LocalToolHost
+        local = LocalToolHost(self.gbs_config)
+        if self.__remote_destination is None:
+            return [local]
+        if self.__remote_host is None:
+            raise RuntimeError(
+                f"Remote host {self.__remote_destination} is not connected; "
+                f"plan within hosts_open()"
+            )
+        return [self.__remote_host.tool_host, local]
+
+    def planner(self, output_group):
+        """Planner for one output group, on the project's tool hosts"""
+        from ..planner.planner import BuildPlanner
+        return BuildPlanner(
+            self.repositories,
+            get_plugin_registry().get_all_backends(),
+            self.model.raw_config,
+            self.gbs_config,
+            root_partition_template=self.planner_root_template(output_group),
+            parent_reporter=self,
+            partial_source_coverage=self.partial_source_coverage,
+            tool_hosts=self.tool_hosts,
+        )
 
     @classmethod
     def load_from_file(cls, path: Path, gbs_config=None,
@@ -290,36 +360,19 @@ class Project(UIReporter):
                     yield p
             return
 
-        plugin_registry = get_plugin_registry()
-
         # Plan build for the selected output groups
         logger.info("")
         logger.info(
             f"Planning build for {len(output_groups)} output group(s)..."
         )
-        backends = plugin_registry.get_all_backends()
-        backend_names = plugin_registry.list_backends()
 
-        # Include all repositories for planning
-        all_repositories = self.repositories
-
-        from ..planner.planner import BuildPlanner
         # Only cache when we planned the full set. A partial run must
         # not poison later calls that ask for a different subset.
         cache = [] if output_group_names is None else None
 
         for output_group in output_groups:
-            planner = BuildPlanner(
-                all_repositories,
-                backends,
-                self.model.raw_config,
-                self.gbs_config,
-                root_partition_template=self.planner_root_template(output_group),
-                parent_reporter=self,
-                partial_source_coverage=self.partial_source_coverage
-            )
-
-            plan = planner.plan(output_group)
+            plan = await self.planner(output_group).plan(output_group)
+            self.remote_passes_refuse(plan)
             self.filter_vars_finalize(plan)
 
             root_partitions = self.root_partitions(output_group, plan)
@@ -344,6 +397,22 @@ class Project(UIReporter):
 
         if cache is not None:
             self.__realizations = cache
+
+    @staticmethod
+    def remote_passes_refuse(plan: 'BuildPlan') -> None:
+        """Refuse a plan holding passes that would run on a remote host
+
+        Raises:
+            RemoteExecutionUnavailable: Naming those passes.
+        """
+        from ..remote.planning import RemotePass, RemoteExecutionUnavailable
+        remote = [pm.pass_obj for pm in plan.passes if isinstance(pm.pass_obj, RemotePass)]
+        if remote:
+            raise RemoteExecutionUnavailable(
+                f"Output group {plan.output_group.name!r} plans "
+                + ", ".join(f"{p.name} on {p.host}" for p in remote)
+                + ": remote execution is not implemented yet"
+            )
 
     def __select_output_groups(
         self,
@@ -390,18 +459,19 @@ class Project(UIReporter):
             >>> await proj.build()
             >>> await proj.build(["simulation"])
         """
-        realizations = []
-        async for realization in self.realizations(output_group_names):
-            realizations.append(realization)
+        async with self.hosts_open():
+            realizations = []
+            async for realization in self.realizations(output_group_names):
+                realizations.append(realization)
 
-        # Execute all output groups concurrently.
-        # Cross-output-group dependencies resolve naturally through
-        # the shared resource registry: if group A produces a file
-        # that group B consumes, both reference the same Resource
-        # future, so group B's task blocks until group A's completes.
-        for realization in realizations:
-            logger.info(f"  Realizing build plan {realization.plan}...")
-            await realization.execute()
+            # Execute all output groups concurrently.
+            # Cross-output-group dependencies resolve naturally through
+            # the shared resource registry: if group A produces a file
+            # that group B consumes, both reference the same Resource
+            # future, so group B's task blocks until group A's completes.
+            for realization in realizations:
+                logger.info(f"  Realizing build plan {realization.plan}...")
+                await realization.execute()
 
     async def clean(
         self,
@@ -420,14 +490,16 @@ class Project(UIReporter):
         all_cleaned_paths = set()
 
         # Clean each realization by asking its dispatchers what to clean
-        async for realization in self.realizations():
-            # Cleaning deletes this group's outputs and the shared cache
-            # entries it produced, so it waits for any run using either.
-            locks = (nullcontext() if dry_run
-                     else realization.build_ctx.tree_locks(cache_exclusive=True))
-            async with locks:
-                cleaned_paths = realization.clean(dry_run)
-            all_cleaned_paths |= cleaned_paths
+        async with self.hosts_open():
+            async for realization in self.realizations():
+                # Cleaning deletes this group's outputs and the shared
+                # cache entries it produced, so it waits for any run
+                # using either.
+                locks = (nullcontext() if dry_run
+                         else realization.build_ctx.tree_locks(cache_exclusive=True))
+                async with locks:
+                    cleaned_paths = realization.clean(dry_run)
+                all_cleaned_paths |= cleaned_paths
             
     async def show_graph(self, diagram_path: Optional[Path] = None):
         """Show build dependency graph
@@ -443,12 +515,12 @@ class Project(UIReporter):
             >>> await proj.show_graph()
             >>> await proj.show_graph(diagram_path=Path("build_graph.svg"))
         """
-        async for realization in self.realizations():
-            # Execute build tasks
-            if diagram_path:
-                realization.task_graph_diagram(diagram_path)
-            else:
-                realization.task_graph_show()
+        async with self.hosts_open():
+            async for realization in self.realizations():
+                if diagram_path:
+                    realization.task_graph_diagram(diagram_path)
+                else:
+                    realization.task_graph_show()
 
     async def get_source_files(
         self,
@@ -471,9 +543,10 @@ class Project(UIReporter):
             {'simulation': {Path('src/top.vhd'), Path('src/uart.vhd')}}
         """
         result = {}
-        async for realization in self.realizations(output_group_names):
-            source_files = {sf.path for sf in realization.source_fileset.get_all_files()}
-            result[realization.plan.output_group.name] = source_files
+        async with self.hosts_open():
+            async for realization in self.realizations(output_group_names):
+                source_files = {sf.path for sf in realization.source_fileset.get_all_files()}
+                result[realization.plan.output_group.name] = source_files
         return result
 
     async def needs_rebuild(

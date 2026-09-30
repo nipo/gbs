@@ -540,11 +540,11 @@ class TestSegmentDescriptor:
             SegmentDescriptor.from_json(bad)
 
 
-def test_planner_records_requested_types():
+async def test_planner_records_requested_types():
     planner = BuildPlanner([FakeRepository("r", None, {"netlist"})], [RequestTriggeredBackend()])
     og = OutputGroup(name="og", topcell="top", outputs=[OutputFile("bitstream", Path("b"))])
 
-    pm, = planner._query_backends(og, {"bitstream"})
+    pm, = await planner._query_backends(og, {"bitstream"})
 
     assert pm.name == "gen-constraints"
     assert "bitstream" in pm.requested_types

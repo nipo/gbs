@@ -59,10 +59,18 @@ class PassDescriptor:
 
     @classmethod
     def from_metadata(cls, metadata: PassMetadata) -> PassDescriptor:
+        """Describe a planned pass
+
+        A pass planned on a remote host is described as that host
+        contributed it.
+        """
+        from .planning import RemotePass
+        if isinstance(metadata.pass_obj, RemotePass):
+            return PassDescriptor.from_json(metadata.pass_obj.descriptor.to_json())
         return cls(
             backend=metadata.backend_name,
             name=metadata.name,
-            pass_class=cls.class_name(metadata.pass_obj),
+            pass_class=metadata.pass_class,
             config=WireFormat.json_check(
                 metadata.config, f"configuration of pass {metadata.name}"),
             requested_types=metadata.requested_types,

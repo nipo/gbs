@@ -51,7 +51,16 @@ class PassMetadata:
         self.requested_types = set(requested_types)
 
     def __eq__(self, other):
-        return type(self.pass_obj) == type(other.pass_obj)
+        return self.pass_class == other.pass_class
+
+    @property
+    def pass_class(self) -> str:
+        """"module:qualname" of the pass class, whichever host runs it"""
+        from ..remote.planning import RemotePass
+        if isinstance(self.pass_obj, RemotePass):
+            return self.pass_obj.pass_class
+        cls = type(self.pass_obj)
+        return f"{cls.__module__}:{cls.__qualname__}"
 
     @property
     def filter_vars(self) -> dict:

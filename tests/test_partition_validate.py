@@ -238,7 +238,7 @@ class TestBackendContribution:
 class TestPlanning:
     """A validation report is planned to the validation pass alone."""
 
-    def test_planner_selects_validate_pass(self, tmp_path):
+    async def test_planner_selects_validate_pass(self, tmp_path):
         repository = load_repository(Fixture.write(tmp_path))
         planner = BuildPlanner(
             [repository],
@@ -248,13 +248,13 @@ class TestPlanning:
             partial_source_coverage=True,
         )
 
-        plan = planner.plan(Fixture.output_group(tmp_path / "report.yaml"))
+        plan = await planner.plan(Fixture.output_group(tmp_path / "report.yaml"))
 
         assert [p.name for p in plan.passes] == ["ghdl-validate"]
         assert {p.backend_name for p in plan.passes} == {GHDL_BACKEND}
         assert plan.filter_vars["vhdl_std"] == "1993"
 
-    def test_planner_refuses_partial_coverage_by_default(self, tmp_path):
+    async def test_planner_refuses_partial_coverage_by_default(self, tmp_path):
         """A build must consume every source type; validation need not."""
         repository = load_repository(Fixture.write(tmp_path))
         planner = BuildPlanner(
@@ -265,7 +265,7 @@ class TestPlanning:
         )
 
         with pytest.raises(PlanningError):
-            planner.plan(Fixture.output_group(tmp_path / "report.yaml"))
+            await planner.plan(Fixture.output_group(tmp_path / "report.yaml"))
 
 
 @requires_ghdl

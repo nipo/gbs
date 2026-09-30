@@ -53,7 +53,7 @@ class FakeBackend:
 
 class TestPlannerSearch:
     @staticmethod
-    def plan(source_types, passes, output_types, **kwargs):
+    async def plan(source_types, passes, output_types, **kwargs):
         planner = BuildPlanner(
             [FakeRepository(source_types)],
             [FakeBackend(passes)],
@@ -66,43 +66,43 @@ class TestPlannerSearch:
             backend_config={},
             outputs=[OutputFile(type=t, path=Path(t)) for t in sorted(output_types)],
         )
-        return [p.name for p in planner.plan(og).passes]
+        return [p.name for p in (await planner.plan(og)).passes]
 
-    def test_unrelated_producers_both_planned(self):
+    async def test_unrelated_producers_both_planned(self):
         passes = [FakePass.make("make-a", {"s"}, {"a"}),
                   FakePass.make("make-b", {"s"}, {"b"})]
 
-        names = self.plan({"s"}, passes, {"a", "b"})
+        names = await self.plan({"s"}, passes, {"a", "b"})
 
         assert sorted(names) == ["make-a", "make-b"]
 
-    def test_producers_sharing_an_intermediate(self):
+    async def test_producers_sharing_an_intermediate(self):
         passes = [FakePass.make("make-x", {"s"}, {"x"}),
                   FakePass.make("make-a", {"x"}, {"a"}),
                   FakePass.make("make-b", {"x"}, {"b"})]
 
-        names = self.plan({"s"}, passes, {"a", "b"})
+        names = await self.plan({"s"}, passes, {"a", "b"})
 
         assert sorted(names) == ["make-a", "make-b", "make-x"]
 
-    def test_output_copied_from_sources(self):
+    async def test_output_copied_from_sources(self):
         passes = [FakePass.make("make-a", {"s"}, {"a"})]
 
-        names = self.plan({"s"}, passes, {"a", "s"})
+        names = await self.plan({"s"}, passes, {"a", "s"})
 
         assert names == ["make-a"]
 
-    def test_missing_producer_fails(self):
+    async def test_missing_producer_fails(self):
         passes = [FakePass.make("make-a", {"s"}, {"a"})]
 
         with pytest.raises(PlanningError):
-            self.plan({"s"}, passes, {"a", "b"})
+            await self.plan({"s"}, passes, {"a", "b"})
 
-    def test_partial_coverage_needs_every_output(self):
+    async def test_partial_coverage_needs_every_output(self):
         passes = [FakePass.make("make-a", {"s"}, {"a"}),
                   FakePass.make("make-b", {"s"}, {"b"})]
 
-        names = self.plan({"s", "t"}, passes, {"a", "b"},
+        names = await self.plan({"s", "t"}, passes, {"a", "b"},
                           partial_source_coverage=True)
 
         assert sorted(names) == ["make-a", "make-b"]

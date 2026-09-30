@@ -29,7 +29,7 @@ def planned(monkeypatch):
     Planning depends on which toolchains this machine has; the inventory
     records are what is under test, not the search itself.
     """
-    def plan(self, output_group):
+    async def plan(self, output_group):
         return FakePlan(passes=[FakePass(backend_name="gbs.builtin.fake")])
 
     monkeypatch.setattr(BuildPlanner, "plan", plan)
@@ -63,7 +63,7 @@ def load(project_file: Path) -> Project:
 class TestOutputInventory:
     """Records built for a single project"""
 
-    def test_record_keys(self, tmp_path, planned):
+    async def test_record_keys(self, tmp_path, planned):
         project_file = write_project(tmp_path / "proj", "myproj", simple_root(), [{
             "name": "synthesis",
             "topcell": "top",
@@ -71,7 +71,7 @@ class TestOutputInventory:
             "outputs": [{"type": "bitstream", "path": "blink.bin"}],
         }])
 
-        records = OutputInventory(load(project_file), name="myproj").records()
+        records = await OutputInventory(load(project_file), name="myproj").records()
 
         assert records == [{
             "project": "myproj",
@@ -85,20 +85,20 @@ class TestOutputInventory:
             }],
         }]
 
-    def test_absent_keys_omitted(self, tmp_path, planned):
+    async def test_absent_keys_omitted(self, tmp_path, planned):
         project_file = write_project(tmp_path / "proj", "myproj", simple_root(), [{
             "name": "simulation",
             "topcell": "top",
             "outputs": [{"type": "simulator", "path": "sim"}],
         }])
 
-        record = OutputInventory(load(project_file), name="myproj").records()[0]
+        record = (await OutputInventory(load(project_file), name="myproj").records())[0]
 
         assert "part" not in record
         assert "partition" not in record
         assert "error" not in record
 
-    def test_partition_reported(self, tmp_path, planned):
+    async def test_partition_reported(self, tmp_path, planned):
         project_file = write_project(
             tmp_path / "proj", "myproj",
             [simple_root("first"), simple_root("second")],
@@ -110,21 +110,21 @@ class TestOutputInventory:
             }],
         )
 
-        record = OutputInventory(load(project_file), name="myproj").records()[0]
+        record = (await OutputInventory(load(project_file), name="myproj").records())[0]
 
         assert record["partition"] == "second"
 
-    def test_group_order_follows_project_file(self, tmp_path, planned):
+    async def test_group_order_follows_project_file(self, tmp_path, planned):
         project_file = write_project(tmp_path / "proj", "myproj", simple_root(), [
             {"name": "second", "topcell": "top", "outputs": []},
             {"name": "first", "topcell": "top", "outputs": []},
         ])
 
-        records = OutputInventory(load(project_file), name="myproj").records()
+        records = await OutputInventory(load(project_file), name="myproj").records()
 
         assert [r["group"] for r in records] == ["second", "first"]
 
-    def test_group_names_select_a_subset(self, tmp_path, planned):
+    async def test_group_names_select_a_subset(self, tmp_path, planned):
         project_file = write_project(tmp_path / "proj", "myproj", simple_root(), [
             {"name": "simulation", "topcell": "top", "outputs": []},
             {"name": "synthesis", "topcell": "top", "outputs": []},
@@ -134,9 +134,9 @@ class TestOutputInventory:
             load(project_file), name="myproj", group_names=["synthesis"]
         )
 
-        assert [r["group"] for r in inventory.records()] == ["synthesis"]
+        assert [r["group"] for r in await inventory.records()] == ["synthesis"]
 
-    def test_unknown_group_name_rejected(self, tmp_path, planned):
+    async def test_unknown_group_name_rejected(self, tmp_path, planned):
         project_file = write_project(tmp_path / "proj", "myproj", simple_root(), [
             {"name": "simulation", "topcell": "top", "outputs": []},
         ])
@@ -146,15 +146,15 @@ class TestOutputInventory:
         )
 
         with pytest.raises(ValueError, match="nope"):
-            inventory.records()
+            await inventory.records()
 
-    def test_planning_failure_becomes_a_record(self, tmp_path, monkeypatch):
+    async def test_planning_failure_becomes_a_record(self, tmp_path, monkeypatch):
         """An output group no backend can reach is described, not raised.
 
         The suite case this exists for is a project whose vendor tool is
         missing from this machine.
         """
-        def plan(self, output_group):
+        async def plan(self, output_group):
             if output_group.name == "unreachable":
                 raise PlanningError(
                     "Cannot find passes from ['vhdl'] to ['nothing'].\n"
@@ -170,7 +170,7 @@ class TestOutputInventory:
             {"name": "reachable", "topcell": "top", "outputs": []},
         ])
 
-        failed, ok = OutputInventory(load(project_file), name="myproj").records()
+        failed, ok = await OutputInventory(load(project_file), name="myproj").records()
 
         # Only the headline of the diagnostic; the rest goes to the log
         assert failed["error"] == "Cannot find passes from ['vhdl'] to ['nothing']."
@@ -217,49 +217,49 @@ class TestSuiteOutputInventory:
             **kwargs,
         )
 
-    def test_records_carry_the_suite_local_name(self, suite_dir, planned):
-        records = self._inventory(suite_dir).records()
+    async def test_records_carry_the_suite_local_name(self, suite_dir, planned):
+        records = await self._inventory(suite_dir).records()
 
         # The suite entry name, not the project's own 'alpha'
         assert {r["project"] for r in records} == {"alpha-entry", "beta-entry"}
 
-    def test_skipped_project_omitted(self, suite_dir, planned):
-        records = self._inventory(suite_dir).records()
+    async def test_skipped_project_omitted(self, suite_dir, planned):
+        records = await self._inventory(suite_dir).records()
 
         assert all(r["project"] != "gamma-entry" for r in records)
 
-    def test_project_output_groups_honored(self, suite_dir, planned):
-        records = self._inventory(suite_dir).records()
+    async def test_project_output_groups_honored(self, suite_dir, planned):
+        records = await self._inventory(suite_dir).records()
 
         beta = [r["group"] for r in records if r["project"] == "beta-entry"]
         alpha = [r["group"] for r in records if r["project"] == "alpha-entry"]
         assert beta == ["synthesis"]
         assert alpha == ["simulation", "synthesis"]
 
-    def test_tag_filter(self, suite_dir, planned):
-        records = self._inventory(suite_dir, tags=["synth"]).records()
+    async def test_tag_filter(self, suite_dir, planned):
+        records = await self._inventory(suite_dir, tags=["synth"]).records()
 
         assert {r["project"] for r in records} == {"beta-entry"}
 
-    def test_exclude_tag_filter(self, suite_dir, planned):
-        records = self._inventory(suite_dir, exclude_tags=["synth"]).records()
+    async def test_exclude_tag_filter(self, suite_dir, planned):
+        records = await self._inventory(suite_dir, exclude_tags=["synth"]).records()
 
         assert {r["project"] for r in records} == {"alpha-entry"}
 
-    def test_schema_matches_project_command(self, suite_dir, planned):
+    async def test_schema_matches_project_command(self, suite_dir, planned):
         """A suite record and a project record are the same shape."""
         suite_record = next(
-            r for r in self._inventory(suite_dir).records()
+            r for r in await self._inventory(suite_dir).records()
             if r["project"] == "alpha-entry"
         )
-        project_record = OutputInventory(
+        project_record = (await OutputInventory(
             load(suite_dir / "alpha" / "project.gbs.yaml"), name="alpha"
-        ).records()[0]
+        ).records())[0]
 
         assert list(suite_record) == list(project_record)
         assert suite_record["outputs"] == project_record["outputs"]
 
-    def test_missing_project_file_is_an_error(self, tmp_path, planned):
+    async def test_missing_project_file_is_an_error(self, tmp_path, planned):
         """A broken suite reference is a suite file bug, not a record."""
         suite_file = tmp_path / "suite.gbs.yaml"
         suite_file.write_text(yaml.dump({
@@ -272,4 +272,4 @@ class TestSuiteOutputInventory:
         )
 
         with pytest.raises(ExecutionError, match="ghost"):
-            inventory.records()
+            await inventory.records()

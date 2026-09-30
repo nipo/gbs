@@ -40,9 +40,11 @@ class OutputInventory:
         self.name = name
         self.group_names = group_names
 
-    def records(self) -> list[dict]:
+    async def records(self) -> list[dict]:
         """Build one record per selected output group, in project-file order."""
-        return [self._record(og) for og in self._selected_groups()]
+        groups = self._selected_groups()
+        async with self.project.hosts_open():
+            return [await self._record(og) for og in groups]
 
     def _selected_groups(self) -> list[OutputGroup]:
         """Resolve ``group_names`` against the project's output groups."""
@@ -60,22 +62,7 @@ class OutputInventory:
             )
         return [by_name[n] for n in self.group_names]
 
-    def _planner(self, output_group: OutputGroup):
-        """Build a planner scoped to one output group's root partition."""
-        from ..planner.planner import BuildPlanner
-        from ..plugins import get_plugin_registry
-
-        return BuildPlanner(
-            self.project.repositories,
-            get_plugin_registry().get_all_backends(),
-            self.project.model.raw_config,
-            self.project.gbs_config,
-            root_partition_template=self.project.model.get_root_partition_template(
-                output_group
-            ),
-        )
-
-    def _record(self, output_group: OutputGroup) -> dict:
+    async def _record(self, output_group: OutputGroup) -> dict:
         """Describe one output group.
 
         Keys that carry no value are left out entirely, so a consumer can
@@ -97,7 +84,7 @@ class OutputInventory:
 
         plan = None
         try:
-            plan = self._planner(output_group).plan(output_group)
+            plan = await self.project.planner(output_group).plan(output_group)
         except PlanningError as e:
             # The full diagnostic lists every candidate chain and every
             # probe rejection — far too much for a listing. Its first

@@ -14,7 +14,7 @@ The planner works backwards from outputs:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 from pathlib import Path
 
 from .passes import PassMetadata
@@ -22,6 +22,9 @@ from ..protocol import Backend, Pass
 from ..repository.model import Repository, SourceFileSet
 from ..project.model import OutputGroup, OutputFile
 from ..ui.reporter import UIReporter
+
+if TYPE_CHECKING:
+    from ..remote.toolhost import ToolHost
 
 
 def strip_type_suffixes(type_str: str) -> str:
@@ -150,9 +153,14 @@ class BuildPlanner(UIReporter):
     desired output file types by querying backends for passes and
     working backwards.
 
+    Backends are queried on every tool host. A pass contributed on
+    several hosts is taken from the first host accepting it, so a
+    remote host listed before the local one takes over the passes it
+    can run.
+
     Example:
         planner = BuildPlanner(repositories, backends)
-        plan = planner.plan(output_group)
+        plan = await planner.plan(output_group)
         print(f"Selected passes: {[p.name for p in plan.passes]}")
         print(f"Filter variables: {plan.filter_vars}")
     """
@@ -165,7 +173,8 @@ class BuildPlanner(UIReporter):
         gbs_config: 'GBSConfig | None' = None,
         root_partition_template: Any = None,
         parent_reporter: Optional['UIReporter'] = None,
-        partial_source_coverage: bool = False
+        partial_source_coverage: bool = False,
+        tool_hosts: Optional[list['ToolHost']] = None,
     ):
         """Initialize planner
 
@@ -182,6 +191,8 @@ class BuildPlanner(UIReporter):
                 artifact would silently omit sources; a partition
                 validation only inspects what its validators can read and
                 lists the rest as skipped, so it plans in this mode.
+            tool_hosts: Hosts to query backends on, in order of
+                preference. Defaults to the local host alone.
         """
         # Initialize UIReporter
         UIReporter.__init__(
@@ -195,10 +206,15 @@ class BuildPlanner(UIReporter):
         self.project_config = project_config or {}
         self.gbs_config = gbs_config
         self.partial_source_coverage = partial_source_coverage
-        # Rejection log keyed by "backend.name/pass.name" -> reason. Populated
-        # by _query_backends when a pass's probe() returns a reason.
-        # Used only by the plan-failure diagnostic.
-        self._rejected_passes: dict[str, str] = {}
+        if tool_hosts is None:
+            from ..remote.toolhost import LocalToolHost
+            tool_hosts = [LocalToolHost(gbs_config)]
+        self.tool_hosts = tool_hosts
+        # Rejection log keyed by ("backend.name/pass.name", host name)
+        # -> reason. Populated by _query_backends when a pass's probe
+        # on a host returns a reason. Used only by the plan-failure
+        # diagnostic.
+        self._rejected_passes: dict[tuple[str, str], str] = {}
         # Every candidate chain the planner considered; kept so the
         # diagnostic can print the full search when no viable chain
         # remains.
@@ -228,7 +244,7 @@ class BuildPlanner(UIReporter):
             f"Available source types: {sorted(self.available_source_types)}"
         )
 
-    def plan(self, output_group: OutputGroup) -> BuildPlan:
+    async def plan(self, output_group: OutputGroup) -> BuildPlan:
         """Plan build for an output group
 
         Finds a transformation chain from available sources to desired outputs.
@@ -250,7 +266,7 @@ class BuildPlanner(UIReporter):
             ...     backend_config={"gbs.builtin.ghdl": {"vhdl_standard": "2008"}},
             ...     outputs=[OutputFile(type="ghdl-simulator", path=Path("sim"))]
             ... )
-            >>> plan = planner.plan(og)
+            >>> plan = await planner.plan(og)
         """
         self.info(f"Planning build for output group: {output_group.name}")
 
@@ -279,7 +295,7 @@ class BuildPlanner(UIReporter):
         self._rejected_passes = {}
         self._considered_chains = []
 
-        possibilities = self._progress_to_sources(output_group, source_types, initial_plan)
+        possibilities = await self._progress_to_sources(output_group, source_types, initial_plan)
 
         self.debug(f"-> {possibilities}")
 
@@ -350,7 +366,7 @@ class BuildPlanner(UIReporter):
             types_with_library = types_with_library,
             parent_reporter = self)
         
-    def _progress_to_sources(self,
+    async def _progress_to_sources(self,
                              output_group: OutputGroup,
                              source_types: set(str),
                              partial_plan: PartialPlan) -> list[PartialPlan]:
@@ -374,7 +390,7 @@ class BuildPlanner(UIReporter):
             f"{' '*len(partial_plan.passes)} to go: {partial_plan.required}/{partial_plan.acceptable} with {partial_plan.passes}"
         )
 
-        candidates = self._query_backends(output_group, partial_plan.acceptable)
+        candidates = await self._query_backends(output_group, partial_plan.acceptable)
 
         if not candidates:
             self.debug(f"No pass wanted to generate {partial_plan.acceptable}")
@@ -408,7 +424,7 @@ class BuildPlanner(UIReporter):
             n = PartialPlan(acceptable = acceptable,
                             required = required,
                             passes = partial_plan.passes + [p])
-            for sub in self._progress_to_sources(output_group, source_types, n):
+            for sub in await self._progress_to_sources(output_group, source_types, n):
                 if (self._plan_complete(source_types, sub)
                         or self._partial_plan_acceptable(source_types, sub)):
                     ret.append(sub)
@@ -459,12 +475,15 @@ class BuildPlanner(UIReporter):
         available = source_types | produced
         return all(p.input_types & available for p in plan.passes)
 
-    def _query_backends(
+    async def _query_backends(
         self,
         output_group: OutputGroup,
         desired_outputs: set[str]
     ) -> list[PassMetadata]:
-        """Query all backends for passes that can help
+        """Query all backends on every tool host for passes that can help
+
+        Of the passes of a backend that several hosts accept, the one
+        of the first host is kept.
 
         Args:
             output_group: Output group with backend configs
@@ -504,29 +523,38 @@ class BuildPlanner(UIReporter):
                     backend.name, backend_config
                 )
 
-            # Ask backend for passes it can contribute
-            passes = backend.contribute_passes(backend_config, aliased_outputs, self.project_config, self.gbs_config)
+            # Ask backend for passes it can contribute on each host.
+            # Each host runs the passes' probe() to keep unusable
+            # candidates out of the pool.
+            accepted: dict[str, tuple[str, PassMetadata]] = {}
+            for host in self.tool_hosts:
+                contributions = await host.passes_contribute(
+                    backend, backend_config, aliased_outputs, self.project_config)
 
-            self.debug(
-                f"Backend {backend.name} contributed passes: {passes}"
-            )
-
-            # Wrap in PassMetadata, running each pass's probe() to
-            # keep unusable candidates out of the pool.
-            for pass_obj in passes:
-                key = f"{backend.name}/{pass_obj.name}"
-                reason = pass_obj.probe()
-                if reason:
-                    self._rejected_passes[key] = reason
-                    self.debug(f"Probe rejected {key}: {reason}")
-                    continue
-                metadata = PassMetadata(
-                    pass_obj=pass_obj,
-                    config=backend_config,
-                    backend_name=backend.name,
-                    requested_types=aliased_outputs,
+                self.debug(
+                    f"Backend {backend.name} contributed passes on {host.name}: "
+                    f"{[p for p, _ in contributions]}"
                 )
-                candidates.append(metadata)
+
+                for pass_obj, reason in contributions:
+                    key = f"{backend.name}/{pass_obj.name}"
+                    if reason:
+                        self._rejected_passes[(key, host.name)] = reason
+                        self.debug(f"Probe rejected {key} on {host.name}: {reason}")
+                        continue
+                    if pass_obj.name in accepted:
+                        self.debug(
+                            f"{key} on {host.name} superseded by "
+                            f"{accepted[pass_obj.name][0]}"
+                        )
+                        continue
+                    accepted[pass_obj.name] = (host.name, PassMetadata(
+                        pass_obj=pass_obj,
+                        config=backend_config,
+                        backend_name=backend.name,
+                        requested_types=aliased_outputs,
+                    ))
+            candidates.extend(metadata for _, metadata in accepted.values())
 
         return candidates
 
@@ -567,8 +595,8 @@ class BuildPlanner(UIReporter):
         if self._rejected_passes:
             lines.append("")
             lines.append("Passes dropped by probe():")
-            for key, reason in sorted(self._rejected_passes.items()):
-                lines.append(f"  - {key}: {reason}")
+            for (key, host), reason in sorted(self._rejected_passes.items()):
+                lines.append(f"  - {key} on {host}: {reason}")
 
         return "\n".join(lines)
 

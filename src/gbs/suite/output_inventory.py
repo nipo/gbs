@@ -43,7 +43,7 @@ class SuiteOutputInventory:
             exclude_tags=list(exclude_tags) if exclude_tags else None,
         )
 
-    def records(self) -> list[dict]:
+    async def records(self) -> list[dict]:
         """Build the records of every selected project, in suite-file order."""
         if self.executor.tags or self.executor.exclude_tags:
             self.executor.apply_tag_filter()
@@ -53,10 +53,10 @@ class SuiteOutputInventory:
             if proj_ref.skip:
                 logger.debug(f"Project '{proj_ref.name}' is skipped, not listing it")
                 continue
-            records.extend(self._project_records(proj_ref, project_file))
+            records.extend(await self._project_records(proj_ref, project_file))
         return records
 
-    def _project_records(self,
+    async def _project_records(self,
                          proj_ref: ProjectReference,
                          project_file: Optional[Path]) -> list[dict]:
         """Describe one suite entry.
@@ -80,7 +80,7 @@ class SuiteOutputInventory:
             name=proj_ref.name,
             group_names=proj_ref.output_groups,
         )
-        return inventory.records()
+        return await inventory.records()
 
 
 __all__ = ["SuiteOutputInventory"]
