@@ -1,10 +1,10 @@
-"""Vivado IP Packaging Pass definitions"""
+"""Vivado IP packaging and synthesis check pass definitions"""
 
 from __future__ import annotations
 from typing import Any
 
 from ...protocol import Dispatcher
-from .dispatcher import VivadoIpDispatcher
+from .dispatcher import VivadoIpCheckDispatcher, VivadoIpDispatcher
 from ..vivado.base import VivadoPassBase
 
 
@@ -59,4 +59,51 @@ class VivadoIpPackagePass(VivadoPassBase):
             vivado_tool=vivado_tool,
             target=target,
             ip_config=self.config,
+        )]
+
+
+class VivadoIpSynthesizePass(VivadoPassBase):
+    """Pass checking that a packaged IP synthesizes out of context
+
+    The IP is instantiated by VLNV in a scratch project, its targets are
+    generated and it is synthesized with synth_ip, the way a user design
+    would get it from the IP catalog. This exercises the package itself:
+    file groups, libraries, customization scripts and supported families.
+
+    Customization parameters come from the `synthesis_check_config`
+    backend configuration mapping.
+
+    Input types:
+        - vivado-ip-zip, vivado-ip-dir: The packaged IP under check
+        - vivado-ip-repository: IP the checked one depends on
+        - vivado-bus-definition, vivado-bus-zip: Custom bus interface
+          definitions the IP refers to
+
+    Output types:
+        - vivado-ip-synthesis-report: Utilization report of the IP
+    """
+    name = "vivado-ip-synthesize"
+    input_types = {
+        "vivado-ip-zip",
+        "vivado-ip-dir",
+        "vivado-ip-repository",
+        "vivado-bus-definition",
+        "vivado-bus-zip",
+    }
+    output_types = {
+        "vivado-ip-synthesis-report",
+    }
+
+    def dispatchers(self, context) -> list[Dispatcher]:
+        """Create the synthesis check dispatcher"""
+        vivado_tool = self.resolve_tool_identifier("vivado")
+        vhdl_std = self.config.get("vhdl_standard", "1993")
+        target = self.config.get("target", {})
+
+        return [VivadoIpCheckDispatcher(
+            context=context,
+            vhdl_std=vhdl_std,
+            vivado_tool=vivado_tool,
+            target=target,
+            params=self.config.get("synthesis_check_config") or {},
         )]

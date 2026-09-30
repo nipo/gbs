@@ -32,7 +32,8 @@ class ProjectCommand(VivadoCommand):
 
         Packaged IP arrives as a zip and bus definitions as loose XML
         files or as a zip; both have to sit in a directory before Vivado
-        can be pointed at them.
+        can be pointed at them. A packaged IP directory is a repository
+        as it stands.
         """
         ip_repo_paths = []
 
@@ -43,6 +44,9 @@ class ProjectCommand(VivadoCommand):
                 zf.extractall(ip_unzip_dir)
             ip_repo_paths.append(str(ip_unzip_dir))
             self.info(f"Extracted IP: {resource.path.name} -> {ip_unzip_dir}")
+
+        for resource in self.inputs_of_type("vivado-ip-dir"):
+            ip_repo_paths.append(str(resource.path))
 
         for resource in self.inputs_of_type("vivado-ip-repository"):
             ip_repo_paths.append(str(resource.path))

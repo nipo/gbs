@@ -1,7 +1,7 @@
 Vivado IP Packaging Backend
 ===========================
 
-The Vivado IP packaging backend creates IP-XACT packages from HDL sources using Vivado's ``ipx::package_project`` flow.
+The Vivado IP packaging backend creates IP-XACT packages from HDL sources using Vivado's ``ipx::package_project`` flow, and checks that a packaged IP synthesizes out of context.
 
 Overview
 --------
@@ -19,13 +19,18 @@ Supported Inputs
 - ``vivado-bus-zip``: Archive of custom bus interface XML definitions (see :doc:`vivado_bus`)
 - ``vivado-ip-repository``: Directory of IP the packaged core refers to
 - ``vivado-ip-customization-tcl``: Post-packaging TCL scripts for IP customization
+- ``vivado-bd-tcl``: Block design parameter propagation scripts
+- ``vivado-xgui-tcl``: Customization GUI script replacing the generated one
 - ``xilinx-xdc``: Constraint files to include in the IP package
+- ``vivado-ip-zip``, ``vivado-ip-dir``: Packaged IP to check, see `Synthesis Check`_
 
 Supported Outputs
 -----------------
 
 - ``vivado-ip-zip``: Packaged IP as a zip archive
 - ``vivado-ip-dir``: Packaged IP as a directory
+- ``vivado-ip-synthesis-report``: Utilization report of the packaged IP
+  synthesized out of context, see `Synthesis Check`_
 
 Configuration
 -------------
@@ -120,6 +125,90 @@ Build:
 The packaged IP zip can then be added to a Vivado project's IP repository
 or used as a ``vivado-ip-zip`` input in another GBS project (which triggers
 project mode in the Vivado synthesis backend).
+
+Synthesis Check
+---------------
+
+The ``vivado-ip-synthesis-report`` output checks that a packaged IP
+synthesizes on its own, without instantiating it in a design. It checks
+the package rather than the HDL sources it was made from, so it also
+catches packaging mistakes:
+
+- sources missing from a file group, or given the wrong library,
+- broken customization, XGUI or block design scripts,
+- a target part outside ``supported_families``,
+- parameter values the IP does not accept or does not synthesize with.
+
+Flow
+~~~~
+
+In a scratch in-memory project for the output group's part, the check:
+
+1. adds the IP, and any IP repository and bus definition sources, to
+   the IP repository paths,
+2. instantiates the IP by the VLNV read from its ``component.xml``
+   with ``create_ip``, as ``<name>_0``,
+3. applies the parameters from ``synthesis_check_config``,
+4. generates the IP targets and synthesizes the IP out of context with
+   ``synth_ip``,
+5. opens the resulting checkpoint, fails if a cell is left as a black
+   box, and writes the utilization report with ``report_utilization``.
+
+Out-of-context synthesis only warns about a module it cannot find and
+leaves a black box in its place; a source missing from the package would
+go unnoticed without the black box check.
+
+Everything the check extracts and generates lives under
+``gbs-build/<output group>/ip-check/``, which is wiped before each run:
+leftovers from a previous run could stand in for files the package fails
+to provide.
+
+Configuration
+~~~~~~~~~~~~~
+
+IP parameters are given in the ``synthesis_check_config`` mapping of
+the backend configuration. Names are those of the IP parameters, without
+the ``CONFIG.`` prefix; values may be booleans, numbers or strings.
+
+.. code-block:: yaml
+
+   output:
+     - name: ip_package
+       topcell: pwm_generator
+       target:
+         part: xc7z020clg400-1
+       backend_config:
+         gbs.builtin.vivado-ip:
+           vendor: gbs
+           library: example
+           name: pwm_generator
+           version: "1.0"
+           taxonomy: /UserIP
+           synthesis_check_config:
+             counter_width_c: 16
+       outputs:
+         - type: vivado-ip-zip
+           path: pwm_generator_1.0.zip
+         - type: vivado-ip-synthesis-report
+           path: gbs-build/ip_package/ip-utilization.rpt
+
+With HDL sources, the group packages the IP and checks the package in
+the same build. A group asking for the report alone packages the IP
+to an intermediate zip in its build directory.
+
+The IP under check can also be a source of type ``vivado-ip-zip`` or
+``vivado-ip-dir``, in which case nothing is packaged. There must be a
+single such IP: the IPs the checked one depends on are given as
+``vivado-ip-repository`` directories, and custom bus definitions as
+``vivado-bus-definition`` or ``vivado-bus-zip`` sources.
+
+The same check is available from the command line, on an IP file or on
+the groups of a project, with :ref:`gbs vivado ip-check <cli-vivado-ip-check>`:
+
+.. code-block:: bash
+
+   gbs vivado ip-check pwm_generator_1.0.zip --part xc7z020clg400-1
+   gbs vivado ip-check --project
 
 Filter Variables
 ----------------

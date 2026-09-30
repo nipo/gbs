@@ -252,6 +252,18 @@ async def test_ip_repo_paths_collect(tmp_path):
     assert (out / "bus_repo" / "other_bus.xml").exists()
 
 
+@pytest.mark.asyncio
+async def test_ip_repo_paths_collect_ip_dir(tmp_path):
+    ctx = context_make(tmp_path)
+    ip_dir = tmp_path / "packaged"
+    ip_dir.mkdir()
+    task = ProjectCommand(
+        dispatcher=MockDispatcher(ctx), name="test", session=RecordingSession(),
+        inputs=[ctx.get_resource(ip_dir, file_type="vivado-ip-dir")], outputs=[])
+
+    assert task.ip_repo_paths_collect(tmp_path / "out") == [str(ip_dir)]
+
+
 # --- Per-backend source declaration ------------------------------------------
 
 @pytest.mark.asyncio
@@ -373,7 +385,7 @@ async def test_ip_dispatcher_input_order(tmp_path):
                                part="xc7a35tcsg324-1", ip_config={},
                                inputs=[], outputs=[])
 
-    dispatcher.inputs_attach(task, ip_dispatcher.ACCEPTED_INPUT_TYPES)
+    dispatcher.inputs_attach(task, ip_dispatcher.PACKAGE_INPUT_TYPES)
 
     assert [r.path.name for r in task.inputs] == ["c.v", "a.vhd", "d.xdc"]
 

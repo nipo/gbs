@@ -410,6 +410,7 @@ Supported compression suffixes:
 
 - ``vivado-ip-zip`` - Packaged IP as a zip archive
 - ``vivado-ip-dir`` - Packaged IP as a directory
+- ``vivado-ip-synthesis-report`` - Utilization of the packaged IP synthesized out of context
 
 **Yosys + nextpnr (iCE40):**
 

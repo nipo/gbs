@@ -424,6 +424,96 @@ apio toolchain enabled.
    # Pick a specific apio install when multiple variants exist
    gbs openxc7 -t bbasm:apio-2026 chipdb build xc7a35t-1cpg236
 
+Vivado Commands
+---------------
+
+Utilities for the Xilinx Vivado flows (see :doc:`backends/vivado_ip`).
+
+.. _cli-vivado-ip-check:
+
+gbs vivado ip-check
+~~~~~~~~~~~~~~~~~~~
+
+Check that a packaged Vivado IP synthesizes out of context. The IP is
+instantiated by VLNV in a scratch in-memory project, its targets are
+generated, it is synthesized with ``synth_ip``, and the utilization of
+the result is written as a report.
+
+.. code-block:: bash
+
+   gbs vivado ip-check IP --part PART [-c NAME=VALUE]... [--repo DIR]... [--bus-zip ZIP]... [-o REPORT]
+   gbs vivado ip-check --project [-f PROJECT_FILE] [-g GROUP]... [-c NAME=VALUE]... [-o REPORT]
+
+Exactly one of ``IP`` and ``--project`` must be given.
+
+**Arguments:**
+
+``IP``
+    Packaged IP to check, as a zip or a directory holding a single
+    ``component.xml``. The package is read before anything else, so a
+    broken one fails without starting Vivado.
+
+**Options:**
+
+``--part PART``
+    Part to synthesize the IP for. Required with ``IP``, rejected with
+    ``--project``, where each output group's target is used.
+
+``-c, --config NAME=VALUE``
+    Set an IP parameter (``CONFIG.NAME`` on the IP instance). May be
+    given multiple times. With ``--project``, overrides the group's
+    ``synthesis_check_config``.
+
+``--repo DIR``
+    IP repository directory the checked IP depends on. ``IP`` mode only;
+    may be given multiple times.
+
+``--bus-zip ZIP``
+    Archive of bus definitions the checked IP refers to. ``IP`` mode
+    only; may be given multiple times.
+
+``-o, --output REPORT``
+    Report path. Defaults to ``gbs-build/<output group>/ip-utilization.rpt``,
+    the output group being ``ip-check`` in ``IP`` mode. With ``--project``,
+    only valid when a single group is checked.
+
+``--project``
+    Package and check the IPs of the project instead of an IP file.
+
+``-f, --file PROJECT_FILE``
+    Project file, ``--project`` mode only. Auto-discovered if not given.
+
+``-g, --group GROUP``
+    Output group to check, ``--project`` mode only. May be given multiple
+    times. Defaults to every group producing a ``vivado-ip-zip`` or
+    ``vivado-ip-dir``; a named group producing neither is an error.
+
+**Behaviour:**
+
+In ``IP`` mode, the command builds a synthetic project whose sources
+are the IP, the repositories and the bus zips, with a single ``ip-check``
+output group asking for a ``vivado-ip-synthesis-report``. In
+``--project`` mode, it adds that report output to the selected groups,
+which then package the IP and check it in the same build. Either way,
+the check runs as a normal build: it is skipped when the report is up
+to date, and build failures are reported and exit as with
+``gbs project build``. On success, the report path of each checked
+group is printed.
+
+**Examples:**
+
+.. code-block:: bash
+
+   # Check a packaged IP for a Zynq-7020
+   gbs vivado ip-check pwm_generator_1.0.zip --part xc7z020clg400-1
+
+   # Same, with a non-default generic value
+   gbs vivado ip-check pwm_generator_1.0.zip --part xc7z020clg400-1 \
+       -c counter_width_c=16
+
+   # Package and check every IP of the project in the current directory
+   gbs vivado ip-check --project
+
 Partition Commands
 ------------------
 

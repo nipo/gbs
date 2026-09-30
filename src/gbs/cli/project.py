@@ -77,7 +77,6 @@ async def build(ctx, jobs, output_groups):
     the build to that subset — useful when different groups target
     tools that are not all available locally.
     """
-    logger = get_logger()
     project_file = get_project_file(ctx)
     gbs_config = ctx.obj.get("gbs_config")
 
@@ -93,6 +92,18 @@ async def build(ctx, jobs, output_groups):
         proj.set_max_parallel(jobs)
 
     selected = list(output_groups) if output_groups else None
+
+    await _project_build(proj, selected)
+
+
+async def _project_build(proj, selected):
+    """Build output groups of a loaded project, exit on failure.
+
+    Args:
+        proj: Loaded project
+        selected: Output group names, None for all of them
+    """
+    logger = get_logger()
 
     try:
         await proj.build(selected)
@@ -116,6 +127,7 @@ async def build(ctx, jobs, output_groups):
             logger.exception("Build failed")
             click.echo(f"Build failed: {e}", err=True)
             sys.exit(1)
+
 
 @project.command()
 @click.option(
