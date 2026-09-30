@@ -87,8 +87,9 @@ class PassDescriptor:
             gbs_config: GBS configuration of this host
 
         Raises:
-            WireError: If the backend is unknown or does not contribute
-                exactly one pass of that name and class.
+            WireError: If the backend is unknown, does not contribute
+                exactly one pass of that name and class, or the pass
+                probe rejects it on this host.
         """
         backend = backends.get(self.backend)
         if backend is None:
@@ -108,6 +109,9 @@ class PassDescriptor:
                 f"Pass {self.name} is {self.class_name(pass_obj)} here, "
                 f"{self.pass_class} on the other side"
             )
+        problem = pass_obj.probe()
+        if problem is not None:
+            raise WireError(f"Pass {self.name} is rejected here: {problem}")
         return PassMetadata(
             pass_obj=pass_obj,
             config=config,

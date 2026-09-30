@@ -10,6 +10,7 @@ import pytest
 
 from gbs.build import BuildContext
 from gbs.build.task import ResourceTypology
+from gbs.config.model import GBSConfig, ToolConfig
 from gbs.planner.passes import PassMetadata
 from gbs.planner.planner import BuildPlan, BuildPlanner
 from gbs.plugins import get_plugin_registry
@@ -485,7 +486,12 @@ class TestSegmentDescriptor:
         assert received.exported_types == frozenset()
         assert received.generic_plugins == {"gbs.builtin.output_copy", "gbs.builtin.compress"}
 
-        passes = received.passes_instantiate(realization.backends, gbs_config=None)
+        with pytest.raises(WireError, match="diamond-ecp5 is rejected here: .*'diamond'"):
+            received.passes_instantiate(realization.backends, gbs_config=None)
+
+        gbs_config = GBSConfig(tools=[
+            ToolConfig(name="diamond", config={"path": str(tmp_path)})])
+        passes = received.passes_instantiate(realization.backends, gbs_config=gbs_config)
         assert [pm.name for pm in passes] == ["diamond-ecp5", "gen-constraints"]
         assert type(passes[0].pass_obj) is type(diamond.pass_obj)
         assert vars(passes[0].pass_obj.part) == vars(diamond.pass_obj.part)
@@ -495,7 +501,7 @@ class TestSegmentDescriptor:
 
         base = tmp_path / "remote"
         placed = received.roots.placed(base)
-        plan = received.plan(realization.backends, None, placed)
+        plan = received.plan(realization.backends, gbs_config, placed)
         og = plan.output_group
         assert [pm.name for pm in plan.passes] == ["diamond-ecp5", "gen-constraints"]
         assert og.name == "synth" and og.topcell == "top"
