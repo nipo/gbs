@@ -183,8 +183,9 @@ class BuildContext(UIReporter):
         generated_by: str | None = None,
         metadata: dict[str, str] | None = None,
         legacy_file_type: str | list[str] | None = None,
+        directory: bool | None = None,
     ) -> 'Resource':
-        """Get or create a Resource for a file path (singleton)
+        """Get or create a Resource for a file or directory path (singleton)
 
         Args:
             path: File path
@@ -199,6 +200,9 @@ class BuildContext(UIReporter):
                 resource so an output goal written with the old name
                 still finds this producer (with a rename warning
                 emitted by OutputCopyDispatcher).
+            directory: Whether the path is a directory tree read or
+                written as a whole (see Resource). Defaults to False
+                on creation.
 
         Returns:
             Resource instance (same instance for same path)
@@ -244,6 +248,8 @@ class BuildContext(UIReporter):
                     r.metadata.update(metadata)
                 if legacy_aliases:
                     r.file_type_aliases |= legacy_aliases
+                if directory is not None:
+                    r.directory = directory
                 self._resources[path] = r
                 return r
 
@@ -260,6 +266,7 @@ class BuildContext(UIReporter):
                 typology=typology,
                 generated_by=generated_by,
                 file_type_aliases=legacy_aliases,
+                directory=bool(directory),
             )
             if metadata:
                 r.metadata.update(metadata)
@@ -285,6 +292,8 @@ class BuildContext(UIReporter):
                 r.metadata.update(metadata)
             if legacy_aliases:
                 r.file_type_aliases |= legacy_aliases
+            if directory is not None:
+                r.directory = directory
 
         return self._resources[path]
 
@@ -1172,7 +1181,8 @@ class BuildContext(UIReporter):
                     file_type=file_type,
                     library=use_library,
                     typology=ResourceTypology.SOURCE,
-                    generated_by=None
+                    generated_by=None,
+                    directory=source_file.path.is_dir(),
                 )
 
                 # Carry compile include directories the repository attached to

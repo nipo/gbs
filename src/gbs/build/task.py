@@ -4,7 +4,8 @@ This is a redesigned task system where both Tasks and Resources are asyncio awai
 The dependency graph is implicit and resolved at runtime by asyncio.
 
 Key concepts:
-- Resource: Represents a file (input or output). Awaiting it waits for the file to be ready.
+- Resource: Represents a file or a directory tree (input or output). Awaiting it
+  waits for it to be ready.
 - VirtualResource: Represents in-memory data. Awaiting it waits for the data to be produced.
 - Task: Represents work to be done. Awaits inputs, runs, resolves outputs.
 - BuildContext: Shared context with semaphore and build configuration.
@@ -21,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Awaitable, Optional, AsyncIterator
 import asyncio
+import os
 from dataclasses import dataclass
 from enum import Enum
 import time
@@ -457,6 +459,12 @@ class Resource(BuildStep):
         file_type_version: File type version (e.g., '2008' for VHDL, '2005' for Verilog)
         typology: Resource typology (SOURCE, INTERMEDIATE, OUTPUT)
         generated_by: Backend name that generated this file (None for source files)
+        directory: Whether the resource is a directory tree rather than a
+            single file. A tool reading a directory input may read anything
+            below it, so the whole tree is the input: it exists when the
+            directory does, and it is as recent as the most recently
+            modified entry in the tree, directories included, so that
+            adding or removing an entry also counts as a change.
         metadata: Additional backend-specific metadata
     """
 
@@ -470,6 +478,7 @@ class Resource(BuildStep):
         typology: ResourceTypology = ResourceTypology.INTERMEDIATE,
         generated_by: str | None = None,
         file_type_aliases: set[str] | None = None,
+        directory: bool = False,
     ):
         """Initialize resource
 
@@ -486,6 +495,7 @@ class Resource(BuildStep):
                 (``vivado-bitstream``, ``ecp5-bitstream``, …) matching
                 producers whose primary ``file_type`` is now the
                 canonical shared name (``bitstream``).
+            directory: Whether the resource is a directory tree
         """
         # Set path BEFORE calling super().__init__() because __hash__ needs it
         self.path = path
@@ -495,6 +505,7 @@ class Resource(BuildStep):
         self.typology = typology
         self.generated_by = generated_by
         self.file_type_aliases = set(file_type_aliases or ())
+        self.directory = directory
 
         # Custom metadata dict for additional attributes not in the standard fields
         self.metadata = {}
@@ -503,13 +514,36 @@ class Resource(BuildStep):
         super().__init__(context, path.name)
 
     def exists(self) -> bool:
+        if self.directory:
+            return self.path.is_dir()
         return self.path.exists()
 
     def mtime_get(self) -> int | None:
+        if self.directory:
+            return self.tree_mtime_get(self.path)
         try:
             return self.path.stat().st_mtime
         except:
             return None
+
+    @staticmethod
+    def tree_mtime_get(root: Path) -> float | None:
+        """Newest modification time of a directory and everything below it
+
+        Returns None when root is not a directory. Entries that vanish
+        while the tree is walked are skipped.
+        """
+        if not root.is_dir():
+            return None
+        newest = root.stat().st_mtime
+        for dirpath, dirnames, filenames in os.walk(root):
+            for name in dirnames + filenames:
+                try:
+                    mtime = os.stat(os.path.join(dirpath, name)).st_mtime
+                except OSError:
+                    continue
+                newest = max(newest, mtime)
+        return newest
 
     def __hash__(self):
         """Hash based on path for set membership"""
@@ -523,7 +557,8 @@ class Resource(BuildStep):
 
 
     def __repr__(self):
-        return f"Resource({self.path}, {self.file_type}, lib={self.library})"
+        suffix = "/" if self.directory else ""
+        return f"Resource({self.path}{suffix}, {self.file_type}, lib={self.library})"
 
     async def work(self):
         """
@@ -531,7 +566,8 @@ class Resource(BuildStep):
         On success, set result to the file path.
         """
         if not self.exists():
-            raise BuildError(f"File {self.path} missing")
+            kind = "Directory" if self.directory else "File"
+            raise BuildError(f"{kind} {self.path} missing")
 
 class Stamp(Resource):
     """A build stamp
