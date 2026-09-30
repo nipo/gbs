@@ -228,8 +228,15 @@ class SegmentDescriptor:
         filter_vars: Filter variables of the plan
         passes: Passes of the segment, in plan order
         roots: Root table all locations refer to
-        inputs: Resources the segment starts from
+        base_output: Base output directory of the build
+        shared_cache: Shared cache root of the build
+        inputs: Resources the segment starts from, in pending queue
+            order
+        dependencies: For each input, indices of the inputs it depends
+            on (the partition dependencies of sources)
         goals: Resources the segment must produce
+        exported_types: File types of the resources the segment
+            produces that passes of other segments consume
         manifest: Content of the inputs, None until it is computed
             (inputs produced by earlier passes may not exist when the
             segment is described)
@@ -240,39 +247,68 @@ class SegmentDescriptor:
                  filter_vars: dict[str, Any],
                  passes: list[PassDescriptor],
                  roots: RootTable,
+                 base_output: RootedPath,
+                 shared_cache: RootedPath,
                  inputs: list[ResourceDescriptor],
+                 dependencies: list[list[int]],
                  goals: list[ResourceDescriptor],
+                 exported_types: Iterable[str],
                  manifest: Optional[ContentManifest] = None):
+        if len(dependencies) != len(inputs):
+            raise WireError(
+                f"segment: {len(dependencies)} dependency lists for {len(inputs)} inputs")
+        for index, deps in enumerate(dependencies):
+            for dep in deps:
+                if not isinstance(dep, int) or isinstance(dep, bool) \
+                        or not 0 <= dep < len(inputs) or dep == index:
+                    raise WireError(f"segment: input {index} depends on invalid input {dep!r}")
         self.project_name = project_name
         self.project_config = project_config
         self.output_group = output_group
         self.filter_vars = filter_vars
         self.passes = passes
         self.roots = roots
+        self.base_output = base_output
+        self.shared_cache = shared_cache
         self.inputs = inputs
+        self.dependencies = [sorted(set(d)) for d in dependencies]
         self.goals = goals
+        self.exported_types = frozenset(exported_types)
         self.manifest = manifest
 
     @classmethod
     def from_realization(cls, realization: Any, passes: Iterable[PassMetadata],
                          inputs: Iterable[Resource], goals: Iterable[Resource],
                          roots: RootTable,
-                         manifest: Optional[ContentManifest] = None) -> SegmentDescriptor:
+                         manifest: Optional[ContentManifest] = None,
+                         exported_types: Iterable[str] = ()) -> SegmentDescriptor:
         """Describe some passes of a PlanRealization
 
         Args:
             realization: PlanRealization the passes belong to
             passes: Passes of the segment, from realization.plan.passes
-            inputs: Resources handed to the segment
+            inputs: Resources handed to the segment, pending in the
+                realization's build context
             goals: Resources the segment must produce
             roots: Local root table of the realization
             manifest: Content of the inputs, if already computed
+            exported_types: Types of the produced resources other
+                segments consume
         """
         plan = realization.plan
+        ctx = realization.build_ctx
         passes = list(passes)
+        inputs = list(inputs)
         for pm in passes:
             if not any(pm is planned for planned in plan.passes):
                 raise WireError(f"Pass {pm.name} is not part of the plan")
+        index_of = {resource.path: index for index, resource in enumerate(inputs)}
+        dependencies: list[list[int]] = [[] for _ in inputs]
+        for index, resource in enumerate(inputs):
+            for dependent in ctx.get_pending_dependents(resource.path):
+                other = index_of.get(dependent.path)
+                if other is not None and other != index:
+                    dependencies[other].append(index)
         return cls(
             project_name=realization.project.model.name,
             project_config=WireFormat.json_check(
@@ -282,8 +318,12 @@ class SegmentDescriptor:
             filter_vars=WireFormat.json_check(plan.filter_vars, "filter variables"),
             passes=[PassDescriptor.from_metadata(pm) for pm in passes],
             roots=roots,
+            base_output=roots.locate(ctx.base_output_path.resolve()),
+            shared_cache=roots.locate(ctx.shared_cache_root.resolve()),
             inputs=[ResourceDescriptor.from_resource(r, roots) for r in inputs],
+            dependencies=dependencies,
             goals=[ResourceDescriptor.from_resource(r, roots) for r in goals],
+            exported_types=exported_types,
             manifest=manifest,
         )
 
@@ -348,6 +388,23 @@ class SegmentDescriptor:
             [d.resource_get(context, table) for d in self.goals],
         )
 
+    def pending_populate(self, context: Any, table: RootTable) -> tuple[list[Resource], list[Resource]]:
+        """Queue the inputs, with their dependencies, and the goals
+
+        Args:
+            context: BuildContext whose pending queue to fill
+            table: Root table placed on this host
+
+        Returns:
+            Inputs and goals, as resources of the context
+        """
+        inputs, goals = self.resources_get(context, table)
+        for resource, deps in zip(inputs, self.dependencies):
+            context.add_pending(resource, source_dependencies={inputs[i] for i in deps} or None)
+        for goal in goals:
+            context.add_pending(goal)
+        return inputs, goals
+
     def to_json(self) -> dict[str, Any]:
         return {
             "version": WireFormat.VERSION,
@@ -357,8 +414,12 @@ class SegmentDescriptor:
             "filter_vars": self.filter_vars,
             "passes": [p.to_json() for p in self.passes],
             "roots": self.roots.to_json(),
+            "base_output": self.base_output.to_json(),
+            "shared_cache": self.shared_cache.to_json(),
             "inputs": [d.to_json() for d in self.inputs],
+            "dependencies": [list(d) for d in self.dependencies],
             "goals": [d.to_json() for d in self.goals],
+            "exported_types": sorted(self.exported_types),
             "manifest": None if self.manifest is None else self.manifest.to_json(),
         }
 
@@ -372,8 +433,15 @@ class SegmentDescriptor:
         filter_vars = reader.field("filter_vars", dict)
         passes = [PassDescriptor.from_json(p) for p in reader.field("passes", list)]
         roots = RootTable.from_json(reader.field("roots", list))
+        base_output = RootedPath.from_json(reader.field("base_output", dict))
+        shared_cache = RootedPath.from_json(reader.field("shared_cache", dict))
         inputs = [ResourceDescriptor.from_json(d) for d in reader.field("inputs", list)]
+        dependencies = reader.field("dependencies", list)
+        for deps in dependencies:
+            if not isinstance(deps, list):
+                raise WireError("segment: dependencies must be lists of input indices")
         goals = [ResourceDescriptor.from_json(d) for d in reader.field("goals", list)]
+        exported_types = reader.string_list("exported_types")
         manifest_data = reader.field("manifest", dict, type(None))
         reader.finish()
 
@@ -384,8 +452,12 @@ class SegmentDescriptor:
             filter_vars=filter_vars,
             passes=passes,
             roots=roots,
+            base_output=base_output,
+            shared_cache=shared_cache,
             inputs=inputs,
+            dependencies=dependencies,
             goals=goals,
+            exported_types=exported_types,
             manifest=None if manifest_data is None else ContentManifest.from_json(manifest_data),
         )
         segment.locations_check()
@@ -394,6 +466,7 @@ class SegmentDescriptor:
     def locations_check(self) -> None:
         """Refuse any location referring to a root the table lacks"""
         locations: list[RootedPath] = [loc for _, loc in self.output_group.outputs]
+        locations += [self.base_output, self.shared_cache]
         for descriptor in self.inputs + self.goals:
             locations.extend(loc for loc, _ in descriptor.trees())
         if self.manifest is not None:

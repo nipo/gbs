@@ -15,12 +15,7 @@ from typing import Any, Optional
 from .segment import PassDescriptor
 from .wire import WireError, WireFormat, WireObject
 
-__all__ = ["RemoteExecutionUnavailable", "PassContribution", "RemotePass"]
-
-
-class RemoteExecutionUnavailable(NotImplementedError):
-    """A plan holds passes that would run on a remote host"""
-    pass
+__all__ = ["PassContribution", "RemotePass"]
 
 
 class PassContribution:
@@ -133,7 +128,8 @@ class RemotePass:
     """Planning stand-in for a pass that runs on a remote host
 
     Exposes the planning interface of a pass; everything else about the
-    pass happens on its host.
+    pass happens on its host. A RemoteSegmentDispatcher dispatches it,
+    along with the other passes of its segment.
 
     Attributes:
         host: Name of the host the pass runs on
@@ -169,9 +165,8 @@ class RemotePass:
         return path
 
     def dispatchers(self, context: Any) -> list:
-        raise RemoteExecutionUnavailable(
-            f"Pass {self.name} would run on {self.host}: "
-            f"remote execution is not implemented yet"
+        raise AssertionError(
+            f"Pass {self.name} runs on {self.host}: its segment dispatches it"
         )
 
     def __repr__(self) -> str:

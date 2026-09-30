@@ -4,7 +4,8 @@ Host-independent descriptions of what a remote gbs instance needs to
 run part of a build: paths relative to a root table, resource and plan
 segment descriptors, and content manifests backed by a blob store;
 the framed messaging channel between two gbs instances, its handshake,
-the hosts tools run on and planning through them.
+the hosts tools run on, planning through them, and running plan
+segments on them.
 """
 
 from .wire import WireError, WireFormat
@@ -15,10 +16,16 @@ from .segment import PassDescriptor, OutputGroupDescriptor, SegmentDescriptor
 from .channel import ChannelError, FrameError, ChannelClosed, Frame, FrameChannel
 from .peer import RemoteError, MethodError, Reply, Event, Call, Peer
 from .toolhost import ToolDescription, ToolHost, LocalToolHost, RemoteToolHost
-from .planning import RemoteExecutionUnavailable, PassContribution, RemotePass
+from .planning import PassContribution, RemotePass
 from .handshake import HandshakeError, SourceDigest, Identity, HelloReply
+from .transfer import BlobTransfer
+from .segment_run import SegmentBuildContext, SegmentDispatchReply, SegmentRun
 from .server import Workspace, RemoteServer, StdioChannel
 from .client import RemoteHostError, RemoteHost
+from .execution import (
+    RemoteSegmentFailure, PlanSegment, PlanSegments, OutputInstaller,
+    RemoteSegmentDispatcher, RemoteSegmentTask,
+)
 
 __all__ = [
     "WireError", "WireFormat",
@@ -29,8 +36,12 @@ __all__ = [
     "ChannelError", "FrameError", "ChannelClosed", "Frame", "FrameChannel",
     "RemoteError", "MethodError", "Reply", "Event", "Call", "Peer",
     "ToolDescription", "ToolHost", "LocalToolHost", "RemoteToolHost",
-    "RemoteExecutionUnavailable", "PassContribution", "RemotePass",
+    "PassContribution", "RemotePass",
     "HandshakeError", "SourceDigest", "Identity", "HelloReply",
+    "BlobTransfer",
+    "SegmentBuildContext", "SegmentDispatchReply", "SegmentRun",
     "Workspace", "RemoteServer", "StdioChannel",
     "RemoteHostError", "RemoteHost",
+    "RemoteSegmentFailure", "PlanSegment", "PlanSegments", "OutputInstaller",
+    "RemoteSegmentDispatcher", "RemoteSegmentTask",
 ]

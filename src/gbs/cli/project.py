@@ -28,7 +28,7 @@ class RemoteOptions:
             metavar="DEST",
             help="Plan with the remote gbs on DEST: a host from `remote_hosts:` "
                  "in the configuration, or else an ssh destination. Passes whose "
-                 "tool the remote host can run are planned there.",
+                 "tool the remote host can run are planned and run there.",
         )(f)
 
     @staticmethod
@@ -142,9 +142,7 @@ async def _project_build(proj, selected):
     except Exception as e:
         from ..build.task import BuildError, MissingToolError, ConfigurationError
         from ..remote.client import RemoteHostError
-        from ..remote.planning import RemoteExecutionUnavailable
-        if isinstance(e, (MissingToolError, ConfigurationError,
-                          RemoteHostError, RemoteExecutionUnavailable)):
+        if isinstance(e, (MissingToolError, ConfigurationError, RemoteHostError)):
             # Configuration error — print the message with config hint.
             # Raised before task execution starts (e.g. during build graph
             # construction), so nothing has printed a failure summary yet.

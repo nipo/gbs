@@ -190,6 +190,17 @@ class Project(UIReporter):
             self.__remote_host = None
             await host.close()
 
+    def remote_host(self, name: str):
+        """The connected remote host of a given name
+
+        Raises:
+            RuntimeError: If no such host is connected, see hosts_open().
+        """
+        host = self.__remote_host
+        if host is None or host.name != name:
+            raise RuntimeError(f"Remote host {name} is not connected")
+        return host
+
     @property
     def tool_hosts(self) -> list:
         """Hosts to plan on, in order of preference
@@ -368,11 +379,13 @@ class Project(UIReporter):
 
         # Only cache when we planned the full set. A partial run must
         # not poison later calls that ask for a different subset.
-        cache = [] if output_group_names is None else None
+        # Realizations dispatched with a remote host depend on the
+        # connection they were dispatched on, which ends with
+        # hosts_open(): they are never reused.
+        cache = [] if output_group_names is None and self.__remote_destination is None else None
 
         for output_group in output_groups:
             plan = await self.planner(output_group).plan(output_group)
-            self.remote_passes_refuse(plan)
             self.filter_vars_finalize(plan)
 
             root_partitions = self.root_partitions(output_group, plan)
@@ -397,22 +410,6 @@ class Project(UIReporter):
 
         if cache is not None:
             self.__realizations = cache
-
-    @staticmethod
-    def remote_passes_refuse(plan: 'BuildPlan') -> None:
-        """Refuse a plan holding passes that would run on a remote host
-
-        Raises:
-            RemoteExecutionUnavailable: Naming those passes.
-        """
-        from ..remote.planning import RemotePass, RemoteExecutionUnavailable
-        remote = [pm.pass_obj for pm in plan.passes if isinstance(pm.pass_obj, RemotePass)]
-        if remote:
-            raise RemoteExecutionUnavailable(
-                f"Output group {plan.output_group.name!r} plans "
-                + ", ".join(f"{p.name} on {p.host}" for p in remote)
-                + ": remote execution is not implemented yet"
-            )
 
     def __select_output_groups(
         self,
@@ -705,41 +702,53 @@ class PlanRealization:
             self.build_ctx.add_pending(output_resource)
             logger.debug(f"  Added output goal: {output.type} -> {output_path}")
 
-        # Determine which backends to use:
-        # 1. Backends that contributed passes (main backend doing the work)
-        # 2. Backends configured in backend_config (may be post-processors like NSL CDC)
-        backend_modules_used = set()
-
-        # Register dispatchers for this plan (into BuildContext)
+        # Register dispatchers for this plan (into BuildContext). Passes
+        # running on a remote host are dispatched by their segment.
+        from ..remote.execution import PlanSegments, RemoteSegmentDispatcher
+        self.segments = PlanSegments(self.plan)
         for pass_metadata in self.plan.passes:
-            contributed_dispatchers = pass_metadata.pass_obj.dispatchers(self.build_ctx)
-            for dispatcher in contributed_dispatchers:
+            segment = self.segments.segment_of(pass_metadata)
+            if segment is None:
+                dispatchers = pass_metadata.pass_obj.dispatchers(self.build_ctx)
+            elif segment.passes[0] is pass_metadata:
+                dispatchers = [RemoteSegmentDispatcher(self.build_ctx, self, segment)]
+            else:
+                dispatchers = []
+            for dispatcher in dispatchers:
                 self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered dispatcher: {dispatcher.name}")
 
-        plugin_registry = get_plugin_registry()
+        self.generic_dispatchers_register(self.build_ctx, self.plan.output_group)
 
-        # Generic dispatchers are registered for every build. An output group
-        # may opt out of specific ones by name via exclude_dispatchers.
-        excluded_dispatchers = set(self.plan.output_group.exclude_dispatchers)
+    # Dispatch rounds before giving up on convergence. Each remote
+    # segment dispatch takes rounds of its own, once the queue settles.
+    DISPATCH_ITERATIONS = 20
+
+    @staticmethod
+    def generic_dispatchers_register(build_ctx: BuildContext, output_group) -> None:
+        """Register the generic dispatchers of every plugin
+
+        An output group may opt out of specific ones by name via
+        exclude_dispatchers.
+        """
+        excluded_dispatchers = set(output_group.exclude_dispatchers)
         seen_dispatchers = set()
 
-        for plugin in plugin_registry.get_all_plugins():
-            for dispatcher in plugin.generic_dispatchers(self.build_ctx):
+        for plugin in get_plugin_registry().get_all_plugins():
+            for dispatcher in plugin.generic_dispatchers(build_ctx):
                 seen_dispatchers.add(dispatcher.name)
                 if dispatcher.name in excluded_dispatchers:
                     logger.info(f"  Excluding generic dispatcher: {dispatcher.name}")
                     continue
-                self.build_ctx.register_dispatcher(dispatcher)
+                build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
 
         unknown_excluded = excluded_dispatchers - seen_dispatchers
         if unknown_excluded:
             logger.warning(
-                f"Output group '{self.plan.output_group.name}' excludes unknown "
+                f"Output group '{output_group.name}' excludes unknown "
                 f"generic dispatcher(s): {', '.join(sorted(unknown_excluded))}"
             )
-
 
     def _register_definition_files(self):
         """Register build definition files as DEFINITION resources.
@@ -803,7 +812,7 @@ class PlanRealization:
 
         ConfigFingerprintStep(self.build_ctx, fingerprint_data, fp_resource)
 
-    async def dispatch(self, max_iterations = 10) -> None:
+    async def dispatch(self, max_iterations = DISPATCH_ITERATIONS) -> None:
         # Run dispatcher iteration
         iterations = await self.build_ctx.run_dispatcher_iteration(
             max_iterations=max_iterations

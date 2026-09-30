@@ -293,12 +293,19 @@ class BlobStore:
         return self.path(digest).is_file()
 
     def file_add(self, source: Path) -> str:
-        """Store a copy of a file, return its hash"""
-        digest = self.file_digest(source)
-        if not self.has(digest):
+        """Store a copy of a file, return its hash
+
+        The file is read once, hashed as it is copied.
+        """
+        upload = self.upload()
+        try:
             with open(source, "rb") as f:
-                self.__write(digest, lambda out: shutil.copyfileobj(f, out, self.CHUNK))
-        return digest
+                while chunk := f.read(self.CHUNK):
+                    upload.append(upload.received, chunk)
+            return upload.finish()
+        except BaseException:
+            upload.abort()
+            raise
 
     def bytes_add(self, data: bytes, digest: Optional[str] = None) -> str:
         """Store content, return its hash
@@ -311,6 +318,83 @@ class BlobStore:
         if not self.has(actual):
             self.__write(actual, lambda out: out.write(data))
         return actual
+
+    def read(self, digest: str, offset: int, size: int) -> bytes:
+        """Up to size bytes of a blob, from offset"""
+        if offset < 0 or size < 0:
+            raise WireError(f"Invalid range {offset}+{size} of blob {digest}")
+        with open(self.path(digest), "rb") as f:
+            f.seek(offset)
+            return f.read(size)
+
+    def upload(self, digest: Optional[str] = None, size: Optional[int] = None) -> BlobStore.Upload:
+        """Start storing a blob received in pieces, see Upload"""
+        return self.Upload(self, digest, size)
+
+    class Upload:
+        """A blob being stored piece by piece, in order
+
+        Content is hashed as it arrives and the blob only enters the
+        store, by finish(), once complete and matching its expected
+        hash, if any.
+
+        Attributes:
+            digest: Expected hash, None if unknown
+            size: Expected size in bytes, None if unknown
+            received: Bytes received so far
+        """
+
+        def __init__(self, store: BlobStore, digest: Optional[str], size: Optional[int]):
+            if digest is not None:
+                store.digest_check(digest)
+            if size is not None and (not isinstance(size, int) or size < 0):
+                raise WireError(f"Invalid blob size {size!r}")
+            self.store = store
+            self.digest = digest
+            self.size = size
+            self.received = 0
+            self.__hash = hashlib.sha256()
+            store.root.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=store.root, prefix=".tmp-")
+            self.__tmp = Path(tmp)
+            self.__file = os.fdopen(fd, "wb")
+
+        @property
+        def complete(self) -> bool:
+            return self.size is not None and self.received == self.size
+
+        def append(self, offset: int, data: bytes) -> None:
+            if offset != self.received:
+                raise WireError(
+                    f"Blob {self.digest}: piece at offset {offset}, expected {self.received}")
+            if self.size is not None and self.received + len(data) > self.size:
+                raise WireError(f"Blob {self.digest}: more than {self.size} bytes")
+            self.__file.write(data)
+            self.__hash.update(data)
+            self.received += len(data)
+
+        def finish(self) -> str:
+            """Enter the blob into the store, return its hash"""
+            self.__file.close()
+            actual = self.__hash.hexdigest()
+            try:
+                if self.size is not None and self.received != self.size:
+                    raise WireError(
+                        f"Blob {self.digest}: {self.received} of {self.size} bytes received")
+                if self.digest is not None and actual != self.digest:
+                    raise WireError(f"Blob content hashes to {actual}, not {self.digest}")
+                dest = self.store.path(actual)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                os.chmod(self.__tmp, 0o444)
+                os.replace(self.__tmp, dest)
+            except BaseException:
+                self.abort()
+                raise
+            return actual
+
+        def abort(self) -> None:
+            self.__file.close()
+            self.__tmp.unlink(missing_ok=True)
 
     def __write(self, digest: str, writer) -> None:
         dest = self.path(digest)

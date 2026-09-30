@@ -10,7 +10,7 @@ import pytest
 
 import gbs
 from gbs.remote import (
-    BlobStore, Frame, FrameChannel, Identity, Peer, RemoteError, RemoteHost,
+    BlobStore, BlobTransfer, Frame, FrameChannel, Identity, Peer, RemoteError, RemoteHost,
     RemoteHostError, WireFormat, Workspace,
 )
 
@@ -138,12 +138,14 @@ async def test_blob_have_put(remote):
         reply = await host.peer.request("blob.have", {"digests": digests})
         assert reply.result == {"missing": digests}
         for digest, content in zip(digests[:2], contents):
-            await host.peer.request("blob.put", {"digest": digest}, body=content)
+            await host.peer.request("blob.put", {"digest": digest, "offset": 0, "size": len(content)},
+                                    body=content)
         reply = await host.peer.request("blob.have", {"digests": digests})
         assert reply.result == {"missing": digests[2:]}
 
         with pytest.raises(RemoteError) as e:
-            await host.peer.request("blob.put", {"digest": digests[2]}, body=b"other")
+            await host.peer.request("blob.put", {"digest": digests[2], "offset": 0, "size": 5},
+                                    body=b"other")
         assert e.value.type == "WireError"
         with pytest.raises(RemoteError) as e:
             await host.peer.request("blob.have", {"digests": ["nope"]})
@@ -158,12 +160,75 @@ async def test_blob_have_put(remote):
     assert not store.has(digests[2])
 
 
+async def test_chunked_transfer_both_ways(remote, tmp_path):
+    content = os.urandom(300_000)
+    source = tmp_path / "big.bin"
+    source.write_bytes(content)
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    digests = [hashlib.sha256(c).hexdigest() for c in (content, b"")]
+    local = BlobStore(tmp_path / "local-store")
+
+    async with await remote.connect() as host:
+        methods = []
+        request = host.peer.request
+
+        async def counting(method, *args, **kwargs):
+            methods.append(method)
+            return await request(method, *args, **kwargs)
+
+        host.peer.request = counting
+        up = BlobTransfer(host.peer, chunk=64 << 10)
+        assert await up.upload(dict(zip(digests, (source, empty)))) == 2
+        assert methods.count("blob.put") == 5 + 1
+        assert await up.upload({digests[0]: source}) == 0
+
+        down = BlobTransfer(host.peer, chunk=100_000)
+        assert await down.download(digests, local) == 2
+        assert methods.count("blob.get") == 3 + 1
+        assert await down.download(digests, local) == 0
+
+    assert local.path(digests[0]).read_bytes() == content
+    assert local.path(digests[1]).read_bytes() == b""
+    assert BlobStore(remote.blobs).path(digests[0]).read_bytes() == content
+
+
+async def test_chunked_put_is_checked(remote):
+    content = b"0123456789"
+    digest = hashlib.sha256(content).hexdigest()
+    async with await remote.connect() as host:
+        put = host.peer.request
+        with pytest.raises(RemoteError) as e:
+            await put("blob.put", {"digest": digest, "offset": 4, "size": 10}, body=content[4:])
+        assert e.value.type == "ProtocolError"
+        await put("blob.put", {"digest": digest, "offset": 0, "size": 10}, body=content[:4])
+        with pytest.raises(RemoteError) as e:
+            await put("blob.put", {"digest": digest, "offset": 5, "size": 10}, body=content[5:])
+        assert e.value.type == "WireError"
+        await put("blob.put", {"digest": digest, "offset": 0, "size": 10}, body=content[:4])
+        with pytest.raises(RemoteError) as e:
+            await put("blob.put", {"digest": digest, "offset": 4, "size": 10}, body=b"xxxxxx")
+        assert e.value.type == "WireError"
+        reply = await host.peer.request("blob.have", {"digests": [digest]})
+        assert reply.result == {"missing": [digest]}
+
+        await put("blob.put", {"digest": digest, "offset": 0, "size": 10}, body=content[:4])
+        await put("blob.put", {"digest": digest, "offset": 4, "size": 10}, body=content[4:])
+        reply = await host.peer.request("blob.get", {"digest": digest, "offset": 8, "size": 100})
+        assert reply.result == {"size": 10}
+        assert reply.body == b"89"
+        with pytest.raises(RemoteError) as e:
+            await host.peer.request("blob.get", {"digest": "0" * 64, "offset": 0, "size": 1})
+        assert e.value.type == "MissingBlob"
+    assert not [p for p in remote.blobs.iterdir() if p.name.startswith(".tmp-")]
+
+
 async def test_blob_store_option(remote):
     store_dir = remote.tmp / "elsewhere"
     argv = remote.argv + ["--blob-store", str(store_dir)]
     digest = hashlib.sha256(b"x").hexdigest()
     async with await remote.connect(argv) as host:
-        await host.peer.request("blob.put", {"digest": digest}, body=b"x")
+        await host.peer.request("blob.put", {"digest": digest, "offset": 0, "size": 1}, body=b"x")
     assert BlobStore(store_dir).has(digest)
     assert not remote.blobs.exists()
 
@@ -201,7 +266,7 @@ async def test_stdout_carries_frames_only(remote, tmp_path):
     digest = hashlib.sha256(b"blob").hexdigest()
     requests = [
         ("hello", Identity.local().to_json(), b""),
-        ("blob.put", {"digest": digest}, b"blob"),
+        ("blob.put", {"digest": digest, "offset": 0, "size": 4}, b"blob"),
         ("nothing", None, b""),
     ]
     for id, (method, params, body) in enumerate(requests, 1):

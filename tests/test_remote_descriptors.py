@@ -478,6 +478,10 @@ class TestSegmentDescriptor:
         assert received.inputs == segment.inputs
         assert received.goals == segment.goals
         assert received.manifest.entries == manifest.entries
+        assert received.base_output == RootedPath("output", PurePosixPath("."))
+        assert received.shared_cache == RootedPath("cache", PurePosixPath("."))
+        assert received.dependencies == [[]]
+        assert received.exported_types == frozenset()
 
         passes = received.passes_instantiate(realization.backends, gbs_config=None)
         assert [pm.name for pm in passes] == ["diamond-ecp5", "gen-constraints"]
@@ -505,6 +509,37 @@ class TestSegmentDescriptor:
         assert remote_inputs[0].path == base.resolve() / "roots" / "project" / "lib" / "repo" / "top.vhd"
         assert remote_inputs[0].library == "work"
         assert remote_goals[0].typology == ResourceTypology.OUTPUT
+
+    async def test_dependencies_and_exported_types(self, layout, realization, tmp_path):
+        ctx = realization.build_ctx
+        paths = [layout.repo / f"{name}.vhd" for name in ("a", "b", "c")]
+        a, b, c = [ctx.get_resource(p, file_type="vhdl", library=p.stem,
+                                    typology=ResourceTypology.SOURCE) for p in paths]
+        ctx.add_pending(a)
+        ctx.add_pending(b, source_dependencies={a})
+        ctx.add_pending(c, source_dependencies={a, b})
+        segment = SegmentDescriptor.from_realization(
+            realization, realization.plan.passes[:1], [c, a, b], [], layout.table,
+            exported_types={"ghdl-cf"})
+        received = SegmentDescriptor.from_json(wire(segment.to_json()))
+        assert received.dependencies == [[1, 2], [], [1]]
+        assert received.exported_types == {"ghdl-cf"}
+
+        placed = received.roots.placed(tmp_path / "remote")
+        remote_ctx = BuildContext(base_output_path=placed.path_of(received.base_output))
+        inputs, goals = received.pending_populate(remote_ctx, placed)
+        assert goals == []
+        assert [r.path.name for r in remote_ctx.iter_pending()] == ["c.vhd", "a.vhd", "b.vhd"]
+        assert remote_ctx.get_pending_dependents(inputs[1].path) == {inputs[0], inputs[2]}
+        assert [lib for lib, _ in remote_ctx.get_pending_by_library_ordered()] == ["a", "b", "c"]
+
+        data = wire(segment.to_json())
+        data["dependencies"] = [[0], [], []]
+        with pytest.raises(WireError, match="invalid input"):
+            SegmentDescriptor.from_json(data)
+        data["dependencies"] = [[]]
+        with pytest.raises(WireError, match="dependency lists"):
+            SegmentDescriptor.from_json(data)
 
     async def test_missing_backend_is_an_error(self, layout, realization):
         segment = SegmentDescriptor.from_realization(

@@ -17,7 +17,7 @@ from gbs.project import Project
 from gbs.project.model import OutputFile, OutputGroup
 from gbs.project.partition import ConditionalGroup, FilterCondition, PartitionTemplate
 from gbs.remote import (
-    LocalToolHost, PassContribution, PassDescriptor, RemoteExecutionUnavailable,
+    LocalToolHost, PassContribution, PassDescriptor,
     RemoteHost, RemotePass, WireError,
 )
 from gbs.repository.model import SourceFile
@@ -123,9 +123,7 @@ async def test_tool_only_on_remote(tmp_path):
     assert descriptor.config["target"] == {"part": "iCE40UP5K-SG48I"}
     assert "ice40-netlist-json" in descriptor.requested_types
 
-    with pytest.raises(RemoteExecutionUnavailable, match="yosys-ice40 on test"):
-        Project.remote_passes_refuse(plan)
-    with pytest.raises(RemoteExecutionUnavailable, match="not implemented yet"):
+    with pytest.raises(AssertionError, match="its segment dispatches it"):
         pm.pass_obj.dispatchers(None)
     assert list(remote.work.iterdir()) == []
 
@@ -269,6 +267,8 @@ class TestCli:
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         ssh_log = tmp_path / "ssh.log"
+        remote_tmp = tmp_path / "remote-tmp"
+        remote_tmp.mkdir()
         ssh = bin_dir / "ssh"
         ssh.write_text(
             "#!/bin/sh\n"
@@ -276,7 +276,8 @@ class TestCli:
             "while [ \"$1\" != \"--\" ]; do shift; done\n"
             "shift\n"
             f"cd '{remote.work}' || exit 1\n"
-            f"HOME='{remote.home}' XDG_CACHE_HOME='{remote.cache}' exec sh -c \"$1\"\n"
+            f"HOME='{remote.home}' XDG_CACHE_HOME='{remote.cache}' "
+            f"TMPDIR='{remote_tmp}' exec sh -c \"$1\"\n"
         )
         ssh.chmod(ssh.stat().st_mode | stat.S_IXUSR)
         project = tmp_path / "project"
@@ -303,18 +304,21 @@ class TestCli:
                 return process.returncode, out.decode(), err.decode()
 
         Setup.remote = remote
+        Setup.remote_tmp = remote_tmp
         Setup.ssh_log = ssh_log
         return Setup
 
-    async def test_build_stops_after_planning(self, setup):
+    async def test_build_runs_the_remote_tool(self, setup):
+        """The remote yosys is an empty file: running it fails there"""
         code, out, err = await setup.run("project", "build", "--remote", "fake", "--remote-keep")
         assert code == 1
-        assert ("Output group 'synth' plans yosys-ice40 on fake: "
-                "remote execution is not implemented yet") in err
+        assert "yosys-ice40 on fake" in out
+        assert f"Permission denied: '{setup.remote.yosys}'" in out
         log = setup.ssh_log.read_text()
         assert "fake.example" in log
         assert "remote serve --stdio --keep" in log
         assert list(setup.remote.work.iterdir()) == []
+        assert len(list(setup.remote_tmp.glob("gbs-remote-*"))) == 1
 
     async def test_outputs_plan_remotely(self, setup):
         code, out, err = await setup.run("project", "outputs", "--format", "json", "--remote", "fake")
