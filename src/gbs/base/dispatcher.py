@@ -133,6 +133,18 @@ class BaseDispatcher(UIReporter, ABC):
         """
         ...
 
+    async def process_settled(self) -> None:
+        """Process the pending work queue once it has settled
+
+        Called when a whole round of process() calls left the pending
+        queue unchanged, one dispatcher at a time in registration
+        order until one of them changes the queue; process() rounds
+        then resume. A dispatcher that must see every resource the
+        others will ever add before acting does its work here.
+        Default implementation does nothing.
+        """
+        pass
+
     async def close(self) -> None:
         """Clean up resources (sessions, subprocesses).
 

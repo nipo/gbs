@@ -621,6 +621,12 @@ class BuildContext(UIReporter):
         if exc_msg:
             emit(f"{indent}Reason: {exc_msg}", fg="red")
 
+        # A failure relayed from another build carries that build's summary
+        from .task import BuildError
+        if isinstance(exc, BuildError) and exc.report:
+            for line in exc.report:
+                emit(f"{indent}  {line}" if line else "")
+
     @staticmethod
     def _failure_headline(tasks_with_messages, task_to_exc, root_causes) -> str:
         """Name the failure in one line.
@@ -1256,7 +1262,9 @@ class BuildContext(UIReporter):
         """Run dispatcher iteration loop until convergence
 
         Iteratively runs all dispatchers until the pending queue stops changing
-        (modification serial stabilizes).
+        (modification serial stabilizes). Once a round leaves it unchanged,
+        dispatchers get process_settled() calls, in order, until one changes
+        the queue; iteration goes on if one did.
 
         Args:
             max_iterations: Maximum iterations before giving up
@@ -1298,6 +1306,14 @@ class BuildContext(UIReporter):
                     self.debug(f"  Changes happened")
 
             serial_after = self.pending_modification_serial
+
+            if serial_after == serial_before:
+                for dispatcher in self._dispatchers:
+                    await dispatcher.process_settled()
+                    if self.pending_modification_serial != serial_after:
+                        self.debug(f"  {dispatcher.name} acted on the settled queue")
+                        break
+                serial_after = self.pending_modification_serial
 
             # Check for convergence
             if serial_after == serial_before:
