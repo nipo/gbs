@@ -14,7 +14,9 @@ from typing import Optional
 from ..config.model import GBSConfig, RemoteHostConfig
 from ..logging import get_logger
 from .channel import ChannelClosed, FrameChannel
-from .handshake import HandshakeError, Hello, HelloReply, Identity, SourceDigest, SourceFiles
+from .handshake import (
+    HandshakeError, Hello, HelloReply, Identity, PluginCompatibility, SourceDigest, SourceFiles,
+)
 from .peer import Peer, RemoteError
 from .toolhost import RemoteToolHost
 from .wire import WireError, WireObject
@@ -39,6 +41,7 @@ class RemoteHost:
         name: Host name for diagnostics
         peer: Messaging endpoint, for requests to the remote
         hello: What the remote answered at connection
+        compatibility: Which plugins may be used with the remote
         tool_host: The remote tool inventory
     """
 
@@ -51,7 +54,9 @@ class RemoteHost:
         self.process = process
         self.peer = Peer(FrameChannel(process.stdout, process.stdin), name)
         self.hello: Optional[HelloReply] = None
+        self.compatibility: Optional[PluginCompatibility] = None
         self.tool_host: Optional[RemoteToolHost] = None
+        self.__files: dict[str, tuple[dict[str, str], dict[str, str]]] = {}
         self.__stderr_tail: collections.deque[str] = collections.deque(maxlen=self.STDERR_TAIL)
         self.__stderr_task = asyncio.create_task(self.__stderr_forward())
 
@@ -112,11 +117,15 @@ class RemoteHost:
             cwd: Working directory of the command
             identity: Identity to present, the local one when None
             check_sources: Whether source digest differences are
-                refused; they are warned about otherwise
+                refused; gbs source differences are warned about
+                otherwise
+
+        Plugin differences do not prevent the connection: they are
+        checked on each use of a plugin, see PluginCompatibility.
 
         Raises:
             RemoteHostError: If the command cannot start, the
-                connection fails, or the remote is incompatible.
+                connection fails, or the remote runs another gbs.
         """
         if identity is None:
             identity = Identity.local()
@@ -138,12 +147,17 @@ class RemoteHost:
         try:
             reply = await host.peer.request("hello", Hello(identity, check_sources).to_json())
             host.hello = HelloReply.from_json(reply.result)
+            theirs = host.hello.identity
             tolerated = identity.check(
-                host.hello.identity, "local host", name, check_sources,
-                await host.source_files(identity, host.hello.identity))
+                theirs, "local host", name, check_sources,
+                await host.gbs_source_files(identity, theirs))
             if tolerated:
                 logger.warning(f"{name} runs gbs sources different from local host, not checked:\n"
                                + "\n".join(tolerated))
+            for d in identity.differences(theirs):
+                if d.plugin is not None:
+                    logger.info(f"{name}: {d.what}: {d.mine} on local host, {d.theirs} on {name}")
+            host.compatibility = PluginCompatibility(identity, theirs, name, check_sources)
         except (ChannelClosed, RemoteError, WireError) as e:
             await host.close()
             raise RemoteHostError(host.failure_describe(f"{name}: handshake failed: {e}")) from e
@@ -153,29 +167,56 @@ class RemoteHost:
         except BaseException:
             await host.close()
             raise
-        host.tool_host = RemoteToolHost(name, host.hello.tools, host.peer)
+        host.tool_host = RemoteToolHost(name, host.hello.tools, host.peer, host.compatibility)
         return host
 
-    async def source_files(self, mine: Identity, theirs: Identity
-                           ) -> dict[str, tuple[dict[str, str], dict[str, str]]]:
-        """Local and remote file maps of the sources that differ
+    async def gbs_source_files(self, mine: Identity, theirs: Identity
+                               ) -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+        """Local and remote file maps of the gbs sources, if they differ"""
+        key = Identity.GBS_SOURCES
+        if key not in mine.sources or key not in theirs.sources \
+                or mine.sources[key] == theirs.sources[key]:
+            return {}
+        return {key: await self.files_of(key)}
 
-        Sources missing on either side are left out, as there is
-        nothing to compare them to.
+    async def files_of(self, key: str) -> tuple[dict[str, str], dict[str, str]]:
+        """Local and remote file maps of the sources under a key
+
+        Args:
+            key: Source key of the identities, "gbs" or the name of a
+                plugin installed on both hosts
         """
-        modules = Identity.source_modules()
-        files = {}
-        for difference in mine.differences(theirs):
-            key = difference.source
-            if key not in mine.sources or key not in theirs.sources or key not in modules:
-                continue
-            local = await asyncio.to_thread(SourceDigest.module_files, modules[key])
+        files = self.__files.get(key)
+        if files is None:
+            local = await asyncio.to_thread(SourceDigest.module_files, Identity.source_modules()[key])
             reply = await self.peer.request("sources.files", {"key": key})
             reader = WireObject(reply.result, "sources.files reply")
             remote = SourceFiles.from_json(reader.field("files", dict), "sources.files reply")
             reader.finish()
-            files[key] = (local, remote)
+            files = (local, remote)
+            self.__files[key] = files
         return files
+
+    async def source_differences(self, key: str) -> list[str]:
+        """Lines listing the files that differ under a source key, see files_of()"""
+        local, remote = await self.files_of(key)
+        return SourceFiles.describe(local, remote, "local host", self.name)
+
+    async def plugin_problem(self, name: str) -> list[str]:
+        """Why a plugin is incompatible with the remote
+
+        Returns:
+            Empty when the plugin is compatible, otherwise the reason
+            followed, when sources differ, by lines listing the files
+            that do
+        """
+        problem = self.compatibility.problem(name)
+        if problem is None:
+            return []
+        mine = self.compatibility.mine.plugins.get(name)
+        if mine is None or mine != self.compatibility.theirs.plugins.get(name):
+            return [problem]
+        return [problem] + await self.source_differences(name)
 
     def failure_describe(self, message: str) -> str:
         """A failure message followed by the last remote log lines"""

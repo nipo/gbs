@@ -646,6 +646,8 @@ class PlanRealization:
         self.project = project
         self.plan = plan
         self.source_fileset = source_fileset
+        # Names of the registered generic dispatchers, by plugin
+        self.generic_dispatchers: dict[str, list[str]] = {}
 
         # Use the project's shared semaphore so all output groups share parallelism limit
         self.build_ctx: BuildContext = BuildContext(
@@ -718,21 +720,26 @@ class PlanRealization:
                 self.build_ctx.register_dispatcher(dispatcher)
                 logger.info(f"  Registered dispatcher: {dispatcher.name}")
 
-        self.generic_dispatchers_register(self.build_ctx, self.plan.output_group)
+        generic = self.generic_dispatchers_of(self.build_ctx, self.plan.output_group)
+        self.generic_dispatchers_register(self.build_ctx, generic)
+        self.generic_dispatchers = {
+            plugin: [d.name for d in dispatchers] for plugin, dispatchers in generic.items()
+        }
 
     # Dispatch rounds before giving up on convergence. Each remote
     # segment dispatch takes rounds of its own, once the queue settles.
     DISPATCH_ITERATIONS = 20
 
     @staticmethod
-    def generic_dispatchers_register(build_ctx: BuildContext, output_group) -> None:
-        """Register the generic dispatchers of every plugin
+    def generic_dispatchers_of(build_ctx: BuildContext, output_group) -> dict[str, list]:
+        """The generic dispatchers of every plugin, by plugin name
 
         An output group may opt out of specific ones by name via
-        exclude_dispatchers.
+        exclude_dispatchers. Plugins left without any are left out.
         """
         excluded_dispatchers = set(output_group.exclude_dispatchers)
         seen_dispatchers = set()
+        found: dict[str, list] = {}
 
         for plugin in get_plugin_registry().get_all_plugins():
             for dispatcher in plugin.generic_dispatchers(build_ctx):
@@ -740,8 +747,7 @@ class PlanRealization:
                 if dispatcher.name in excluded_dispatchers:
                     logger.info(f"  Excluding generic dispatcher: {dispatcher.name}")
                     continue
-                build_ctx.register_dispatcher(dispatcher)
-                logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
+                found.setdefault(plugin.name, []).append(dispatcher)
 
         unknown_excluded = excluded_dispatchers - seen_dispatchers
         if unknown_excluded:
@@ -749,6 +755,15 @@ class PlanRealization:
                 f"Output group '{output_group.name}' excludes unknown "
                 f"generic dispatcher(s): {', '.join(sorted(unknown_excluded))}"
             )
+        return found
+
+    @staticmethod
+    def generic_dispatchers_register(build_ctx: BuildContext, generic: dict[str, list]) -> None:
+        """Register generic dispatchers, see generic_dispatchers_of()"""
+        for dispatchers in generic.values():
+            for dispatcher in dispatchers:
+                build_ctx.register_dispatcher(dispatcher)
+                logger.info(f"  Registered generic dispatcher: {dispatcher.name}")
 
     def _register_definition_files(self):
         """Register build definition files as DEFINITION resources.

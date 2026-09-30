@@ -57,6 +57,9 @@ async def serve(ctx, stdio: bool, blob_store: Path | None, keep: bool):
 async def info(ctx, destination: str):
     """Show what the gbs on DESTINATION provides.
 
+    Its plugins are listed with how they compare to the local ones,
+    then its tools.
+
     DESTINATION is a host from `remote_hosts:` in the configuration,
     or else an ssh destination.
     """
@@ -68,7 +71,19 @@ async def info(ctx, destination: str):
         raise click.ClickException(str(e))
     async with host:
         identity = host.hello.identity
+        compatibility = host.compatibility
         click.echo(f"gbs {identity.gbs}, protocol {identity.protocol}")
+        click.echo("plugins:")
+        for name in sorted(set(identity.plugins) | set(compatibility.mine.plugins)):
+            version = identity.plugins.get(name)
+            status = compatibility.status(name, "local host")
+            if version is None:
+                click.echo(f"  {name}  # {status}, {compatibility.mine.plugins[name]} on local host")
+                continue
+            click.echo(f"  {name} {version}  # {status}")
+            if version == compatibility.mine.plugins.get(name) and compatibility.sources_differ(name):
+                for line in await host.source_differences(name):
+                    click.echo(f"    {line}")
         click.echo("tools:")
         for tool in host.hello.tools:
             status = "" if tool.problem is None else f"  # unusable: {tool.problem}"

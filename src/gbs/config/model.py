@@ -111,8 +111,9 @@ class RemoteHostConfig:
         command: Shell command line running gbs on the remote host,
             interpreted by the remote shell, so `~` and variables
             expand there
-        check_sources: Whether gbs and plugin sources must match
-            local ones; versions must match anyway
+        check_sources: Whether gbs sources, and the sources of the
+            plugins a build uses on the host, must match local ones;
+            versions must match anyway
         origin: Config file this entry was declared in
     """
     name: str

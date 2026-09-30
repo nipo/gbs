@@ -234,6 +234,21 @@ class PluginRegistry:
 
         return None
 
+    def backend_plugin(self, backend_name: str) -> Optional[str]:
+        """Name of the plugin providing a backend
+
+        Args:
+            backend_name: Backend name
+
+        Returns:
+            Plugin name, None if no registered plugin provides a
+            backend of that name
+        """
+        for plugin in self._plugins.values():
+            if any(b.name == backend_name for b in plugin.enumerate_backends()):
+                return plugin.name
+        return None
+
     def list_backends(self) -> list[str]:
         """List all registered backend module paths
 

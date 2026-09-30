@@ -15,9 +15,11 @@ from .manifest import ManifestEntry, ContentManifest, BlobStore
 from .segment import PassDescriptor, OutputGroupDescriptor, SegmentDescriptor
 from .channel import ChannelError, FrameError, ChannelClosed, Frame, FrameChannel
 from .peer import RemoteError, MethodError, Reply, Event, Call, Peer
-from .toolhost import ToolDescription, ToolHost, LocalToolHost, RemoteToolHost
+from .toolhost import ToolDescription, BackendUnavailable, ToolHost, LocalToolHost, RemoteToolHost
 from .planning import PassContribution, RemotePass
-from .handshake import HandshakeError, SourceDigest, SourceFiles, Identity, Hello, HelloReply
+from .handshake import (
+    HandshakeError, SourceDigest, SourceFiles, Identity, PluginCompatibility, Hello, HelloReply,
+)
 from .transfer import BlobTransfer
 from .segment_run import SegmentBuildContext, SegmentDispatchReply, SegmentRun
 from .server import Workspace, RemoteServer, StdioChannel
@@ -35,9 +37,10 @@ __all__ = [
     "PassDescriptor", "OutputGroupDescriptor", "SegmentDescriptor",
     "ChannelError", "FrameError", "ChannelClosed", "Frame", "FrameChannel",
     "RemoteError", "MethodError", "Reply", "Event", "Call", "Peer",
-    "ToolDescription", "ToolHost", "LocalToolHost", "RemoteToolHost",
+    "ToolDescription", "BackendUnavailable", "ToolHost", "LocalToolHost", "RemoteToolHost",
     "PassContribution", "RemotePass",
-    "HandshakeError", "SourceDigest", "SourceFiles", "Identity", "Hello", "HelloReply",
+    "HandshakeError", "SourceDigest", "SourceFiles", "Identity", "PluginCompatibility",
+    "Hello", "HelloReply",
     "BlobTransfer",
     "SegmentBuildContext", "SegmentDispatchReply", "SegmentRun",
     "Workspace", "RemoteServer", "StdioChannel",

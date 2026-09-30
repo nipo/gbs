@@ -5,12 +5,15 @@ identity: protocol version, gbs version, plugin versions and digests
 of the gbs and plugin sources, and whether source digests must match.
 The server answers with its own identity and its tool inventory.
 
-Both instances must agree on versions exactly, as the remote re-runs
-planning and dispatch code for the client: any difference could build
-something else than what the client planned. Source digests must
-agree too, unless the client opts out for the host; differences are
-then only warned about. Source differences are detailed file by file,
-the client fetching the remote file digests with `sources.files`.
+Both instances must run the same gbs, as the remote re-runs planning
+and dispatch code for the client: any difference could build something
+else than what the client planned. gbs sources must agree too, unless
+the client opts out for the host; differences are then only warned
+about. Source differences are detailed file by file, the client
+fetching the remote file digests with `sources.files`.
+
+Plugins may differ between the instances: each use of a plugin is
+checked instead, see PluginCompatibility.
 
 A source digest covers the own tree of a module only: the directory of
 a regular package, even when its `__path__` is extended by other
@@ -30,7 +33,10 @@ from .. import __version__ as gbs_version
 from .toolhost import ToolDescription
 from .wire import WireError, WireFormat, WireObject
 
-__all__ = ["HandshakeError", "SourceDigest", "SourceFiles", "Identity", "Hello", "HelloReply"]
+__all__ = [
+    "HandshakeError", "SourceDigest", "SourceFiles", "Identity", "PluginCompatibility",
+    "Hello", "HelloReply",
+]
 
 
 class HandshakeError(Exception):
@@ -169,7 +175,7 @@ class SourceFiles:
 
 @dataclass(frozen=True)
 class Identity:
-    """What must match between two connected gbs instances
+    """What identifies a gbs instance to another
 
     Attributes:
         protocol: Wire format version
@@ -184,6 +190,7 @@ class Identity:
     sources: dict[str, str]
 
     GBS_SOURCES = "gbs"
+    ABSENT = "not installed"
 
     @dataclass(frozen=True)
     class Difference:
@@ -191,14 +198,17 @@ class Identity:
 
         Attributes:
             what: Differing item, for messages
-            mine: Value on this side, "missing" for an absent plugin
+            mine: Value on this side, ABSENT for a plugin not installed
             theirs: Value on the other side
             source: Source key when this is a source digest difference
+            plugin: Plugin name when this is a plugin difference, None
+                for a gbs difference
         """
         what: str
         mine: str
         theirs: str
         source: Optional[str] = None
+        plugin: Optional[str] = None
 
     @classmethod
     def source_modules(cls) -> dict[str, str]:
@@ -243,34 +253,41 @@ class Identity:
         return f"plugin {key} sources"
 
     def differences(self, other: Identity) -> list[Identity.Difference]:
-        """Differences from another identity, versions first"""
+        """Differences from another identity, gbs first, versions first"""
         found = []
         if self.protocol != other.protocol:
             found.append(self.Difference("protocol version", str(self.protocol), str(other.protocol)))
         if self.gbs != other.gbs:
             found.append(self.Difference("gbs version", self.gbs, other.gbs))
+        mine = self.sources.get(self.GBS_SOURCES, self.ABSENT)
+        theirs = other.sources.get(self.GBS_SOURCES, self.ABSENT)
+        if mine != theirs:
+            found.append(self.Difference(self.source_label(self.GBS_SOURCES), mine, theirs,
+                                         self.GBS_SOURCES))
         for name in sorted(set(self.plugins) | set(other.plugins)):
-            mine = self.plugins.get(name, "missing")
-            theirs = other.plugins.get(name, "missing")
+            mine = self.plugins.get(name, self.ABSENT)
+            theirs = other.plugins.get(name, self.ABSENT)
             if mine != theirs:
-                found.append(self.Difference(f"plugin {name}", mine, theirs))
-        for key in sorted(set(self.sources) | set(other.sources)):
-            mine = self.sources.get(key, "missing")
-            theirs = other.sources.get(key, "missing")
+                found.append(self.Difference(f"plugin {name}", mine, theirs, plugin=name))
+        for key in sorted((set(self.sources) | set(other.sources)) - {self.GBS_SOURCES}):
+            mine = self.sources.get(key, self.ABSENT)
+            theirs = other.sources.get(key, self.ABSENT)
             if mine != theirs:
-                found.append(self.Difference(self.source_label(key), mine, theirs, key))
+                found.append(self.Difference(self.source_label(key), mine, theirs, key, key))
         return found
 
     def check(self, other: Identity, local: str, remote: str,
               check_sources: bool = True,
               files: Optional[dict[str, tuple[dict[str, str], dict[str, str]]]] = None) -> list[str]:
-        """Refuse differences with another identity
+        """Refuse gbs differences with another identity
+
+        Plugin differences are left to PluginCompatibility.
 
         Args:
             other: Identity of the other side
             local: Name of this side, for the message
             remote: Name of the other side, for the message
-            check_sources: Whether source differences are refused
+            check_sources: Whether gbs source differences are refused
             files: File maps on this side and on the other side, by
                 source key, to detail source differences with
 
@@ -279,12 +296,15 @@ class Identity:
             there is none.
 
         Raises:
-            HandshakeError: Listing every difference, if one is refused.
+            HandshakeError: Listing every gbs difference, if one is
+                refused.
         """
         files = files or {}
         lines = []
         refused = False
         for difference in self.differences(other):
+            if difference.plugin is not None:
+                continue
             lines.append(f"  {difference.what}: {difference.mine} on {local}, "
                          f"{difference.theirs} on {remote}")
             if difference.source is None or check_sources:
@@ -332,6 +352,72 @@ class Identity:
             if not isinstance(digest, str):
                 raise WireError(f"identity: {cls.source_label(key)} digest must be a string")
         return cls(protocol, gbs, dict(plugins), dict(sources))
+
+
+class PluginCompatibility:
+    """Which plugins may be used with a connected gbs instance
+
+    A plugin is compatible when it is installed on both sides with the
+    same version and, when sources are checked, the same source digest.
+    A plugin that is not is left out of what the other side does for
+    this one: its backends contribute no pass there, and a segment
+    whose dispatch would involve it is refused.
+
+    Attributes:
+        mine: Identity of this side
+        theirs: Identity of the other side
+        remote: Name of the other side, for messages
+        check_sources: Whether plugin source differences make plugins
+            incompatible
+    """
+
+    def __init__(self, mine: Identity, theirs: Identity, remote: str, check_sources: bool):
+        self.mine = mine
+        self.theirs = theirs
+        self.remote = remote
+        self.check_sources = check_sources
+
+    def problem(self, name: str) -> Optional[str]:
+        """None when a plugin is compatible, the reason otherwise"""
+        if name not in self.theirs.plugins:
+            return f"plugin {name} is not installed on {self.remote}"
+        if name not in self.mine.plugins:
+            return f"plugin {name} is not installed here"
+        if self.mine.plugins[name] != self.theirs.plugins[name]:
+            return (f"plugin {name} version {self.mine.plugins[name]} here, "
+                    f"{self.theirs.plugins[name]} on {self.remote}")
+        if self.check_sources and self.sources_differ(name):
+            return f"plugin {name} sources differ on {self.remote}"
+        return None
+
+    def sources_differ(self, name: str) -> bool:
+        return self.mine.sources.get(name) != self.theirs.sources.get(name)
+
+    def status(self, name: str, local: str) -> str:
+        """How a plugin on the other side relates to this side
+
+        Args:
+            name: Plugin name
+            local: Name of this side, for the message
+        """
+        if name not in self.mine.plugins:
+            return f"not installed on {local}"
+        if name not in self.theirs.plugins:
+            return f"not installed on {self.remote}"
+        if self.mine.plugins[name] != self.theirs.plugins[name]:
+            return f"version differs, {self.mine.plugins[name]} on {local}"
+        if self.sources_differ(name):
+            return "sources differ" if self.check_sources else "sources differ, not checked"
+        return "same"
+
+    def problems(self, names: Iterable[str]) -> dict[str, str]:
+        """Reason of each incompatible plugin among names, by name"""
+        found = {}
+        for name in sorted(set(names)):
+            problem = self.problem(name)
+            if problem is not None:
+                found[name] = problem
+        return found
 
 
 @dataclass(frozen=True)

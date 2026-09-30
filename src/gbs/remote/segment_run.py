@@ -21,6 +21,7 @@ from ..build.task import ResourceTypology, Task
 from ..logging import get_logger
 from ..plugins import get_plugin_registry
 from ..ui.messages import ToolMessage
+from .handshake import PluginCompatibility
 from .manifest import BlobStore, ContentManifest, ManifestEntry
 from .peer import Call, MethodError
 from .resource import ResourceDescriptor
@@ -136,17 +137,20 @@ class SegmentRun:
         id: Segment id on this connection
         directory: Where the segment's roots are placed
         descriptor: What the client sent
+        compatibility: Plugins usable with the client
         table: Root table placed in directory
         context: Build context of the segment, once dispatched
         outputs: Goals and exported resources, once dispatched
     """
 
     def __init__(self, id: int, directory: Path, descriptor: SegmentDescriptor,
+                 compatibility: PluginCompatibility,
                  gbs_config: Any, blob_store: BlobStore, semaphore: asyncio.Semaphore,
                  keep: bool):
         self.id = id
         self.directory = directory
         self.descriptor = descriptor
+        self.compatibility = compatibility
         self.gbs_config = gbs_config
         self.blob_store = blob_store
         self.semaphore = semaphore
@@ -170,20 +174,73 @@ class SegmentRun:
             name, data = item
             await self.__call.event(name, data)
 
+    def passes_check(self) -> None:
+        """Refuse passes of plugins incompatible with the client
+
+        Raises:
+            MethodError: IncompatiblePlugin
+        """
+        registry = get_plugin_registry()
+        problems = []
+        for p in self.descriptor.passes:
+            plugin = registry.backend_plugin(p.backend)
+            if plugin is None:
+                problems.append(f"pass {p.name}: backend {p.backend} is not installed here")
+                continue
+            problem = self.compatibility.problem(plugin)
+            if problem is not None:
+                problems.append(f"pass {p.name}: {problem}")
+        if problems:
+            raise MethodError("IncompatiblePlugin", "; ".join(problems))
+
+    def generic_check(self, generic: dict[str, list]) -> None:
+        """Refuse generic dispatchers differing from the client's
+
+        The plugins whose generic dispatchers are registered here must
+        be those the client registers, and be compatible with it.
+
+        Args:
+            generic: Generic dispatchers of this host, by plugin name
+
+        Raises:
+            MethodError: IncompatiblePlugin
+        """
+        expected = self.descriptor.generic_plugins
+        problems = []
+        for plugin in sorted(set(generic) | expected):
+            if plugin not in expected:
+                names = ", ".join(d.name for d in generic[plugin])
+                reason = self.compatibility.problem(plugin) or f"plugin {plugin} is not active on client"
+                problems.append(f"{reason}, but has generic dispatchers here; "
+                                f"exclude them with exclude_dispatchers: [{names}]")
+            elif plugin not in generic:
+                reason = self.compatibility.problem(plugin) or f"plugin {plugin} is not active here"
+                problems.append(f"{reason}, but client registers its generic dispatchers")
+            else:
+                reason = self.compatibility.problem(plugin)
+                if reason is not None:
+                    problems.append(f"{reason}; its generic dispatchers are registered on both hosts")
+        if problems:
+            raise MethodError("IncompatiblePlugin", "; ".join(problems))
+
     async def dispatch(self) -> SegmentDispatchReply:
-        """Materialize the inputs sent along, then dispatch the segment
+        """Check plugins, materialize the inputs sent along, then
+        dispatch the segment
 
         Inputs already present on the client when the segment was
-        dispatched are materialized first, so dispatchers find the
-        files they may read at dispatch time, as they would on the
-        client.
+        dispatched are materialized before dispatch, so dispatchers
+        find the files they may read at dispatch time, as they would
+        on the client.
+
+        Raises:
+            MethodError: IncompatiblePlugin, if the segment would
+                involve plugins incompatible with the client, or
+                generic dispatchers differing from the client's.
         """
         from ..project.project import PlanRealization
 
         descriptor = self.descriptor
-        if descriptor.manifest is not None:
-            await asyncio.to_thread(self.materialize, descriptor.manifest)
-
+        self.passes_check()
         plan = descriptor.plan(get_plugin_registry().get_all_backends(), self.gbs_config, self.table)
         output_group = plan.output_group
         context = SegmentBuildContext(
@@ -201,12 +258,17 @@ class SegmentRun:
             topcell_library=descriptor.output_group.topcell_library,
             output_group=output_group,
         )
+        generic = PlanRealization.generic_dispatchers_of(context, output_group)
+        self.generic_check(generic)
+
+        if descriptor.manifest is not None:
+            await asyncio.to_thread(self.materialize, descriptor.manifest)
         inputs, goals = descriptor.pending_populate(context, self.table)
 
         for pm in plan.passes:
             for dispatcher in pm.pass_obj.dispatchers(context):
                 context.register_dispatcher(dispatcher)
-        PlanRealization.generic_dispatchers_register(context, output_group)
+        PlanRealization.generic_dispatchers_register(context, generic)
 
         await context.run_dispatcher_iteration(max_iterations=PlanRealization.DISPATCH_ITERATIONS)
         self.context = context

@@ -4,6 +4,7 @@ timing, and builds through a remote gbs served by `gbs remote serve
 
 import asyncio
 import os
+import shutil
 import signal
 import stat
 import sys
@@ -17,10 +18,14 @@ from gbs.base import BaseDispatcher
 from gbs.build import BuildContext
 from gbs.build.task import ConfigurationError
 from gbs.planner.passes import PassMetadata
-from gbs.remote import PassContribution, PassDescriptor, PlanSegments, RemotePass
+from gbs.remote import (
+    Identity, MethodError, PassContribution, PassDescriptor, PlanSegments, PluginCompatibility,
+    RemotePass, SegmentRun, WireFormat,
+)
 
 SRC = Path(gbs.__file__).resolve().parent.parent
 PLUGIN = Path(__file__).resolve().parent / "remote_plugin"
+EXTRA = Path(__file__).resolve().parent / "remote_plugin_extra"
 
 
 class Passes:
@@ -164,6 +169,12 @@ class RemoteBuild:
 
     The local host runs rt-prep and rt-use, the remote host rt-gen, so
     every build goes local, remote, then local again.
+
+    Args:
+        root: Directory everything lives in
+        local_plugins: Plugin directories of the local host
+        remote_plugins: Plugin directories of the remote host
+        local_tools: Tools configured on the local host
     """
 
     PROJECT = (
@@ -181,7 +192,8 @@ class RemoteBuild:
         "      - {type: rt-report, path: report.txt}\n"
     )
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, local_plugins=(PLUGIN,), remote_plugins=(PLUGIN,),
+                 local_tools=("rtprep", "rtuse")):
         self.root = root
         self.remote_home = root / "remote" / "home"
         (self.remote_home / ".config").mkdir(parents=True)
@@ -196,9 +208,8 @@ class RemoteBuild:
         (local_home / ".config").mkdir(parents=True)
         (local_home / ".config" / "gbs.yaml").write_text(
             "tools:\n"
-            "  - name: rtprep\n"
-            "  - name: rtuse\n"
-            "remote_hosts:\n"
+            + "".join(f"  - name: {tool}\n" for tool in local_tools)
+            + "remote_hosts:\n"
             "  fake:\n"
             "    ssh: [fake.example]\n"
             f"    command: [{sys.executable}, -m, gbs]\n"
@@ -214,7 +225,8 @@ class RemoteBuild:
             "shift\n"
             f"cd '{self.remote_work}' || exit 1\n"
             f"HOME='{self.remote_home}' XDG_CACHE_HOME='{self.remote_cache}' "
-            f"TMPDIR='{self.remote_tmp}' exec sh -c \"$1\"\n"
+            f"TMPDIR='{self.remote_tmp}' PYTHONPATH='{self.pythonpath(remote_plugins)}' "
+            "exec sh -c \"$1\"\n"
         )
         ssh.chmod(ssh.stat().st_mode | stat.S_IXUSR)
 
@@ -227,9 +239,17 @@ class RemoteBuild:
             "HOME": str(local_home),
             "XDG_CACHE_HOME": str(root / "local-cache"),
             "PATH": os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]),
-            # A different HOME hides user site-packages: pass the whole path
-            "PYTHONPATH": os.pathsep.join([str(PLUGIN), str(SRC)] + [p for p in sys.path if p]),
+            "PYTHONPATH": self.pythonpath(local_plugins),
         })
+
+    @staticmethod
+    def pythonpath(plugins) -> str:
+        # A different HOME hides user site-packages: pass the whole path
+        return os.pathsep.join([str(p) for p in plugins] + [str(SRC)] + [p for p in sys.path if p])
+
+    def exclude(self, *dispatchers):
+        (self.project / "project.gbs.yaml").write_text(
+            self.PROJECT + f"    exclude_dispatchers: [{', '.join(dispatchers)}]\n")
 
     def raw_write(self, **contents):
         for name, text in contents.items():
@@ -354,3 +374,121 @@ class TestRemoteBuild:
         # rt-prep produces one source per round; the segment only
         # acts after it stopped
         assert len([i for i in prepared if i < settled]) >= 4
+
+
+class PluginTrees:
+    """Plugin directories for one host only"""
+
+    @staticmethod
+    def modified(root: Path) -> Path:
+        """The remotetest plugin, same version, other sources"""
+        tree = root / "modified-plugin"
+        shutil.copytree(PLUGIN, tree, ignore=shutil.ignore_patterns("__pycache__"))
+        init = tree / "gbs" / "plugin" / "remotetest" / "__init__.py"
+        init.write_text(init.read_text() + "\n# modified\n")
+        return tree
+
+    @staticmethod
+    def versioned(root: Path) -> Path:
+        """The remoteextra plugin, another version"""
+        tree = root / "versioned-plugin"
+        shutil.copytree(EXTRA, tree, ignore=shutil.ignore_patterns("__pycache__"))
+        init = tree / "gbs" / "plugin" / "remoteextra" / "__init__.py"
+        init.write_text(init.read_text().replace('version="0.0.1"', 'version="0.0.2"'))
+        return tree
+
+    @staticmethod
+    def empty(root: Path, name: str) -> Path:
+        """A plugin providing nothing"""
+        tree = root / f"{name}-plugin"
+        package = tree / "gbs" / "plugin" / name
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text(
+            "from gbs.base import BasePlugin\n\n\n"
+            "def gbs_register():\n"
+            f"    return BasePlugin(name='gbs.plugin.{name}', version='3.0')\n"
+        )
+        return tree
+
+
+class TestPluginCompatibility:
+    async def test_local_generic_dispatchers_need_the_plugin_remotely(self, tmp_path):
+        rt = RemoteBuild(tmp_path, local_plugins=(PLUGIN, EXTRA))
+        code, out, err = await rt.build()
+        assert code == 1
+        assert ("Cannot dispatch rt-gen on fake:\n"
+                "  plugin gbs.plugin.remoteextra is not installed on fake: install or update it "
+                "on fake, or exclude its dispatchers with exclude_dispatchers: [rt-extra]") in out + err
+        assert not (rt.remote_cache / "gbs" / "remote-blobs").exists() \
+            or not any((rt.remote_cache / "gbs" / "remote-blobs").rglob("*"))
+
+        rt.exclude("rt-extra")
+        code, out, err = await rt.build()
+        assert code == 0, out + err
+        assert (rt.project / "report.txt").read_text() == f"home {rt.remote_home}\n"
+
+    async def test_remote_generic_dispatchers_need_the_plugin_locally(self, tmp_path):
+        rt = RemoteBuild(tmp_path, remote_plugins=(PLUGIN, EXTRA))
+        code, out, err = await rt.build()
+        assert code == 1
+        assert ("Cannot dispatch rt-gen on fake: plugin gbs.plugin.remoteextra is not installed "
+                "on client, but has generic dispatchers here; "
+                "exclude them with exclude_dispatchers: [rt-extra]") in out + err
+
+        rt.exclude("rt-extra")
+        code, out, err = await rt.build()
+        assert code == 0, out + err
+
+    async def test_backend_plugin_sources_differ(self, tmp_path):
+        modified = PluginTrees.modified(tmp_path)
+        rt = RemoteBuild(tmp_path / "remote-only", remote_plugins=(modified,))
+        code, out, err = await rt.build()
+        assert code == 1
+        assert ("gbs.plugin.remotetest on fake: "
+                "plugin gbs.plugin.remotetest sources differ on fake") in out + err
+
+        rt = RemoteBuild(tmp_path / "fallback", remote_plugins=(modified,),
+                         local_tools=("rtprep", "rtgen", "rtuse"))
+        code, out, err = await rt.build()
+        assert code == 0, out + err
+        assert (rt.project / "report.txt").read_text() != f"home {rt.remote_home}\n"
+        assert "remote-segment" not in out + err
+
+    async def test_remote_info(self, tmp_path):
+        rt = RemoteBuild(
+            tmp_path, local_plugins=(PLUGIN, EXTRA, PluginTrees.empty(tmp_path, "localonly")),
+            remote_plugins=(PluginTrees.modified(tmp_path), PluginTrees.versioned(tmp_path),
+                            PluginTrees.empty(tmp_path, "remoteonly")))
+        code, out, err = await rt.run("remote", "info", "fake")
+        assert code == 0, out + err
+        lines = out.splitlines()
+        assert "  gbs.builtin.compress 1.0.0  # same" in lines
+        assert "  gbs.plugin.remoteextra 0.0.2  # version differs, 0.0.1 on local host" in lines
+        assert "  gbs.plugin.remoteonly 3.0  # not installed on local host" in lines
+        assert "  gbs.plugin.localonly  # not installed on fake, 3.0 on local host" in lines
+        index = lines.index("  gbs.plugin.remotetest 0.0.1  # sources differ")
+        assert lines[index + 1] == "    __init__.py: differs"
+        assert lines.index("tools:") > index
+        assert "  rtgen" in lines
+
+    def test_segment_generic_dispatchers_checked_remotely(self):
+        mine = Identity(WireFormat.VERSION, "1.0", {"a": "1", "b": "1"}, {"gbs": "g", "a": "a", "b": "b"})
+        theirs = Identity(WireFormat.VERSION, "1.0", {"a": "1", "c": "1"}, {"gbs": "g", "a": "a", "c": "c"})
+        dispatcher = SimpleNamespace(name="d")
+
+        def check(expected, generic):
+            run = SimpleNamespace(
+                descriptor=SimpleNamespace(generic_plugins=frozenset(expected)),
+                compatibility=PluginCompatibility(mine, theirs, "client", True))
+            SegmentRun.generic_check(run, {name: [dispatcher] for name in generic})
+
+        check({"a"}, {"a"})
+        with pytest.raises(MethodError) as e:
+            check({"a", "c"}, {"a"})
+        assert e.value.type == "IncompatiblePlugin"
+        assert str(e.value) == ("plugin c is not installed here, "
+                                "but client registers its generic dispatchers")
+        with pytest.raises(MethodError) as e:
+            check({"a"}, {"a", "b"})
+        assert str(e.value) == ("plugin b is not installed on client, but has generic "
+                                "dispatchers here; exclude them with exclude_dispatchers: [d]")

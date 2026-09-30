@@ -499,6 +499,7 @@ class BuildPlanner(UIReporter):
         # names still contribute when the user (or an upstream pass)
         # requests the canonical name.
         from ..build.type_aliases import sibling_aliases
+        from ..remote.toolhost import BackendUnavailable
         aliased_outputs = set(desired_outputs)
         for t in desired_outputs:
             aliased_outputs |= sibling_aliases(t)
@@ -528,8 +529,13 @@ class BuildPlanner(UIReporter):
             # candidates out of the pool.
             accepted: dict[str, tuple[str, PassMetadata]] = {}
             for host in self.tool_hosts:
-                contributions = await host.passes_contribute(
-                    backend, backend_config, aliased_outputs, self.project_config)
+                try:
+                    contributions = await host.passes_contribute(
+                        backend, backend_config, aliased_outputs, self.project_config)
+                except BackendUnavailable as e:
+                    self._rejected_passes[(backend.name, host.name)] = e.reason
+                    self.debug(f"Backend {backend.name} unavailable on {host.name}: {e.reason}")
+                    continue
 
                 self.debug(
                     f"Backend {backend.name} contributed passes on {host.name}: "
@@ -594,7 +600,7 @@ class BuildPlanner(UIReporter):
 
         if self._rejected_passes:
             lines.append("")
-            lines.append("Passes dropped by probe():")
+            lines.append("Passes dropped by probe() or host compatibility:")
             for (key, host), reason in sorted(self._rejected_passes.items()):
                 lines.append(f"  - {key} on {host}: {reason}")
 

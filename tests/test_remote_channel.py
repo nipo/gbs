@@ -17,7 +17,8 @@ from gbs.config.model import ConfigError, GBSConfig, ToolConfig
 from gbs.remote import (
     ChannelClosed, Frame, FrameChannel, FrameError, Identity, LocalToolHost,
     MethodError, Peer, RemoteError, RemoteHost, RemoteToolHost, Reply,
-    SourceDigest, ToolDescription, HandshakeError, WireError, WireFormat,
+    PluginCompatibility, SourceDigest, SourceFiles, ToolDescription, HandshakeError, WireError,
+    WireFormat,
 )
 
 
@@ -281,7 +282,7 @@ class TestPeer:
 
 
 class TestIdentity:
-    def test_mismatch_lists_everything(self):
+    def test_gbs_mismatch_refused_plugins_left(self):
         mine = Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
                         {"gbs": "aa", "p": "11", "q": "22"})
         theirs = Identity(WireFormat.VERSION, "1.1", {"p": "1", "q": "3", "r": "1"},
@@ -290,26 +291,30 @@ class TestIdentity:
             mine.check(theirs, "local host", "srv")
         text = str(e.value)
         assert "gbs version: 1.0 on local host, 1.1 on srv" in text
-        assert "plugin q: 2 on local host, 3 on srv" in text
-        assert "plugin r: missing on local host, 1 on srv" in text
         assert "gbs sources: aa on local host, ab on srv" in text
-        assert "plugin q sources: 22 on local host, 23 on srv" in text
-        assert "plugin r sources: missing on local host, 33 on srv" in text
-        assert "plugin p sources" not in text
-        assert mine.check(Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
-                                   {"gbs": "aa", "p": "11", "q": "22"}), "a", "b") == []
+        assert "plugin" not in text
+        plugins = [(d.what, d.mine, d.theirs, d.plugin)
+                   for d in mine.differences(theirs) if d.plugin is not None]
+        assert plugins == [
+            ("plugin q", "2", "3", "q"),
+            ("plugin r", "not installed", "1", "r"),
+            ("plugin q sources", "22", "23", "q"),
+            ("plugin r sources", "not installed", "33", "r"),
+        ]
+        plugins_only = Identity(WireFormat.VERSION, "1.0", {"p": "2"}, {"gbs": "aa", "p": "12"})
+        assert mine.check(plugins_only, "a", "b") == []
 
     def test_unchecked_sources(self):
         mine = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "aa", "p": "11"})
-        sources = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "ab", "p": "11"})
+        sources = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "ab", "p": "12"})
         assert mine.check(sources, "here", "srv", check_sources=False) == [
             "  gbs sources: aa on here, ab on srv"]
         with pytest.raises(HandshakeError, match="gbs sources: aa on here, ab on srv"):
             mine.check(sources, "here", "srv")
-        version = Identity(WireFormat.VERSION, "1.0", {"p": "2"}, {"gbs": "ab", "p": "11"})
+        version = Identity(WireFormat.VERSION, "1.1", {"p": "1"}, {"gbs": "ab", "p": "11"})
         with pytest.raises(HandshakeError) as e:
             mine.check(version, "here", "srv", check_sources=False)
-        assert "plugin p: 1 on here, 2 on srv" in str(e.value)
+        assert "gbs version: 1.0 on here, 1.1 on srv" in str(e.value)
         assert "gbs sources: aa on here, ab on srv" in str(e.value)
 
     def test_file_differences(self):
@@ -329,10 +334,45 @@ class TestIdentity:
             "    b.py: differs",
             "    far/remote.py: only on srv",
             "    local.py: only on local host",
-            "  plugin p sources: 11 on local host, 12 on srv",
-            *(f"    x{i:02}.py: differs" for i in range(10)),
-            "    and 2 more file(s)",
         ]
+        mine, theirs = files["p"]
+        assert SourceFiles.describe(mine, theirs, "local host", "srv") == [
+            *(f"x{i:02}.py: differs" for i in range(10)),
+            "and 2 more file(s)",
+        ]
+
+
+class TestPluginCompatibility:
+    MINE = Identity(WireFormat.VERSION, "1.0", {"same": "1", "version": "1", "sources": "1", "local": "1"},
+                    {"gbs": "aa", "same": "s1", "version": "v1", "sources": "x1", "local": "l1"})
+    THEIRS = Identity(WireFormat.VERSION, "1.0", {"same": "1", "version": "2", "sources": "1", "remote": "1"},
+                      {"gbs": "aa", "same": "s1", "version": "v2", "sources": "x2", "remote": "r1"})
+
+    def test_problems(self):
+        compatibility = PluginCompatibility(self.MINE, self.THEIRS, "srv", True)
+        assert compatibility.problem("same") is None
+        assert compatibility.problems(["same", "version", "sources", "local", "remote"]) == {
+            "version": "plugin version version 1 here, 2 on srv",
+            "sources": "plugin sources sources differ on srv",
+            "local": "plugin local is not installed on srv",
+            "remote": "plugin remote is not installed here",
+        }
+        unchecked = PluginCompatibility(self.MINE, self.THEIRS, "srv", False)
+        assert unchecked.problem("sources") is None
+        assert unchecked.problem("version") is not None
+
+    def test_status(self):
+        compatibility = PluginCompatibility(self.MINE, self.THEIRS, "srv", True)
+        assert {name: compatibility.status(name, "local host")
+                for name in ("same", "version", "sources", "local", "remote")} == {
+            "same": "same",
+            "version": "version differs, 1 on local host",
+            "sources": "sources differ",
+            "local": "not installed on srv",
+            "remote": "not installed on local host",
+        }
+        unchecked = PluginCompatibility(self.MINE, self.THEIRS, "srv", False)
+        assert unchecked.status("sources", "local host") == "sources differ, not checked"
 
     def test_json_round_trip(self):
         local = Identity.local()
@@ -441,7 +481,7 @@ class TestToolHost:
             for t in (ToolDescription("vivado", None, "2024.2"),
                       ToolDescription("quartus", "prime", None, "no licence"))
         ]
-        host = RemoteToolHost("srv", tools, None)
+        host = RemoteToolHost("srv", tools, None, None)
         assert host.tool_probe("vivado") is None
         assert host.tool_probe("quartus:prime") == "no licence"
         assert "not configured on srv" in host.tool_probe("diamond")

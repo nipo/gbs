@@ -469,7 +469,8 @@ class TestSegmentDescriptor:
         diamond, analyze, generated = realization.plan.passes
 
         segment = SegmentDescriptor.from_realization(
-            realization, [diamond, generated], inputs, goals, layout.table, manifest)
+            realization, [diamond, generated], inputs, goals, layout.table, manifest,
+            generic_plugins=["gbs.builtin.output_copy", "gbs.builtin.compress"])
         received = SegmentDescriptor.from_json(wire(segment.to_json()))
 
         assert received.project_name == "proj"
@@ -482,6 +483,7 @@ class TestSegmentDescriptor:
         assert received.shared_cache == RootedPath("cache", PurePosixPath("."))
         assert received.dependencies == [[]]
         assert received.exported_types == frozenset()
+        assert received.generic_plugins == {"gbs.builtin.output_copy", "gbs.builtin.compress"}
 
         passes = received.passes_instantiate(realization.backends, gbs_config=None)
         assert [pm.name for pm in passes] == ["diamond-ecp5", "gen-constraints"]

@@ -21,6 +21,7 @@ from ..base.dispatcher import BaseDispatcher
 from ..build.task import BuildError, ConfigurationError, Resource, ResourceTypology, Task
 from ..build.type_aliases import sibling_aliases
 from ..planner.passes import PassMetadata
+from ..plugins import get_plugin_registry
 from ..ui.messages import MessageSeverity, ToolMessage
 from .channel import ChannelError
 from .manifest import BlobStore, ContentManifest, ManifestEntry
@@ -298,6 +299,10 @@ class RemoteSegmentDispatcher(BaseDispatcher):
     - output goals of the segment output types that no other pass
       produces.
 
+    The plugins of the segment passes, and those whose generic
+    dispatchers are registered locally, must be compatible with the
+    host, which registers the generic dispatchers of the same plugins.
+
     The remote dispatches the segment and answers with what it
     produces: the goals, and resources of the types other passes
     consume. A RemoteSegmentTask then stands for the whole segment.
@@ -369,7 +374,9 @@ class RemoteSegmentDispatcher(BaseDispatcher):
 
         host = self.realization.project.remote_host(self.segment.host)
         what = f"{', '.join(pm.name for pm in self.segment.passes)} on {host.name}"
+        generic = self.realization.generic_dispatchers
         try:
+            await self.plugins_check(host, what, generic)
             table = RootTable.from_realization(self.realization)
             inputs = self.inputs_select()
             definitions, local = self.definitions_select(table)
@@ -377,7 +384,7 @@ class RemoteSegmentDispatcher(BaseDispatcher):
             goals = self.goals_select()
             descriptor = SegmentDescriptor.from_realization(
                 self.realization, self.segment.passes, transferred, goals, table,
-                exported_types=self.exported_types())
+                exported_types=self.exported_types(), generic_plugins=generic)
             present = [d for d in descriptor.inputs if self.present(table, d)]
             descriptor.manifest = await asyncio.to_thread(ContentManifest.compute, table, present)
             await BlobTransfer(host.peer).upload(RemoteSegmentTask.files(table, descriptor.manifest))
@@ -408,6 +415,40 @@ class RemoteSegmentDispatcher(BaseDispatcher):
             task.add_output(d.resource_get(self.context, table))
         self.task = task
         self.known = {r.path for r in transferred} | {table.path_of(d.location) for d in outputs}
+
+    async def plugins_check(self, host: Any, what: str, generic: dict[str, list[str]]) -> None:
+        """Refuse a segment involving plugins incompatible with its host
+
+        Args:
+            host: RemoteHost the segment runs on
+            what: The segment, for messages
+            generic: Names of the generic dispatchers registered
+                locally, by plugin
+
+        Raises:
+            ConfigurationError: Naming each incompatible plugin, why,
+                and what to do about it.
+        """
+        registry = get_plugin_registry()
+        remedies: dict[str, str] = {}
+        for pm in self.segment.passes:
+            plugin = registry.backend_plugin(pm.backend_name)
+            if plugin is None:
+                raise ConfigurationError(
+                    f"Cannot dispatch {what}: backend {pm.backend_name} belongs to no plugin here")
+            remedies[plugin] = f"install or update it on {host.name}"
+        for plugin, names in generic.items():
+            remedies.setdefault(plugin, (
+                f"install or update it on {host.name}, or exclude its dispatchers "
+                f"with exclude_dispatchers: [{', '.join(names)}]"))
+        lines = []
+        for plugin in sorted(remedies):
+            problem = await host.plugin_problem(plugin)
+            if problem:
+                lines.append(f"  {problem[0]}: {remedies[plugin]}")
+                lines.extend(f"    {line}" for line in problem[1:])
+        if lines:
+            raise ConfigurationError(f"Cannot dispatch {what}:\n" + "\n".join(lines))
 
     @staticmethod
     def present(table: RootTable, descriptor: ResourceDescriptor) -> bool:

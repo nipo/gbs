@@ -237,6 +237,9 @@ class SegmentDescriptor:
         goals: Resources the segment must produce
         exported_types: File types of the resources the segment
             produces that passes of other segments consume
+        generic_plugins: Plugins whose generic dispatchers the client
+            registers for the output group; the segment must register
+            those of the same plugins
         manifest: Content of the inputs, None until it is computed
             (inputs produced by earlier passes may not exist when the
             segment is described)
@@ -253,6 +256,7 @@ class SegmentDescriptor:
                  dependencies: list[list[int]],
                  goals: list[ResourceDescriptor],
                  exported_types: Iterable[str],
+                 generic_plugins: Iterable[str],
                  manifest: Optional[ContentManifest] = None):
         if len(dependencies) != len(inputs):
             raise WireError(
@@ -274,6 +278,7 @@ class SegmentDescriptor:
         self.dependencies = [sorted(set(d)) for d in dependencies]
         self.goals = goals
         self.exported_types = frozenset(exported_types)
+        self.generic_plugins = frozenset(generic_plugins)
         self.manifest = manifest
 
     @classmethod
@@ -281,7 +286,8 @@ class SegmentDescriptor:
                          inputs: Iterable[Resource], goals: Iterable[Resource],
                          roots: RootTable,
                          manifest: Optional[ContentManifest] = None,
-                         exported_types: Iterable[str] = ()) -> SegmentDescriptor:
+                         exported_types: Iterable[str] = (),
+                         generic_plugins: Iterable[str] = ()) -> SegmentDescriptor:
         """Describe some passes of a PlanRealization
 
         Args:
@@ -294,6 +300,8 @@ class SegmentDescriptor:
             manifest: Content of the inputs, if already computed
             exported_types: Types of the produced resources other
                 segments consume
+            generic_plugins: Plugins whose generic dispatchers the
+                realization registers
         """
         plan = realization.plan
         ctx = realization.build_ctx
@@ -324,6 +332,7 @@ class SegmentDescriptor:
             dependencies=dependencies,
             goals=[ResourceDescriptor.from_resource(r, roots) for r in goals],
             exported_types=exported_types,
+            generic_plugins=generic_plugins,
             manifest=manifest,
         )
 
@@ -420,6 +429,7 @@ class SegmentDescriptor:
             "dependencies": [list(d) for d in self.dependencies],
             "goals": [d.to_json() for d in self.goals],
             "exported_types": sorted(self.exported_types),
+            "generic_plugins": sorted(self.generic_plugins),
             "manifest": None if self.manifest is None else self.manifest.to_json(),
         }
 
@@ -442,6 +452,7 @@ class SegmentDescriptor:
                 raise WireError("segment: dependencies must be lists of input indices")
         goals = [ResourceDescriptor.from_json(d) for d in reader.field("goals", list)]
         exported_types = reader.string_list("exported_types")
+        generic_plugins = reader.string_list("generic_plugins")
         manifest_data = reader.field("manifest", dict, type(None))
         reader.finish()
 
@@ -458,6 +469,7 @@ class SegmentDescriptor:
             dependencies=dependencies,
             goals=goals,
             exported_types=exported_types,
+            generic_plugins=generic_plugins,
             manifest=None if manifest_data is None else ContentManifest.from_json(manifest_data),
         )
         segment.locations_check()

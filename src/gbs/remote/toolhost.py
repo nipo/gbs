@@ -21,9 +21,10 @@ from .wire import WireError, WireFormat, WireObject
 
 if TYPE_CHECKING:
     from ..protocol import Backend
+    from .handshake import PluginCompatibility
     from .peer import Peer
 
-__all__ = ["ToolDescription", "ToolHost", "LocalToolHost", "RemoteToolHost"]
+__all__ = ["ToolDescription", "BackendUnavailable", "ToolHost", "LocalToolHost", "RemoteToolHost"]
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,18 @@ class ToolDescription:
         return tool
 
 
+class BackendUnavailable(Exception):
+    """A host cannot use a backend at all
+
+    Attributes:
+        reason: Why, for diagnostics
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 class ToolHost(ABC):
     """A host tools may run on
 
@@ -120,6 +133,9 @@ class ToolHost(ABC):
         Returns:
             (pass, problem) for each contributed pass, problem being
             None when the pass is usable on this host
+
+        Raises:
+            BackendUnavailable: If the host cannot use the backend.
         """
         ...
 
@@ -189,27 +205,43 @@ class RemoteToolHost(ToolHost):
     """A remote host, as described by its inventory
 
     Planning queries are forwarded to the remote gbs instance through
-    the `passes.contribute` request. Answers are kept for the lifetime
-    of the connection, as planning repeats the same queries.
+    the `passes.contribute` request, for backends of plugins compatible
+    with the remote only. Answers are kept for the lifetime of the
+    connection, as planning repeats the same queries.
 
     Attributes:
         peer: Connection to the remote, None for an inventory alone
+        compatibility: Plugins usable with the remote, None for an
+            inventory alone
     """
 
-    def __init__(self, name: str, tools: Iterable[ToolDescription], peer: Optional[Peer]):
+    def __init__(self, name: str, tools: Iterable[ToolDescription], peer: Optional[Peer],
+                 compatibility: Optional[PluginCompatibility]):
         super().__init__(name)
         self.peer = peer
+        self.compatibility = compatibility
         self.__tools = list(tools)
         self.__contributions: dict[str, list] = {}
 
     def tools(self) -> list[ToolDescription]:
         return list(self.__tools)
 
+    def backend_problem(self, backend: Backend) -> Optional[str]:
+        """None when the remote may be asked for a backend, the reason otherwise"""
+        from ..plugins import get_plugin_registry
+        plugin = get_plugin_registry().backend_plugin(backend.name)
+        if plugin is None:
+            return f"backend {backend.name} belongs to no plugin here"
+        return self.compatibility.problem(plugin)
+
     async def passes_contribute(self, backend, config, requested_types, project_config):
         from .planning import PassContribution, RemotePass
 
-        if self.peer is None:
+        if self.peer is None or self.compatibility is None:
             raise RuntimeError(f"{self.name}: no connection to query passes from")
+        problem = self.backend_problem(backend)
+        if problem is not None:
+            raise BackendUnavailable(problem)
         params = {
             "backend": backend.name,
             "config": WireFormat.json_check(config, f"configuration of backend {backend.name}"),

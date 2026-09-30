@@ -88,7 +88,7 @@ async def test_mismatch_refused(remote):
         await remote.connect(identity=fake)
     text = str(e.value)
     assert f"gbs version: 0.0.0-fake on local host, {gbs.__version__} on test" in text
-    assert f"plugin gbs.builtin.ghdl: 0.0.1 on local host, {local.plugins['gbs.builtin.ghdl']} on test" in text
+    assert "plugin" not in text
 
 
 async def test_source_mismatch_refused(remote):
@@ -101,8 +101,80 @@ async def test_source_mismatch_refused(remote):
         await remote.connect(identity=fake)
     text = str(e.value)
     assert f"gbs sources: {'0' * 64} on local host, {local.sources['gbs']} on test" in text
-    assert "plugin gbs.builtin.yosys sources: " in text
+    assert "plugin" not in text
     assert "gbs version" not in text
+
+
+class PluginDifferences:
+    """A client identity whose plugins differ from the server's"""
+
+    @staticmethod
+    def identity() -> Identity:
+        local = Identity.local()
+        plugins = dict(local.plugins)
+        sources = dict(local.sources)
+        plugins["gbs.builtin.ghdl"] = "0.0.1"
+        sources["gbs.builtin.yosys"] = "1" * 64
+        del plugins["gbs.builtin.nvc"]
+        del sources["gbs.builtin.nvc"]
+        plugins["gbs.plugin.clientonly"] = "1.0"
+        sources["gbs.plugin.clientonly"] = "2" * 64
+        return Identity(local.protocol, local.gbs, plugins, sources)
+
+
+async def test_plugin_differences_tolerated(remote, caplog):
+    with caplog.at_level("INFO"):
+        async with await remote.connect(identity=PluginDifferences.identity()) as host:
+            assert (await host.peer.request("blob.have", {"digests": []})).result == {"missing": []}
+            compatibility = host.compatibility
+            assert compatibility.problem("gbs.builtin.ghdl") == (
+                f"plugin gbs.builtin.ghdl version 0.0.1 here, "
+                f"{Identity.local().plugins['gbs.builtin.ghdl']} on test")
+            assert compatibility.problem("gbs.builtin.yosys") == (
+                "plugin gbs.builtin.yosys sources differ on test")
+            assert compatibility.problem("gbs.builtin.nvc") == "plugin gbs.builtin.nvc is not installed here"
+            assert compatibility.problem("gbs.plugin.clientonly") == (
+                "plugin gbs.plugin.clientonly is not installed on test")
+            assert compatibility.problem("gbs.builtin.diamond") is None
+            problem = await host.plugin_problem("gbs.builtin.yosys")
+            assert problem == ["plugin gbs.builtin.yosys sources differ on test"]
+            assert await host.plugin_problem("gbs.builtin.diamond") == []
+    assert "plugin gbs.plugin.clientonly: 1.0 on local host, not installed on test" in caplog.text
+
+
+async def test_incompatible_backend_not_queried(remote):
+    from gbs.plugins import get_plugin_registry
+    from gbs.remote import BackendUnavailable
+    backends = {b.name: b for b in get_plugin_registry().get_all_backends()}
+    async with await remote.connect(identity=PluginDifferences.identity()) as host:
+        methods = []
+        request = host.peer.request
+
+        async def counting(method, *args, **kwargs):
+            methods.append(method)
+            return await request(method, *args, **kwargs)
+
+        host.peer.request = counting
+        with pytest.raises(BackendUnavailable) as e:
+            await host.tool_host.passes_contribute(backends["gbs.builtin.yosys"], {}, {"x"}, {})
+        assert e.value.reason == "plugin gbs.builtin.yosys sources differ on test"
+        assert methods == []
+        assert await host.tool_host.passes_contribute(backends["gbs.builtin.diamond"], {}, {"x"}, {}) == []
+        assert methods == ["passes.contribute"]
+
+
+async def test_incompatible_backend_refused_by_server(remote):
+    async with await remote.connect(identity=PluginDifferences.identity()) as host:
+        for backend, reason in [
+            ("gbs.builtin.yosys", "plugin gbs.builtin.yosys sources differ on client"),
+            ("gbs.builtin.ghdl", "plugin gbs.builtin.ghdl version "),
+            ("gbs.builtin.nvc", "plugin gbs.builtin.nvc is not installed on client"),
+        ]:
+            params = {"backend": backend, "config": {}, "requested_types": [], "project_config": {}}
+            with pytest.raises(RemoteError) as e:
+                await host.peer.request("passes.contribute", params)
+            assert e.value.type == "IncompatiblePlugin"
+            assert f"Backend {backend}: {reason}" in e.value.message
 
 
 async def test_sources_files_after_mismatch(remote):

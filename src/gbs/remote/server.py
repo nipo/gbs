@@ -22,7 +22,7 @@ from ..config.model import GBSConfig
 from ..logging import get_logger
 from ..plugins import get_plugin_registry
 from .channel import FrameChannel
-from .handshake import HandshakeError, Hello, HelloReply, Identity, SourceDigest
+from .handshake import HandshakeError, Hello, HelloReply, Identity, PluginCompatibility, SourceDigest
 from .manifest import BlobStore, ContentManifest
 from .peer import Call, MethodError, Peer, Reply
 from .planning import PassContribution
@@ -78,9 +78,11 @@ class RemoteServer:
     Methods:
         hello: Hello -> HelloReply: exchange identities, send the
             tool inventory. Required before any other method but
-            sources.files and shutdown; refused identities leave the
-            session unusable. Source digest differences are refused
-            only if the client checks sources.
+            sources.files and shutdown; an identity running another
+            gbs leaves the session unusable. gbs source differences
+            are refused only if the client checks sources. Plugin
+            differences are checked on each use of a plugin, see
+            PluginCompatibility.
         sources.files: {key} -> {files: {path: sha256}}: file map of
             the sources under a key of the identity, "gbs" or a plugin
             name. Allowed after refused identities, to detail source
@@ -96,10 +98,14 @@ class RemoteServer:
         passes.contribute: {backend, config, requested_types,
             project_config} -> {passes: [PassContribution...]}: ask a
             backend for passes with the configuration of this host,
-            and probe them here.
+            and probe them here. A backend of a plugin incompatible
+            with the client is refused with IncompatiblePlugin.
         segment.dispatch: SegmentDescriptor -> SegmentDispatchReply:
             materialize the inputs of the descriptor manifest, and
             dispatch the segment in a directory of the workspace.
+            Passes of plugins incompatible with the client, and
+            generic dispatchers other than those of the plugins the
+            client lists, are refused with IncompatiblePlugin.
         segment.execute: {id, manifest} -> {manifest}: bring the
             segment inputs to the manifest, build, and answer with the
             content of the outputs, whose blobs are then in the store.
@@ -125,6 +131,7 @@ class RemoteServer:
         self.identity = Identity.local()
         self.client: Optional[Identity] = None
         self.check_sources = True
+        self.compatibility: Optional[PluginCompatibility] = None
         self.uploads: dict[str, BlobStore.Upload] = {}
         self.segments: dict[int, SegmentRun] = {}
         self.__segment_ids = itertools.count(1)
@@ -170,7 +177,8 @@ class RemoteServer:
             ))
 
     def refuses(self, difference: Identity.Difference) -> bool:
-        return difference.source is None or self.check_sources
+        """Whether a difference makes the client unusable"""
+        return difference.plugin is None and (difference.source is None or self.check_sources)
 
     async def hello(self, call: Call) -> Any:
         if self.client is not None:
@@ -181,12 +189,15 @@ class RemoteServer:
             raise MethodError("Incompatible", str(e))
         self.client = hello.identity
         self.check_sources = hello.check_sources
+        self.compatibility = PluginCompatibility(self.identity, self.client, "client", self.check_sources)
         for d in self.identity.differences(self.client):
             message = f"Client {d.what} is {d.theirs}, {d.mine} here"
             if self.refuses(d):
                 logger.error(message)
-            else:
+            elif d.plugin is None:
                 logger.warning(message + ", not checked")
+            else:
+                logger.info(message)
         tools = LocalToolHost(self.gbs_config).tools()
         return HelloReply(self.identity, tools).to_json()
 
@@ -262,6 +273,10 @@ class RemoteServer:
         if len(backends) != 1:
             raise MethodError("UnknownBackend", f"{len(backends)} backend(s) named {name!r} here")
         backend, = backends
+        plugin = get_plugin_registry().backend_plugin(name)
+        problem = self.compatibility.problem(plugin)
+        if problem is not None:
+            raise MethodError("IncompatiblePlugin", f"Backend {name}: {problem}")
         contributed = await LocalToolHost(self.gbs_config).passes_contribute(
             backend, copy.deepcopy(config), requested_types, project_config)
         return PassContribution.list_to_json([
@@ -276,7 +291,7 @@ class RemoteServer:
             self.blobs_check(descriptor.manifest)
         id = next(self.__segment_ids)
         run = SegmentRun(
-            id, self.workspace.path / f"segment-{id}", descriptor,
+            id, self.workspace.path / f"segment-{id}", descriptor, self.compatibility,
             self.gbs_config, self.blob_store, self.semaphore, self.workspace.keep)
         reply = await run.dispatch()
         self.segments[id] = run
