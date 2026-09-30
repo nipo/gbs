@@ -108,8 +108,8 @@ class Import(Task):
 
     @property
     def workdir(self) -> Path:
-        cf_out, = self.outputs_of_type("ghdl-cf")
-        return cf_out.path.parent
+        workdir_out, = self.outputs_of_type("ghdl-library-dir")
+        return workdir_out.path
 
     @property
     def marker_path(self) -> Path:
@@ -264,10 +264,8 @@ class VHPIDirectCompile(Task):
         so.path.parent.mkdir(parents=True, exist_ok=True)
         obj_path = so.path.with_suffix('.o')
 
-        # Include directories the source's repository attached to it (e.g. the
-        # VHPIDIRECT support headers a backend ships separately from GHDL).
         include_flags = [
-            f"-I{Path(d).resolve()}" for d in c.metadata.get("include_dirs", [])
+            f"-I{d.path.resolve()}" for d in self.inputs_of_type("c-include-dir")
         ]
 
         compile_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
@@ -305,7 +303,38 @@ class VHPIDirectCompile(Task):
         # Clean up object file
         obj_path.unlink(missing_ok=True)
 
-class CompileLink(Task):
+class Elaboration(Task):
+    """Base of the tasks elaborating a topcell from analyzed libraries"""
+
+    def __init__(
+        self,
+        dispatcher: "Dispatcher",
+        name: str,
+        description: str,
+        topcell: str,
+        root_library: str,
+        inputs: list = None,
+        outputs: list = None,
+    ):
+        super().__init__(
+            dispatcher=dispatcher,
+            name=name,
+            inputs=inputs or [],
+            outputs=outputs or [],
+            description=description,
+        )
+        self.topcell = topcell
+        self.root_library = root_library
+
+    def root_library_dir(self) -> Resource:
+        """The analyzed root library directory among the inputs"""
+        for res in self.inputs_of_type("ghdl-library-dir"):
+            if res.library == self.root_library:
+                return res
+        raise BuildError(f"No workdir input for root library {self.root_library}")
+
+
+class CompileLink(Elaboration):
     """GHDL compile and link task for compiled backends (ghdl -c -e)"""
 
     def __init__(
@@ -319,12 +348,12 @@ class CompileLink(Task):
         super().__init__(
             dispatcher=dispatcher,
             name=f"ghdl_link_simulator",
-            inputs=inputs or [],
-            outputs=outputs or [],
-            description=f"link {dispatcher.context.project.name}"
+            description=f"link {dispatcher.context.project.name}",
+            topcell=topcell,
+            root_library=root_library,
+            inputs=inputs,
+            outputs=outputs,
         )
-        self.topcell = topcell
-        self.root_library = root_library
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
@@ -336,30 +365,23 @@ class CompileLink(Task):
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # The cf input for the root library lives in the shared content
-        # cache. Materialize a per-project elaboration workdir hardlinked
-        # from it so this project's elaboration writes don't collide with
-        # another project sharing the same cached analysis.
-        root_cf = next(
-            (r for r in self.inputs_of_type("ghdl-cf") if r.library == self.root_library),
-            None,
-        )
-        if root_cf is None:
-            raise BuildError(f"No cf input for root library {self.root_library}")
-        elab_workdir = self.dispatcher.library_elaboration_workdir(root_cf.path.parent)
-        self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
+        # The root library workdir lives in the shared content cache.
+        # Materialize a per-project elaboration workdir hardlinked from it
+        # so this project's elaboration writes don't collide with another
+        # project sharing the same cached analysis.
+        root_dir = self.root_library_dir()
+        elab_workdir = self.dispatcher.library_elaboration_workdir(root_dir.path)
+        self.dispatcher.materialize_library_workdir(root_dir.path, elab_workdir)
 
         # -P for every non-root library points at its shared cache workdir;
         # --workdir for the root library points at the per-project copy.
         flags = []
-        for res in self.inputs:
-            if res.file_type != "ghdl-cf":
-                continue
+        for res in self.inputs_of_type("ghdl-library-dir"):
             if res.library == self.root_library:
                 flags.append(f"--workdir={elab_workdir.resolve()}")
                 flags.append(f"-P{elab_workdir.resolve()}")
             else:
-                flags.append(f"-P{res.path.parent.resolve()}")
+                flags.append(f"-P{res.path.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
         for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
@@ -387,7 +409,7 @@ class CompileLink(Task):
 
         make_executable(out_path)
 
-class MakeElab(Task):
+class MakeElab(Elaboration):
     """GHDL make task for mcode/jit backends (ghdl -m / -e + wrapper generator)"""
 
     def __init__(
@@ -401,12 +423,12 @@ class MakeElab(Task):
         super().__init__(
             dispatcher=dispatcher,
             name=f"ghdl_make_{topcell}",
-            inputs=inputs or [],
-            outputs=outputs or [],
-            description=f"make {dispatcher.context.project.name}"
+            description=f"make {dispatcher.context.project.name}",
+            topcell=topcell,
+            root_library=root_library,
+            inputs=inputs,
+            outputs=outputs,
         )
-        self.topcell = topcell
-        self.root_library = root_library
 
     async def work(self) -> None:
         """Execute GHDL compile and link"""
@@ -414,34 +436,26 @@ class MakeElab(Task):
         elaborate_args = list(self.dispatcher.get_tool_option("elaborate_args", []))
         run_args = list(self.dispatcher.get_tool_option("run_args", []))
 
-        assert len(list(self.outputs)) == 1
-        output, = self.outputs
+        output, = self.outputs_of_type("simulator")
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Per-project elaboration workdir for the root library, materialized
         # from the shared cache so that ghdl -m / -e / -r write here without
         # interfering with another project sharing the same cached analysis.
-        root_cf = next(
-            (r for r in self.inputs_of_type("ghdl-cf") if r.library == self.root_library),
-            None,
-        )
-        if root_cf is None:
-            raise BuildError(f"No cf input for root library {self.root_library}")
-        elab_workdir = self.dispatcher.library_elaboration_workdir(root_cf.path.parent)
-        self.dispatcher.materialize_library_workdir(root_cf.path.parent, elab_workdir)
-        elab_workdir_str = str(elab_workdir.resolve())
+        elab_workdir, = self.outputs_of_type("ghdl-elab-dir")
+        root_dir = self.root_library_dir()
+        self.dispatcher.materialize_library_workdir(root_dir.path, elab_workdir.path)
+        elab_workdir_str = str(elab_workdir.path.resolve())
 
         # -P points to shared cache for non-root libs; --workdir + an extra -P
         # gives ghdl access to the root library at its per-project location.
         p_flags = []
-        for res in self.inputs:
-            if res.file_type != "ghdl-cf":
-                continue
+        for res in self.inputs_of_type("ghdl-library-dir"):
             if res.library == self.root_library:
                 p_flags.append(f"-P{elab_workdir_str}")
             else:
-                p_flags.append(f"-P{res.path.parent.resolve()}")
+                p_flags.append(f"-P{res.path.resolve()}")
 
         process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv = [
             ghdl_executable, "-m",

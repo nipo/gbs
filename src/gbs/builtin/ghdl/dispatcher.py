@@ -350,6 +350,18 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
 
         workdir = self.library_cache_workdir(library, signature)
 
+        # The whole entry directory is what -P and --workdir hand over to
+        # GHDL, and compiled backends keep one object file per unit next
+        # to the .cf, so the directory is an output of its own.
+        workdir_resource = self.context.get_resource(
+            workdir,
+            file_type="ghdl-library-dir",
+            library=library,
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+            directory=True,
+        )
+
         # .cf file at the content-addressed cache location
         cf_path = workdir / f"{library}-obj{self.ghdl_vhdl_version.rstrip('c')}.cf"
         cf_resource = self.context.get_resource(
@@ -378,8 +390,9 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             # context's pending queue too. The same holds for the diagnostics
             # sidecar the adopted task produces.
             self.context.add_pending(cf_resource)
-            for diagnostics in existing.outputs_of_type(DIAGNOSTICS_FILE_TYPE):
-                self.context.add_pending(diagnostics)
+            for output in existing.outputs_of_type(
+                    [DIAGNOSTICS_FILE_TYPE, "ghdl-library-dir"]):
+                self.context.add_pending(output)
             return cf_resource, existing
 
         # Diagnostics of the analysis that fills this cache entry, stored
@@ -397,7 +410,7 @@ class GHDLAnalyzeDispatcher(GHDLBaseDispatcher):
             dispatcher=self,
             library_name=library,
             inputs=[],
-            outputs=[cf_resource, diagnostics_resource],
+            outputs=[cf_resource, diagnostics_resource, workdir_resource],
         )
 
         self._library_build[library] = cf_resource, t
@@ -519,6 +532,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
     ):
         super().__init__(context, "ghdl-simulate", vhdl_std, tool_name)
         self._linker: Task = None
+        self.__elab_dir_declared = False
 
     async def process(self) -> None:
         """Create simulator executable from GHDL library intermediates"""
@@ -532,11 +546,40 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
                 self.context.get_topcell_library(),
             )
 
-        # Ingress files to linker (ghdl-cf and ghdl-vhpidirect-lib)
-        for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-lib", "ghdl-cf"])):
-            # These are INTERMEDIATE resources - don't consume them (consume=False)
-            # so they remain available for other tasks
+        # Ingress files to linker. These are INTERMEDIATE resources - don't
+        # consume them (consume=False) so they remain available for other tasks
+        for resource in list(self.context.filter_pending(
+                file_type=["ghdl-vhpidirect-lib", "ghdl-cf", "ghdl-library-dir"])):
             self._linker.add_input(resource, consume=False)
+
+        self._elaboration_dir_declare()
+
+    def _elaboration_dir_declare(self) -> None:
+        """Declare the root library elaboration workdir of a wrapper simulator
+
+        With mcode and jit backends, the simulator is a script running
+        ghdl -r against this directory, so whoever runs the simulator
+        reads it. It can only be named once the root library is
+        analyzed, as it is keyed by its cache entry.
+        """
+        if self.__elab_dir_declared or not isinstance(self._linker, task.MakeElab):
+            return
+
+        root_dirs = [r for r in self._linker.inputs_of_type("ghdl-library-dir")
+                     if r.library == self._linker.root_library]
+        if not root_dirs:
+            return
+
+        root_dir, = root_dirs
+        elab_dir = self.context.get_resource(
+            self.library_elaboration_workdir(root_dir.path),
+            file_type="ghdl-elab-dir",
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+            directory=True,
+        )
+        self._linker.add_output(elab_dir)
+        self.__elab_dir_declared = True
 
     def _compile_vhpidirect_sources(self):
         """Compile VHPIDIRECT C sources to shared libraries"""
@@ -556,11 +599,24 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
                 generated_by=self.name,
             )
 
+            # Include directories the source's repository attached to it
+            # (e.g. the VHPIDIRECT support headers a backend ships
+            # separately from GHDL), read by the compiler.
+            include_dirs = [
+                self.context.get_resource(
+                    Path(d),
+                    file_type="c-include-dir",
+                    typology=ResourceTypology.SOURCE,
+                    directory=True,
+                )
+                for d in resource.metadata.get("include_dirs", [])
+            ]
+
             # Create compilation task
             compile_task = task.VHPIDirectCompile(
                 self,
                 compiler="gcc",  # TODO: make configurable
-                inputs=[resource],
+                inputs=[resource] + include_dirs,
                 outputs=[lib_resource],
             )
 
@@ -673,6 +729,15 @@ class GHDLRunDispatcher(BaseDispatcher):
                 inputs=[simulator],
                 outputs=[success_resource, log_resource]
             )
+
+        # The simulator loads the VHPIDIRECT libraries at run time. A
+        # simulator elaborated into a workdir is a script running ghdl -r
+        # on that workdir and on the analyzed libraries.
+        runtime_types = ["ghdl-vhpidirect-lib", "ghdl-elab-dir"]
+        if self.context.filter_pending(file_type="ghdl-elab-dir"):
+            runtime_types.append("ghdl-library-dir")
+        for resource in list(self.context.filter_pending(file_type=runtime_types)):
+            self._run_task.add_input(resource, consume=False)
 
         if not self._run_task.outputs_of_type(["waveform-vcd", "waveform-ghw", "waveform-fst"]):
             for waveform in list(self.context.filter_pending(file_type=["waveform-vcd", "waveform-ghw", "waveform-fst"])):
