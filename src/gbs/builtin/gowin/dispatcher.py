@@ -287,13 +287,28 @@ class GowinDispatcher(BaseDispatcher):
         )
         self.attach_definition_dependencies(init_task)
 
+        # Report directories, read as a whole by the report aggregation
+        syn_report_dir, pnr_report_dir = (
+            self.context.get_resource(
+                self.context.output_path / "impl" / subdir,
+                file_type=file_type,
+                typology=ResourceTypology.INTERMEDIATE,
+                generated_by=self.name,
+                directory=True,
+            )
+            for subdir, file_type in (
+                ("gwsynthesis", "gowin-synthesis-report-dir"),
+                ("pnr", "gowin-pnr-report-dir"),
+            )
+        )
+
         # Create synthesis task
         synth_task = task.Synthesis(
             dispatcher=self,
             session=session,
             project_init=init_task,
             inputs=[init_stamp_resource],
-            outputs=[netlist_resource]
+            outputs=[netlist_resource, syn_report_dir]
         )
 
         # Add netlist to pending queue
@@ -330,7 +345,8 @@ class GowinDispatcher(BaseDispatcher):
             session=session,
             project_init=init_task,
             inputs=[init_stamp_resource, netlist_resource, pin_cst_resource, timing_sdc_resource],
-            outputs=[bitstream_resource, bitstream_bin_resource, timing_report_resource]
+            outputs=[bitstream_resource, bitstream_bin_resource, timing_report_resource,
+                     pnr_report_dir]
         )
 
         # Create report aggregation tasks for any requested report outputs
@@ -340,8 +356,7 @@ class GowinDispatcher(BaseDispatcher):
                 task.AggregateSynthesisReport(
                     dispatcher=self,
                     output_base_name=output_base_name,
-                    build_dir=self.context.output_path,
-                    inputs=[netlist_resource],  # synthesis must complete first
+                    inputs=[syn_report_dir],
                     outputs=[dest],
                 )
 
@@ -357,8 +372,7 @@ class GowinDispatcher(BaseDispatcher):
                 task.AggregatePnrReport(
                     dispatcher=self,
                     output_base_name=output_base_name,
-                    build_dir=self.context.output_path,
-                    inputs=[timing_summary, bitstream_resource],
+                    inputs=[timing_summary, pnr_report_dir],
                     outputs=[dest],
                 )
 

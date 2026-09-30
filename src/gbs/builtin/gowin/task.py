@@ -212,7 +212,7 @@ class Synthesis(LongRunningCommand):
     async def prepare(self) -> None:
         """Ensure the session is initialized and the output directory exists."""
         await self.project_init.ensure_initialized()
-        output, = self.outputs
+        output, = self.outputs_of_type("gowin-netlist")
         output.path.parent.mkdir(parents=True, exist_ok=True)
 
 class PnR(LongRunningCommand):
@@ -241,7 +241,7 @@ class PnR(LongRunningCommand):
         await self.project_init.ensure_initialized(
             self.inputs_of_type("gowin-netlist")
         )
-        output = next(self.outputs)
+        output, = self.outputs_of_type("bitstream")
         output.path.parent.mkdir(parents=True, exist_ok=True)
 
 class AggregateConstraints(Task):
@@ -371,7 +371,7 @@ class SerDesToCsr(Task):
 class AggregateSynthesisReport(Task):
     """Aggregate Gowin synthesis HTML reports into a single file."""
 
-    # Synthesis reports relative to output_path/impl/gwsynthesis/
+    # Synthesis reports in the synthesis report directory
     REPORT_FILES = [
         "project_syn.rpt.html",
         "project_syn_resource.html",
@@ -381,7 +381,6 @@ class AggregateSynthesisReport(Task):
         self,
         dispatcher: "Dispatcher",
         output_base_name: str,
-        build_dir: Path,
         inputs: list,
         outputs: list[Resource],
     ):
@@ -391,11 +390,11 @@ class AggregateSynthesisReport(Task):
             outputs=outputs,
             description="Aggregate Gowin synthesis reports",
         )
-        self.build_dir = build_dir
         self.output_base_name = output_base_name
 
     async def work(self) -> None:
-        syn_dir = self.build_dir / "impl" / "gwsynthesis"
+        syn_dir_input, = self.inputs_of_type("gowin-synthesis-report-dir")
+        syn_dir = syn_dir_input.path
         pages = []
         for filename in self.REPORT_FILES:
             path = syn_dir / filename.replace("project", self.output_base_name)
@@ -413,7 +412,7 @@ class AggregateSynthesisReport(Task):
 class AggregatePnrReport(Task):
     """Aggregate Gowin PnR HTML reports into a single file."""
 
-    # PnR reports relative to output_path/impl/pnr/
+    # PnR reports in the PnR report directory
     REPORT_FILES = [
         "project.rpt.html",
         "project.pin.html",
@@ -425,7 +424,6 @@ class AggregatePnrReport(Task):
         self,
         dispatcher: "Dispatcher",
         output_base_name: str,
-        build_dir: Path,
         inputs: list,
         outputs: list[Resource],
     ):
@@ -435,11 +433,11 @@ class AggregatePnrReport(Task):
             outputs=outputs,
             description="Aggregate Gowin PnR reports",
         )
-        self.build_dir = build_dir
         self.output_base_name = output_base_name
 
     async def work(self) -> None:
-        pnr_dir = self.build_dir / "impl" / "pnr"
+        pnr_dir_input, = self.inputs_of_type("gowin-pnr-report-dir")
+        pnr_dir = pnr_dir_input.path
         pages = []
         for resource in self.inputs:
             if isinstance(resource, Resource) and resource.file_type == TIMING_SUMMARY_FILE_TYPE:
