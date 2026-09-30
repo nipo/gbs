@@ -89,12 +89,22 @@ class NVCDispatcher(BaseDispatcher):
             generated_by=self.name,
         )
 
+        # NVC reads design units from the whole library directory
+        lib_dir_resource = self.context.get_resource(
+            workdir,
+            file_type="nvc-lib-dir",
+            library=library,
+            typology=ResourceTypology.INTERMEDIATE,
+            generated_by=self.name,
+            directory=True,
+        )
+
         # Create analyze task (nvc -a)
         t = task.Analyze(
             dispatcher=self,
             library_name=library,
             inputs=[],
-            outputs=[lib_resource],
+            outputs=[lib_resource, lib_dir_resource],
         )
 
         # Add to pending queue
@@ -112,10 +122,9 @@ class NVCDispatcher(BaseDispatcher):
             _, user_task = self.library_build_get(lib)
 
             for d in deps:
-                dep_lib, _ = self.library_build_get(d)
-
-                if dep_lib not in user_task.inputs:
-                    user_task.add_input(dep_lib)
+                _, dep_task = self.library_build_get(d)
+                dep_lib_dir, = dep_task.outputs_of_type("nvc-lib-dir")
+                user_task.add_input(dep_lib_dir, consume=False)
 
         if not self._linker:
             # Create elaboration task
@@ -125,7 +134,7 @@ class NVCDispatcher(BaseDispatcher):
             )
 
         # Ingress library files to linker
-        for resource in list(self.context.filter_pending(file_type=["nvc-lib"])):
+        for resource in list(self.context.filter_pending(file_type=["nvc-lib-dir"])):
             # These are INTERMEDIATE resources - don't consume them (consume=False)
             # so they remain available for other tasks
             self._linker.add_input(resource, consume=False)

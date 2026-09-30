@@ -89,8 +89,8 @@ class Analyze(Task):
         lib_flags = []
         nvc_executable = self.dispatcher._get_nvc_config()
 
-        lib_marker, = self.outputs_of_type("nvc-lib")
-        workdir = lib_marker.path.parent
+        workdir_output, = self.outputs_of_type("nvc-lib-dir")
+        workdir = workdir_output.path
 
         # Track library search paths (avoid duplicates)
         lib_search_paths = set()
@@ -99,11 +99,10 @@ class Analyze(Task):
         for i in self.inputs:
             if i.file_type == "vhdl":
                 sources.append(i.path.resolve())
-            elif i.file_type == "nvc-lib":
+            elif i.file_type == "nvc-lib-dir":
                 # Dependency library - NVC needs parent directory in -L flag
                 # The library is stored as parentdir/libname/, so we need parentdir
-                dep_workdir = i.path.parent.resolve()
-                lib_search_paths.add(dep_workdir.parent)
+                lib_search_paths.add(i.path.resolve().parent)
             else:
                 raise ValueError(f"Unknown input type {i}")
 
@@ -178,9 +177,9 @@ class Elaborate(Task):
         root_workdir = None
 
         for res in self.inputs:
-            if res.file_type == "nvc-lib":
+            if res.file_type == "nvc-lib-dir":
                 lib = res.library
-                workdir = res.path.parent.resolve()
+                workdir = res.path.resolve()
                 # NVC needs parent directory in -L flag
                 lib_search_paths.add(workdir.parent)
 
