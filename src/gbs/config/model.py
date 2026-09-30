@@ -111,11 +111,14 @@ class RemoteHostConfig:
         command: Shell command line running gbs on the remote host,
             interpreted by the remote shell, so `~` and variables
             expand there
+        check_sources: Whether gbs and plugin sources must match
+            local ones; versions must match anyway
         origin: Config file this entry was declared in
     """
     name: str
     ssh: list[str]
     command: str = "gbs"
+    check_sources: bool = True
     origin: Optional[Path] = None
 
 
@@ -470,6 +473,7 @@ class GBSConfig:
         the destination; integers in the list are taken as strings, so
         a port number needs no quoting. `command` is a remote shell
         command line, or a list of arguments quoted for that shell.
+        `check_sources` is a boolean, true by default.
 
         Raises:
             ConfigError: If an entry is invalid. A host silently left
@@ -493,7 +497,7 @@ class GBSConfig:
         for name, spec in data.items():
             if not isinstance(name, str) or not isinstance(spec, dict):
                 raise invalid(name, "must be a mapping with 'ssh' and optionally 'command'")
-            unknown = set(spec) - {'ssh', 'command'}
+            unknown = set(spec) - {'ssh', 'command', 'check_sources'}
             if unknown:
                 raise invalid(name, f"unknown keys {', '.join(sorted(map(str, unknown)))}")
             if 'ssh' not in spec:
@@ -504,7 +508,10 @@ class GBSConfig:
                 command = shlex.join(words(name, 'command', command))
             elif not command.strip():
                 raise invalid(name, "command is empty")
-            hosts[name] = RemoteHostConfig(name, ssh, command, origin=path.resolve())
+            check_sources = spec.get('check_sources', True)
+            if not isinstance(check_sources, bool):
+                raise invalid(name, "check_sources must be a boolean")
+            hosts[name] = RemoteHostConfig(name, ssh, command, check_sources, origin=path.resolve())
         return hosts
 
     @classmethod

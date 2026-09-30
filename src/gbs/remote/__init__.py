@@ -17,7 +17,7 @@ from .channel import ChannelError, FrameError, ChannelClosed, Frame, FrameChanne
 from .peer import RemoteError, MethodError, Reply, Event, Call, Peer
 from .toolhost import ToolDescription, ToolHost, LocalToolHost, RemoteToolHost
 from .planning import PassContribution, RemotePass
-from .handshake import HandshakeError, SourceDigest, Identity, HelloReply
+from .handshake import HandshakeError, SourceDigest, SourceFiles, Identity, Hello, HelloReply
 from .transfer import BlobTransfer
 from .segment_run import SegmentBuildContext, SegmentDispatchReply, SegmentRun
 from .server import Workspace, RemoteServer, StdioChannel
@@ -37,7 +37,7 @@ __all__ = [
     "RemoteError", "MethodError", "Reply", "Event", "Call", "Peer",
     "ToolDescription", "ToolHost", "LocalToolHost", "RemoteToolHost",
     "PassContribution", "RemotePass",
-    "HandshakeError", "SourceDigest", "Identity", "HelloReply",
+    "HandshakeError", "SourceDigest", "SourceFiles", "Identity", "Hello", "HelloReply",
     "BlobTransfer",
     "SegmentBuildContext", "SegmentDispatchReply", "SegmentRun",
     "Workspace", "RemoteServer", "StdioChannel",

@@ -92,6 +92,8 @@ async def dump(ctx):
             lines.append(f"  {host.name}:{origin}")
             lines.append(f"    ssh: {host.ssh}")
             lines.append(f"    command: {host.command!r}")
+            if not host.check_sources:
+                lines.append("    check_sources: false")
 
     click.echo('\n'.join(lines))
 

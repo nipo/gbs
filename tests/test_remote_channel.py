@@ -1,11 +1,18 @@
 """Tests for the remote framing, messaging and tool hosts"""
 
 import asyncio
+import hashlib
+import importlib
 import socket
 import struct
+import sys
+from pathlib import Path
 
 import pytest
+from asyncclick.testing import CliRunner
 
+import gbs
+from gbs.cli.config import config as config_cli
 from gbs.config.model import ConfigError, GBSConfig, ToolConfig
 from gbs.remote import (
     ChannelClosed, Frame, FrameChannel, FrameError, Identity, LocalToolHost,
@@ -289,8 +296,43 @@ class TestIdentity:
         assert "plugin q sources: 22 on local host, 23 on srv" in text
         assert "plugin r sources: missing on local host, 33 on srv" in text
         assert "plugin p sources" not in text
-        mine.check(Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
-                            {"gbs": "aa", "p": "11", "q": "22"}), "a", "b")
+        assert mine.check(Identity(WireFormat.VERSION, "1.0", {"p": "1", "q": "2"},
+                                   {"gbs": "aa", "p": "11", "q": "22"}), "a", "b") == []
+
+    def test_unchecked_sources(self):
+        mine = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "aa", "p": "11"})
+        sources = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "ab", "p": "11"})
+        assert mine.check(sources, "here", "srv", check_sources=False) == [
+            "  gbs sources: aa on here, ab on srv"]
+        with pytest.raises(HandshakeError, match="gbs sources: aa on here, ab on srv"):
+            mine.check(sources, "here", "srv")
+        version = Identity(WireFormat.VERSION, "1.0", {"p": "2"}, {"gbs": "ab", "p": "11"})
+        with pytest.raises(HandshakeError) as e:
+            mine.check(version, "here", "srv", check_sources=False)
+        assert "plugin p: 1 on here, 2 on srv" in str(e.value)
+        assert "gbs sources: aa on here, ab on srv" in str(e.value)
+
+    def test_file_differences(self):
+        mine = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "aa", "p": "11"})
+        theirs = Identity(WireFormat.VERSION, "1.0", {"p": "1"}, {"gbs": "ab", "p": "12"})
+        common = {f"m{i:02}.py": "0" for i in range(20)}
+        files = {
+            "gbs": ({**common, "a.py": "1", "b.py": "2", "local.py": "3"},
+                    {**common, "a.py": "1", "b.py": "9", "far/remote.py": "4"}),
+            "p": ({f"x{i:02}.py": "1" for i in range(12)},
+                  {f"x{i:02}.py": "2" for i in range(12)}),
+        }
+        with pytest.raises(HandshakeError) as e:
+            mine.check(theirs, "local host", "srv", files=files)
+        assert str(e.value).split("\n")[1:] == [
+            "  gbs sources: aa on local host, ab on srv",
+            "    b.py: differs",
+            "    far/remote.py: only on srv",
+            "    local.py: only on local host",
+            "  plugin p sources: 11 on local host, 12 on srv",
+            *(f"    x{i:02}.py: differs" for i in range(10)),
+            "    and 2 more file(s)",
+        ]
 
     def test_json_round_trip(self):
         local = Identity.local()
@@ -328,6 +370,48 @@ class TestIdentity:
         (changed / "a.py").write_text("a = 1\n")
         (changed / "sub" / "b.py").write_text("b = 3\n")
         assert SourceDigest.tree([changed]) != digest
+
+    def test_digest_from_file_map(self, tmp_path):
+        (tmp_path / "a.py").write_text("a = 1\n")
+        files = SourceDigest.files([tmp_path])
+        assert files == {"a.py": hashlib.sha256(b"a = 1\n").hexdigest()}
+        assert SourceDigest.tree([tmp_path]) == SourceDigest.digest(files)
+        assert SourceDigest.digest({"b.py": files["a.py"]}) != SourceDigest.digest(files)
+
+    def test_module_own_tree(self, tmp_path, monkeypatch):
+        """A regular package extended by other installs only covers its
+        own directory; a namespace package covers every part"""
+        first, second = tmp_path / "first", tmp_path / "second"
+        (first / "gbstest_regular" / "sub").mkdir(parents=True)
+        (first / "gbstest_regular" / "__init__.py").write_text(
+            "__path__ = __import__('pkgutil').extend_path(__path__, __name__)\n")
+        (first / "gbstest_regular" / "sub" / "own.py").write_text("own = 1\n")
+        (second / "gbstest_regular").mkdir(parents=True)
+        (second / "gbstest_regular" / "other.py").write_text("other = 1\n")
+        (first / "gbstest_namespace").mkdir()
+        (first / "gbstest_namespace" / "a.py").write_text("a = 1\n")
+        (second / "gbstest_namespace").mkdir()
+        (second / "gbstest_namespace" / "b.py").write_text("b = 1\n")
+        (first / "gbstest_plain.py").write_text("plain = 1\n")
+        monkeypatch.syspath_prepend(str(second))
+        monkeypatch.syspath_prepend(str(first))
+        for name in ("gbstest_regular", "gbstest_namespace", "gbstest_plain"):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+        try:
+            regular = importlib.import_module("gbstest_regular")
+            assert len(regular.__path__) == 2
+            assert sorted(SourceDigest.module_files("gbstest_regular")) == ["__init__.py", "sub/own.py"]
+            assert sorted(SourceDigest.module_files("gbstest_namespace")) == ["a.py", "b.py"]
+            assert sorted(SourceDigest.module_files("gbstest_plain")) == ["gbstest_plain.py"]
+        finally:
+            for name in ("gbstest_regular", "gbstest_namespace", "gbstest_plain"):
+                sys.modules.pop(name, None)
+
+    def test_gbs_own_tree(self):
+        files = SourceDigest.module_files("gbs")
+        root = Path(gbs.__file__).resolve().parent
+        assert files == SourceDigest.files([root])
+        assert "remote/handshake.py" in files
 
     def test_protocol_checked_first(self):
         with pytest.raises(HandshakeError, match="Protocol version 999"):
@@ -390,6 +474,27 @@ class TestRemoteHostConfig:
         name, argv = RemoteHost.ssh_argv("other.example", config)
         assert name == "other.example"
         assert argv == ["ssh", "-T", "other.example", "--", "gbs remote serve --stdio"]
+        assert RemoteHost.host_config("other.example", config).check_sources
+
+    async def test_check_sources(self, tmp_path):
+        path = tmp_path / "gbs.yaml"
+        path.write_text(
+            "remote_hosts:\n"
+            "  loose: {ssh: a, check_sources: false}\n"
+            "  strict: {ssh: b, check_sources: true}\n"
+            "  default: {ssh: c}\n"
+        )
+        config = GBSConfig._parse_config_file(path)
+        assert {n: h.check_sources for n, h in config.remote_hosts.items()} == {
+            "loose": False, "strict": True, "default": True}
+        assert not RemoteHost.host_config("loose", config).check_sources
+
+        result = await CliRunner().invoke(config_cli, ["dump"], obj={"gbs_config": config})
+        assert result.exit_code == 0, result.output
+        lines = result.output.split("remote_hosts:\n")[1].splitlines()
+        loose = next(i for i, line in enumerate(lines) if line.startswith("  loose:"))
+        assert lines[loose + 1:loose + 4] == ["    ssh: ['a']", "    command: 'gbs'", "    check_sources: false"]
+        assert sum(line.strip().startswith("check_sources") for line in lines) == 1
 
     def test_merge_overrides_by_name(self, tmp_path):
         base = tmp_path / "a.yaml"
@@ -406,6 +511,8 @@ class TestRemoteHostConfig:
         ("x: {ssh: [], command: gbs}", "ssh must be"),
         ("x: {ssh: a, command: {a: b}}", "command must be"),
         ("x: {ssh: a, command: ' '}", "command is empty"),
+        ("x: {ssh: a, check_sources: 'no'}", "check_sources must be a boolean"),
+        ("x: {ssh: a, check_sources: 0}", "check_sources must be a boolean"),
         ("x: [a]", "must be a mapping"),
     ])
     def test_invalid_entry_is_an_error(self, tmp_path, entry, message):

@@ -14,9 +14,10 @@ from typing import Optional
 from ..config.model import GBSConfig, RemoteHostConfig
 from ..logging import get_logger
 from .channel import ChannelClosed, FrameChannel
-from .handshake import HandshakeError, HelloReply, Identity
+from .handshake import HandshakeError, Hello, HelloReply, Identity, SourceDigest, SourceFiles
 from .peer import Peer, RemoteError
 from .toolhost import RemoteToolHost
+from .wire import WireError, WireObject
 
 __all__ = ["RemoteHostError", "RemoteHost"]
 
@@ -54,23 +55,34 @@ class RemoteHost:
         self.__stderr_tail: collections.deque[str] = collections.deque(maxlen=self.STDERR_TAIL)
         self.__stderr_task = asyncio.create_task(self.__stderr_forward())
 
+    @staticmethod
+    def host_config(destination: str, gbs_config: Optional[GBSConfig]) -> RemoteHostConfig:
+        """Configuration of a destination
+
+        Args:
+            destination: Name of a configured remote host, or else an
+                ssh destination, reached with defaults
+            gbs_config: Configuration holding remote host definitions
+        """
+        host = None if gbs_config is None else gbs_config.remote_hosts.get(destination)
+        if host is None:
+            host = RemoteHostConfig(destination, [destination])
+        return host
+
     @classmethod
     def ssh_argv(cls, destination: str, gbs_config: Optional[GBSConfig],
                  keep: bool = False) -> tuple[str, list[str]]:
         """Command line reaching a destination
 
         Args:
-            destination: Name of a configured remote host, or else an
-                ssh destination
-            gbs_config: Configuration holding remote host definitions
+            destination: See host_config()
+            gbs_config: See host_config()
             keep: Have the remote keep its workspace
 
         Returns:
             Host name and command line
         """
-        host = None if gbs_config is None else gbs_config.remote_hosts.get(destination)
-        if host is None:
-            host = RemoteHostConfig(destination, [destination])
+        host = cls.host_config(destination, gbs_config)
         remote = host.command + " " + shlex.join(cls.SERVE_ARGS + (["--keep"] if keep else []))
         return host.name, ["ssh", "-T", *host.ssh, "--", remote]
 
@@ -79,7 +91,8 @@ class RemoteHost:
                    keep: bool = False) -> RemoteHost:
         """Connect to a destination over ssh, see ssh_argv()"""
         name, argv = cls.ssh_argv(destination, gbs_config, keep)
-        return await cls.connect(name, argv)
+        check_sources = cls.host_config(destination, gbs_config).check_sources
+        return await cls.connect(name, argv, check_sources=check_sources)
 
     @classmethod
     async def connect(cls,
@@ -87,7 +100,8 @@ class RemoteHost:
                       argv: list[str],
                       env: Optional[dict[str, str]] = None,
                       cwd: Optional[str] = None,
-                      identity: Optional[Identity] = None) -> RemoteHost:
+                      identity: Optional[Identity] = None,
+                      check_sources: bool = True) -> RemoteHost:
         """Run a server command and handshake with it
 
         Args:
@@ -97,6 +111,8 @@ class RemoteHost:
             env: Environment of the command, inherited when None
             cwd: Working directory of the command
             identity: Identity to present, the local one when None
+            check_sources: Whether source digest differences are
+                refused; they are warned about otherwise
 
         Raises:
             RemoteHostError: If the command cannot start, the
@@ -120,10 +136,15 @@ class RemoteHost:
         host = cls(name, process)
         host.peer.start()
         try:
-            reply = await host.peer.request("hello", identity.to_json())
+            reply = await host.peer.request("hello", Hello(identity, check_sources).to_json())
             host.hello = HelloReply.from_json(reply.result)
-            identity.check(host.hello.identity, "local host", name)
-        except (ChannelClosed, RemoteError) as e:
+            tolerated = identity.check(
+                host.hello.identity, "local host", name, check_sources,
+                await host.source_files(identity, host.hello.identity))
+            if tolerated:
+                logger.warning(f"{name} runs gbs sources different from local host, not checked:\n"
+                               + "\n".join(tolerated))
+        except (ChannelClosed, RemoteError, WireError) as e:
             await host.close()
             raise RemoteHostError(host.failure_describe(f"{name}: handshake failed: {e}")) from e
         except HandshakeError as e:
@@ -134,6 +155,27 @@ class RemoteHost:
             raise
         host.tool_host = RemoteToolHost(name, host.hello.tools, host.peer)
         return host
+
+    async def source_files(self, mine: Identity, theirs: Identity
+                           ) -> dict[str, tuple[dict[str, str], dict[str, str]]]:
+        """Local and remote file maps of the sources that differ
+
+        Sources missing on either side are left out, as there is
+        nothing to compare them to.
+        """
+        modules = Identity.source_modules()
+        files = {}
+        for difference in mine.differences(theirs):
+            key = difference.source
+            if key not in mine.sources or key not in theirs.sources or key not in modules:
+                continue
+            local = await asyncio.to_thread(SourceDigest.module_files, modules[key])
+            reply = await self.peer.request("sources.files", {"key": key})
+            reader = WireObject(reply.result, "sources.files reply")
+            remote = SourceFiles.from_json(reader.field("files", dict), "sources.files reply")
+            reader.finish()
+            files[key] = (local, remote)
+        return files
 
     def failure_describe(self, message: str) -> str:
         """A failure message followed by the last remote log lines"""

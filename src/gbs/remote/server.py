@@ -22,7 +22,7 @@ from ..config.model import GBSConfig
 from ..logging import get_logger
 from ..plugins import get_plugin_registry
 from .channel import FrameChannel
-from .handshake import HandshakeError, HelloReply, Identity
+from .handshake import HandshakeError, Hello, HelloReply, Identity, SourceDigest
 from .manifest import BlobStore, ContentManifest
 from .peer import Call, MethodError, Peer, Reply
 from .planning import PassContribution
@@ -76,9 +76,15 @@ class RemoteServer:
     """Serves requests of one client on a channel
 
     Methods:
-        hello: Exchange identities, send the tool inventory. Required
-            before any other method but shutdown; refused identities
-            leave the session unusable.
+        hello: Hello -> HelloReply: exchange identities, send the
+            tool inventory. Required before any other method but
+            sources.files and shutdown; refused identities leave the
+            session unusable. Source digest differences are refused
+            only if the client checks sources.
+        sources.files: {key} -> {files: {path: sha256}}: file map of
+            the sources under a key of the identity, "gbs" or a plugin
+            name. Allowed after refused identities, to detail source
+            differences.
         blob.have: {digests: [sha256...]} -> {missing: [sha256...]}
         blob.put: {digest, offset, size} with a piece of the content
             as body -> {}: pieces of a blob of size bytes come in
@@ -118,6 +124,7 @@ class RemoteServer:
         self.workspace = workspace
         self.identity = Identity.local()
         self.client: Optional[Identity] = None
+        self.check_sources = True
         self.uploads: dict[str, BlobStore.Upload] = {}
         self.segments: dict[int, SegmentRun] = {}
         self.__segment_ids = itertools.count(1)
@@ -125,6 +132,7 @@ class RemoteServer:
         self.semaphore = asyncio.Semaphore(max_parallel)
         self.peer = Peer(channel, "remote client")
         self.peer.method_register("hello", self.hello)
+        self.peer.method_register("sources.files", self.sources_files)
         self.peer.method_register("blob.have", self.blob_have)
         self.peer.method_register("blob.put", self.blob_put)
         self.peer.method_register("blob.get", self.blob_get)
@@ -155,23 +163,43 @@ class RemoteServer:
     def session_check(self) -> None:
         if self.client is None:
             raise MethodError("HandshakeRequired", "hello must come first")
-        mismatches = self.identity.mismatches(self.client)
-        if mismatches:
+        refused = [d for d in self.identity.differences(self.client) if self.refuses(d)]
+        if refused:
             raise MethodError("Incompatible", "Client identity differs: " + ", ".join(
-                f"{what} {mine} here, {theirs} on client" for what, mine, theirs in mismatches
+                f"{d.what} {d.mine} here, {d.theirs} on client" for d in refused
             ))
+
+    def refuses(self, difference: Identity.Difference) -> bool:
+        return difference.source is None or self.check_sources
 
     async def hello(self, call: Call) -> Any:
         if self.client is not None:
             raise MethodError("ProtocolError", "hello was already received")
         try:
-            self.client = Identity.from_json(call.params)
+            hello = Hello.from_json(call.params)
         except HandshakeError as e:
             raise MethodError("Incompatible", str(e))
-        for what, mine, theirs in self.identity.mismatches(self.client):
-            logger.error(f"Client {what} is {theirs}, {mine} here")
+        self.client = hello.identity
+        self.check_sources = hello.check_sources
+        for d in self.identity.differences(self.client):
+            message = f"Client {d.what} is {d.theirs}, {d.mine} here"
+            if self.refuses(d):
+                logger.error(message)
+            else:
+                logger.warning(message + ", not checked")
         tools = LocalToolHost(self.gbs_config).tools()
         return HelloReply(self.identity, tools).to_json()
+
+    async def sources_files(self, call: Call) -> Any:
+        if self.client is None:
+            raise MethodError("HandshakeRequired", "hello must come first")
+        reader = WireObject(call.params, "sources.files params")
+        key = reader.field("key", str)
+        reader.finish()
+        module = Identity.source_modules().get(key)
+        if module is None:
+            raise MethodError("UnknownSources", f"No sources {key!r} here")
+        return {"files": await asyncio.to_thread(SourceDigest.module_files, module)}
 
     async def blob_have(self, call: Call) -> Any:
         self.session_check()

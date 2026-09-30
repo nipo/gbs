@@ -25,7 +25,7 @@ class WireFormat:
     carry it and refuse any other value.
     """
 
-    VERSION = 1
+    VERSION = 2
 
     @classmethod
     def version_check(cls, reader: WireObject) -> None:

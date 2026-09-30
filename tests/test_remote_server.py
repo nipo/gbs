@@ -10,8 +10,8 @@ import pytest
 
 import gbs
 from gbs.remote import (
-    BlobStore, BlobTransfer, Frame, FrameChannel, Identity, Peer, RemoteError, RemoteHost,
-    RemoteHostError, WireFormat, Workspace,
+    BlobStore, BlobTransfer, Frame, FrameChannel, Hello, Identity, Peer, RemoteError, RemoteHost,
+    RemoteHostError, SourceDigest, WireFormat, Workspace,
 )
 
 SRC = Path(gbs.__file__).resolve().parent.parent
@@ -46,9 +46,10 @@ def remote(tmp_path):
         blobs = cache / "gbs" / "remote-blobs"
 
         @staticmethod
-        async def connect(argv=None, identity=None):
+        async def connect(argv=None, identity=None, check_sources=True):
             return await RemoteHost.connect(
-                "test", argv or Remote.argv, env=env, cwd=str(work), identity=identity)
+                "test", argv or Remote.argv, env=env, cwd=str(work), identity=identity,
+                check_sources=check_sources)
 
         @staticmethod
         async def spawn(argv=None):
@@ -104,6 +105,44 @@ async def test_source_mismatch_refused(remote):
     assert "gbs version" not in text
 
 
+async def test_sources_files_after_mismatch(remote):
+    process = await remote.spawn()
+    peer = Peer(FrameChannel(process.stdout, process.stdin), "raw")
+    async with peer:
+        with pytest.raises(RemoteError) as e:
+            await peer.request("sources.files", {"key": "gbs"})
+        assert e.value.type == "HandshakeRequired"
+        local = Identity.local()
+        fake = Identity(local.protocol, "0.0.0-fake", local.plugins, {})
+        await peer.request("hello", Hello(fake).to_json())
+        reply = await peer.request("sources.files", {"key": "gbs"})
+        assert reply.result["files"] == SourceDigest.module_files("gbs")
+        assert "remote/handshake.py" in reply.result["files"]
+        reply = await peer.request("sources.files", {"key": "gbs.builtin.yosys"})
+        assert reply.result["files"] == SourceDigest.module_files("gbs.builtin.yosys")
+        with pytest.raises(RemoteError) as e:
+            await peer.request("sources.files", {"key": "nothing"})
+        assert e.value.type == "UnknownSources"
+    assert await asyncio.wait_for(process.wait(), 30) == 0
+
+
+async def test_unchecked_sources_tolerated(remote, caplog):
+    local = Identity.local()
+    sources = dict(local.sources)
+    sources["gbs"] = "0" * 64
+    fake = Identity(local.protocol, local.gbs, local.plugins, sources)
+    with caplog.at_level("WARNING"):
+        async with await remote.connect(identity=fake, check_sources=False) as host:
+            assert (await host.peer.request("blob.have", {"digests": []})).result == {"missing": []}
+    assert "gbs sources: " + "0" * 64 + " on local host" in caplog.text
+    assert "not checked" in caplog.text
+
+    versions = Identity(local.protocol, "0.0.0-fake", local.plugins, sources)
+    with pytest.raises(RemoteHostError) as e:
+        await remote.connect(identity=versions, check_sources=False)
+    assert "gbs version: 0.0.0-fake on local host" in str(e.value)
+
+
 async def test_serve_leaves_cwd_untouched(remote):
     async with await remote.connect() as host:
         await host.peer.request("blob.have", {"digests": []})
@@ -118,12 +157,12 @@ async def test_server_refuses_before_and_after_bad_hello(remote):
             await peer.request("blob.have", {"digests": []})
         assert e.value.type == "HandshakeRequired"
         fake = Identity(WireFormat.VERSION, "0.0.0-fake", {}, {})
-        await peer.request("hello", fake.to_json())
+        await peer.request("hello", Hello(fake).to_json())
         with pytest.raises(RemoteError) as e:
             await peer.request("blob.have", {"digests": []})
         assert e.value.type == "Incompatible"
         with pytest.raises(RemoteError) as e:
-            await peer.request("hello", fake.to_json())
+            await peer.request("hello", Hello(fake).to_json())
         assert e.value.type == "ProtocolError"
         with pytest.raises(RemoteError) as e:
             await peer.request("hello", {"protocol": WireFormat.VERSION + 1})
@@ -265,7 +304,7 @@ async def test_stdout_carries_frames_only(remote, tmp_path):
     channel = FrameChannel(process.stdout, process.stdin)
     digest = hashlib.sha256(b"blob").hexdigest()
     requests = [
-        ("hello", Identity.local().to_json(), b""),
+        ("hello", Hello(Identity.local()).to_json(), b""),
         ("blob.put", {"digest": digest, "offset": 0, "size": 4}, b"blob"),
         ("nothing", None, b""),
     ]
