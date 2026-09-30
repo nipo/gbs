@@ -23,13 +23,18 @@ class PassMetadata:
         pass_obj: The Pass instance
         config: Backend-specific configuration for this pass
         backend_name: Name of backend that provided this pass
+        requested_types: Output types the backend was asked for when
+            it contributed this pass. Backends may contribute a pass for
+            types it does not itself produce, so these, not the pass's
+            output types, are what reproduces the contribution.
     """
 
     def __init__(
         self,
         pass_obj: Pass,
         config: dict[str, Any],
-        backend_name: str
+        backend_name: str,
+        requested_types: set[str],
     ):
         """Initialize pass metadata
 
@@ -37,10 +42,13 @@ class PassMetadata:
             pass_obj: The Pass object
             config: Backend configuration
             backend_name: Backend module name (e.g., "gbs.builtin.ghdl")
+            requested_types: Output types passed to the backend's
+                contribute_passes() call that returned pass_obj
         """
         self.pass_obj = pass_obj
         self.config = config
         self.backend_name = backend_name
+        self.requested_types = set(requested_types)
 
     def __eq__(self, other):
         return type(self.pass_obj) == type(other.pass_obj)

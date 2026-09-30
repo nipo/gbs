@@ -110,7 +110,8 @@ def test_pass_metadata_creation():
     metadata = PassMetadata(
         pass_obj=pass_obj,
         config={},
-        backend_name="test_backend"
+        backend_name="test_backend",
+        requested_types={"simulator"},
     )
 
     assert metadata.pass_obj is pass_obj
@@ -127,7 +128,8 @@ def test_pass_metadata_with_filter_vars():
     metadata = PassMetadata(
         pass_obj=pass_obj,
         config={},
-        backend_name="test_backend"
+        backend_name="test_backend",
+        requested_types={"simulator"},
     )
 
     assert metadata.filter_vars == {"syn": 1}
@@ -148,7 +150,8 @@ def test_pass_metadata_with_config():
     metadata = PassMetadata(
         pass_obj=pass_obj,
         config={"mode": "simulation"},
-        backend_name="test_backend"
+        backend_name="test_backend",
+        requested_types={"simulator"},
     )
 
     assert metadata.filter_vars == {"mode": "simulation"}
@@ -200,7 +203,7 @@ class TestBuildPlanOutputPath:
         from gbs.project.model import OutputGroup
         return BuildPlan(
             output_group=OutputGroup(name="g", topcell="top", outputs=[]),
-            passes=[PassMetadata(cls({}), {}, "test") for cls in pass_classes],
+            passes=[PassMetadata(cls({}), {}, "test", cls.output_types) for cls in pass_classes],
             filter_vars={},
             repositories=[],
             types_with_library=set(),

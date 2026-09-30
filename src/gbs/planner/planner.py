@@ -523,7 +523,8 @@ class BuildPlanner(UIReporter):
                 metadata = PassMetadata(
                     pass_obj=pass_obj,
                     config=backend_config,
-                    backend_name=backend.name
+                    backend_name=backend.name,
+                    requested_types=aliased_outputs,
                 )
                 candidates.append(metadata)
 
