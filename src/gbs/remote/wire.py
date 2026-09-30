@@ -101,6 +101,13 @@ class WireObject:
         self.__read.add(name)
         return value
 
+    def value(self, name: str) -> Any:
+        """Value of a required field of any JSON type"""
+        if name not in self.data:
+            raise WireError(f"{self.what}: missing field {name!r}")
+        self.__read.add(name)
+        return self.data[name]
+
     def string_list(self, name: str) -> list[str]:
         value = self.field(name, list)
         for item in value:

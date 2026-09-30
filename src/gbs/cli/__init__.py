@@ -292,6 +292,7 @@ from .config import config
 from .convert import convert
 from .openxc7 import openxc7
 from .vivado import vivado
+from .remote import remote
 
 cli.add_command(repo)
 cli.add_command(project)
@@ -301,6 +302,7 @@ cli.add_command(config)
 cli.add_command(convert)
 cli.add_command(openxc7)
 cli.add_command(vivado)
+cli.add_command(remote)
 
 
 # Add result callback to cleanup hub
