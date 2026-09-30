@@ -14,7 +14,7 @@ The planner works backwards from outputs:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 from pathlib import Path
 
 from .passes import PassMetadata
@@ -156,7 +156,8 @@ class BuildPlanner(UIReporter):
     Backends are queried on every tool host. A pass contributed on
     several hosts is taken from the first host accepting it, so a
     remote host listed before the local one takes over the passes it
-    can run.
+    can run. A pass needing a tool redirected to a remote host is
+    only taken from that host.
 
     Example:
         planner = BuildPlanner(repositories, backends)
@@ -175,6 +176,7 @@ class BuildPlanner(UIReporter):
         parent_reporter: Optional['UIReporter'] = None,
         partial_source_coverage: bool = False,
         tool_hosts: Optional[list['ToolHost']] = None,
+        redirect_host: Optional[Callable[[str], Awaitable['ToolHost']]] = None,
     ):
         """Initialize planner
 
@@ -193,6 +195,9 @@ class BuildPlanner(UIReporter):
                 lists the rest as skipped, so it plans in this mode.
             tool_hosts: Hosts to query backends on, in order of
                 preference. Defaults to the local host alone.
+            redirect_host: Host a tool is redirected to, from its
+                destination; it may raise RedirectDisabled. Without
+                it, passes needing a redirected tool stay rejected.
         """
         # Initialize UIReporter
         UIReporter.__init__(
@@ -210,6 +215,7 @@ class BuildPlanner(UIReporter):
             from ..remote.toolhost import LocalToolHost
             tool_hosts = [LocalToolHost(gbs_config)]
         self.tool_hosts = tool_hosts
+        self.redirect_host = redirect_host
         # Rejection log keyed by ("backend.name/pass.name", host name)
         # -> reason. Populated by _query_backends when a pass's probe
         # on a host returns a reason. Used only by the plan-failure
@@ -482,8 +488,7 @@ class BuildPlanner(UIReporter):
     ) -> list[PassMetadata]:
         """Query all backends on every tool host for passes that can help
 
-        Of the passes of a backend that several hosts accept, the one
-        of the first host is kept.
+        See __query_backend() for the host each pass is taken from.
 
         Args:
             output_group: Output group with backend configs
@@ -499,7 +504,6 @@ class BuildPlanner(UIReporter):
         # names still contribute when the user (or an upstream pass)
         # requests the canonical name.
         from ..build.type_aliases import sibling_aliases
-        from ..remote.toolhost import BackendUnavailable
         aliased_outputs = set(desired_outputs)
         for t in desired_outputs:
             aliased_outputs |= sibling_aliases(t)
@@ -524,45 +528,126 @@ class BuildPlanner(UIReporter):
                     backend.name, backend_config
                 )
 
-            # Ask backend for passes it can contribute on each host.
-            # Each host runs the passes' probe() to keep unusable
-            # candidates out of the pool.
-            accepted: dict[str, tuple[str, PassMetadata]] = {}
-            for host in self.tool_hosts:
-                try:
-                    contributions = await host.passes_contribute(
-                        backend, backend_config, aliased_outputs, self.project_config)
-                except BackendUnavailable as e:
-                    self._rejected_passes[(backend.name, host.name)] = e.reason
-                    self.debug(f"Backend {backend.name} unavailable on {host.name}: {e.reason}")
-                    continue
-
-                self.debug(
-                    f"Backend {backend.name} contributed passes on {host.name}: "
-                    f"{[p for p, _ in contributions]}"
-                )
-
-                for pass_obj, reason in contributions:
-                    key = f"{backend.name}/{pass_obj.name}"
-                    if reason:
-                        self._rejected_passes[(key, host.name)] = reason
-                        self.debug(f"Probe rejected {key} on {host.name}: {reason}")
-                        continue
-                    if pass_obj.name in accepted:
-                        self.debug(
-                            f"{key} on {host.name} superseded by "
-                            f"{accepted[pass_obj.name][0]}"
-                        )
-                        continue
-                    accepted[pass_obj.name] = (host.name, PassMetadata(
-                        pass_obj=pass_obj,
-                        config=backend_config,
-                        backend_name=backend.name,
-                        requested_types=aliased_outputs,
-                    ))
-            candidates.extend(metadata for _, metadata in accepted.values())
+            candidates.extend(await self.__query_backend(backend, backend_config, aliased_outputs))
 
         return candidates
+
+    async def __query_backend(
+        self,
+        backend: Backend,
+        backend_config: dict[str, Any],
+        requested_types: set[str],
+    ) -> list[PassMetadata]:
+        """Query a backend on every tool host, following redirections
+
+        A pass a host rejects because a tool it needs is redirected to
+        another host is taken from that host only, which is reached
+        on first use through `redirect_host`. Of the other passes, the
+        one of the first host accepting it is kept.
+
+        Args:
+            backend: Backend to query
+            backend_config: Its configuration for the output group
+            requested_types: Output types asked for
+
+        Returns:
+            Metadata of the accepted passes
+        """
+        contributions = []
+        for host in self.tool_hosts:
+            passes = await self.__contributions_get(host, backend, backend_config, requested_types)
+            contributions.append((host, passes))
+
+        # Pass name -> (destination, rejection key, reason on the host
+        # that redirected it)
+        redirected: dict[str, tuple[str, tuple[str, str], str]] = {}
+        for host, passes in contributions:
+            for pass_obj, reason in passes:
+                if reason and pass_obj.redirect is not None:
+                    redirected.setdefault(pass_obj.name, (
+                        pass_obj.redirect, (f"{backend.name}/{pass_obj.name}", host.name), reason))
+
+        for destination in dict.fromkeys(d for d, _, _ in redirected.values()):
+            host = await self.__redirect_host_get(destination, redirected)
+            if host is None:
+                continue
+            passes = await self.__contributions_get(host, backend, backend_config, requested_types)
+            contributions.append((host, [
+                (pass_obj, reason) for pass_obj, reason in passes
+                if pass_obj.name in redirected and redirected[pass_obj.name][0] == destination
+            ]))
+
+        accepted: dict[str, tuple[str, PassMetadata]] = {}
+        for host, passes in contributions:
+            for pass_obj, reason in passes:
+                key = f"{backend.name}/{pass_obj.name}"
+                redirect = redirected.get(pass_obj.name)
+                if redirect is not None and host.name != redirect[0]:
+                    self.debug(f"{key} on {host.name} left out: its tool runs on {redirect[0]}")
+                    continue
+                if reason:
+                    self._rejected_passes[(key, host.name)] = reason
+                    self.debug(f"Probe rejected {key} on {host.name}: {reason}")
+                    continue
+                if pass_obj.name in accepted:
+                    self.debug(
+                        f"{key} on {host.name} superseded by "
+                        f"{accepted[pass_obj.name][0]}"
+                    )
+                    continue
+                accepted[pass_obj.name] = (host.name, PassMetadata(
+                    pass_obj=pass_obj,
+                    config=backend_config,
+                    backend_name=backend.name,
+                    requested_types=requested_types,
+                ))
+
+        for name, (destination, key, reason) in redirected.items():
+            if name not in accepted:
+                self._rejected_passes.setdefault(key, reason)
+
+        return [metadata for _, metadata in accepted.values()]
+
+    async def __contributions_get(self, host: 'ToolHost', backend: Backend,
+                                 backend_config: dict[str, Any],
+                                 requested_types: set[str]) -> list[tuple[Any, Optional[str]]]:
+        """Passes a backend contributes on a host, with their probe verdict
+
+        A backend the host cannot use contributes nothing; the reason
+        is kept for the diagnostic.
+        """
+        from ..remote.toolhost import BackendUnavailable
+        try:
+            passes = await host.passes_contribute(
+                backend, backend_config, requested_types, self.project_config)
+        except BackendUnavailable as e:
+            self._rejected_passes[(backend.name, host.name)] = e.reason
+            self.debug(f"Backend {backend.name} unavailable on {host.name}: {e.reason}")
+            return []
+        self.debug(
+            f"Backend {backend.name} contributed passes on {host.name}: "
+            f"{[p for p, _ in passes]}"
+        )
+        return passes
+
+    async def __redirect_host_get(self, destination: str,
+                                 redirected: dict[str, tuple[str, tuple[str, str], str]]
+                                 ) -> Optional['ToolHost']:
+        """Host of a redirection, None when it may not be reached
+
+        When it may not, the rejections of the passes redirected there
+        carry the reason.
+        """
+        from ..remote.toolhost import RedirectDisabled
+        if self.redirect_host is None:
+            return None
+        try:
+            return await self.redirect_host(destination)
+        except RedirectDisabled as e:
+            for name, (d, key, reason) in redirected.items():
+                if d == destination:
+                    redirected[name] = (d, key, f"{reason}; {e.reason}")
+            return None
 
     def _format_plan_failure(
         self,

@@ -24,7 +24,10 @@ if TYPE_CHECKING:
     from .handshake import PluginCompatibility
     from .peer import Peer
 
-__all__ = ["ToolDescription", "BackendUnavailable", "ToolHost", "LocalToolHost", "RemoteToolHost"]
+__all__ = [
+    "ToolDescription", "BackendUnavailable", "RedirectDisabled",
+    "ToolHost", "LocalToolHost", "RemoteToolHost",
+]
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,18 @@ class ToolDescription:
 
 class BackendUnavailable(Exception):
     """A host cannot use a backend at all
+
+    Attributes:
+        reason: Why, for diagnostics
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class RedirectDisabled(Exception):
+    """Tools redirected to remote hosts may not be reached
 
     Attributes:
         reason: Why, for diagnostics
@@ -157,10 +172,12 @@ class LocalToolHost(ToolHost):
     def tool_problem(tool: ToolConfig) -> Optional[str]:
         """Why a configured tool is not usable, None if it is
 
-        A tool declaring an `executable` or `path` is usable when it
-        exists. A tool declaring neither relies on $PATH and is
-        trusted.
+        A tool redirected to a remote host is not usable here. A tool
+        declaring an `executable` or `path` is usable when it exists.
+        A tool declaring neither relies on $PATH and is trusted.
         """
+        if tool.remote is not None:
+            return f"tool {tool.identifier!r} is provided by host {tool.remote}"
         for key in ("executable", "path"):
             raw = tool.config.get(key)
             if not raw:
@@ -195,6 +212,16 @@ class LocalToolHost(ToolHost):
         if tool is None:
             return f"tool {identifier!r} not configured on {self.name}"
         return self.tool_problem(tool)
+
+    def tool_redirect(self, identifier: str) -> Optional[str]:
+        """Remote host a tool is redirected to, None if it is not
+
+        The tool is looked up as tool_probe() does.
+        """
+        if self.gbs_config is None:
+            return None
+        tool = self.gbs_config.get_tool(identifier)
+        return None if tool is None else tool.remote
 
     async def passes_contribute(self, backend, config, requested_types, project_config):
         passes = backend.contribute_passes(config, requested_types, project_config, self.gbs_config)

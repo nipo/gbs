@@ -228,11 +228,14 @@ class TclInterpreter:
         gbs_config: "GBSConfig | None",
         identifier: str,
     ) -> str | None:
-        """Executable of a configured tool, when it exists on disk."""
+        """Executable of a configured tool, when it exists on disk.
+
+        A tool redirected to a remote host has none here.
+        """
         if gbs_config is None:
             return None
         tool = gbs_config.get_tool(identifier)
-        if tool is None:
+        if tool is None or tool.remote is not None:
             return None
         for key in ("executable", "path"):
             raw = tool.config.get(key)

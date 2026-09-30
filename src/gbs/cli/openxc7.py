@@ -16,6 +16,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from ..config.model import ToolRedirected
 from ..logging import get_logger
 from ..utils import expand_path
 from ..builtin.xilinx_part import XilinxPart
@@ -153,6 +154,10 @@ def _resolve_install_root(gbs_config, anchor: str) -> Path:
             f"in your .gbs.yaml, or add an explicit tool entry for the "
             f"openxc7 install you want to use."
         )
+    try:
+        tool.local()
+    except ToolRedirected as e:
+        raise click.ClickException(str(e))
     exe = tool.config.get("executable")
     if not exe:
         raise click.ClickException(

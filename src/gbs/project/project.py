@@ -87,7 +87,10 @@ class Project(UIReporter):
         self.__realizations = None
         self.__remote_destination: Optional[str] = None
         self.__remote_keep = False
-        self.__remote_host = None
+        self.__redirects_disabled: Optional[str] = None
+        # Connected remote hosts by name, None outside hosts_open()
+        self.__hosts: Optional[dict] = None
+        self.__hosts_lock = asyncio.Lock()
 
         # Shared resource registry for cross-output-group dependencies.
         # When a suite passes one in, it spans the whole suite so identical
@@ -161,34 +164,76 @@ class Project(UIReporter):
 
         Args:
             destination: Configured remote host name or ssh destination
-            keep: Have the remote keep its workspace
+            keep: Have remote hosts keep their workspace, this one and
+                those tools are redirected to
         """
-        if self.__remote_host is not None:
-            raise RuntimeError("Cannot change the remote host while it is connected")
+        if self.__hosts is not None:
+            raise RuntimeError("Cannot change the remote host while hosts are connected")
         self.__remote_destination = destination
         self.__remote_keep = keep
 
+    def redirects_disable(self, reason: str) -> None:
+        """Keep passes needing a tool redirected to a remote host rejected
+
+        Args:
+            reason: Why, added to their rejection reason
+        """
+        self.__redirects_disabled = reason
+
     @asynccontextmanager
     async def hosts_open(self):
-        """Keep the remote host connected, if any, for the enclosed work
+        """Keep remote hosts connected for the enclosed work
 
-        Nested uses share the connection of the outermost one, which
-        closes it on exit, whatever the outcome.
+        The remote host set by remote_set(), if any, is connected on
+        entry; hosts tools are redirected to are connected when the
+        planner first needs them, see redirect_host(). Nested uses share
+        the connections of the outermost one, which closes them all on
+        exit, whatever the outcome.
 
         Raises:
             RemoteHostError: If the remote host cannot be reached.
         """
-        if self.__remote_destination is None or self.__remote_host is not None:
+        if self.__hosts is not None:
             yield
             return
-        from ..remote.client import RemoteHost
-        host = await RemoteHost.open(self.__remote_destination, self.gbs_config, self.__remote_keep)
-        self.__remote_host = host
+        self.__hosts = {}
         try:
+            if self.__remote_destination is not None:
+                await self.__host_open(self.__remote_destination)
             yield
         finally:
-            self.__remote_host = None
-            await host.close()
+            hosts, self.__hosts = self.__hosts, None
+            results = await asyncio.gather(*(host.close() for host in hosts.values()),
+                                           return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+
+    async def __host_open(self, destination: str):
+        """The connected remote host of a destination, connecting it if needed"""
+        from ..remote.client import RemoteHost
+        if self.__hosts is None:
+            raise RuntimeError(f"Remote host {destination} is not connected; plan within hosts_open()")
+        name = RemoteHost.host_config(destination, self.gbs_config).name
+        async with self.__hosts_lock:
+            host = self.__hosts.get(name)
+            if host is None:
+                host = await RemoteHost.open(destination, self.gbs_config, self.__remote_keep)
+                self.__hosts[name] = host
+        return host
+
+    async def redirect_host(self, destination: str):
+        """Tool host a tool is redirected to, connected until hosts_open() exits
+
+        Raises:
+            RedirectDisabled: If redirects_disable() was called.
+            RemoteHostError: If the host cannot be reached.
+        """
+        from ..remote.toolhost import RedirectDisabled
+        if self.__redirects_disabled is not None:
+            raise RedirectDisabled(self.__redirects_disabled)
+        host = await self.__host_open(destination)
+        return host.tool_host
 
     def remote_host(self, name: str):
         """The connected remote host of a given name
@@ -196,8 +241,8 @@ class Project(UIReporter):
         Raises:
             RuntimeError: If no such host is connected, see hosts_open().
         """
-        host = self.__remote_host
-        if host is None or host.name != name:
+        host = None if self.__hosts is None else self.__hosts.get(name)
+        if host is None:
             raise RuntimeError(f"Remote host {name} is not connected")
         return host
 
@@ -205,20 +250,25 @@ class Project(UIReporter):
     def tool_hosts(self) -> list:
         """Hosts to plan on, in order of preference
 
+        Hosts tools are redirected to are not listed, see
+        redirect_host().
+
         Raises:
             RuntimeError: If a remote host is set but not connected,
                 see hosts_open().
         """
+        from ..remote.client import RemoteHost
         from ..remote.toolhost import LocalToolHost
         local = LocalToolHost(self.gbs_config)
         if self.__remote_destination is None:
             return [local]
-        if self.__remote_host is None:
+        name = RemoteHost.host_config(self.__remote_destination, self.gbs_config).name
+        if self.__hosts is None or name not in self.__hosts:
             raise RuntimeError(
                 f"Remote host {self.__remote_destination} is not connected; "
                 f"plan within hosts_open()"
             )
-        return [self.__remote_host.tool_host, local]
+        return [self.__hosts[name].tool_host, local]
 
     def planner(self, output_group):
         """Planner for one output group, on the project's tool hosts"""
@@ -232,6 +282,7 @@ class Project(UIReporter):
             parent_reporter=self,
             partial_source_coverage=self.partial_source_coverage,
             tool_hosts=self.tool_hosts,
+            redirect_host=self.redirect_host,
         )
 
     @classmethod
@@ -381,7 +432,8 @@ class Project(UIReporter):
         # not poison later calls that ask for a different subset.
         # Realizations dispatched with a remote host depend on the
         # connection they were dispatched on, which ends with
-        # hosts_open(): they are never reused.
+        # hosts_open(): they are never reused. Whether a redirected
+        # tool involves one is only known once planned.
         cache = [] if output_group_names is None and self.__remote_destination is None else None
 
         for output_group in output_groups:
@@ -403,6 +455,8 @@ class Project(UIReporter):
 
             await realization.dispatch()
 
+            if realization.segments.segments:
+                cache = None
             if cache is not None:
                 cache.append(realization)
 

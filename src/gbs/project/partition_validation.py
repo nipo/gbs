@@ -158,13 +158,17 @@ class PartitionValidation:
             output_groups=[self.output_group()],
             raw_config=self.project_data,
         )
-        return PartitionValidationProject(
+        project = PartitionValidationProject(
             partition_name=self.partition_name,
             user_filter_vars=self.filter_vars,
             model=model,
             repositories=self.repositories,
             gbs_config=self.gbs_config,
         )
+        # The report reads the diagnostics the analysis leaves in the
+        # local build context
+        project.redirects_disable("partition validation runs tools locally")
+        return project
 
     async def run(self) -> ValidationReport:
         """Plan, resolve, analyze and report.

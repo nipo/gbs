@@ -54,6 +54,8 @@ async def dump(ctx):
                 lines.append(f"    variant: {tool.variant}")
             if tool.version is not None:
                 lines.append(f"    version: {tool.version}")
+            if tool.remote is not None:
+                lines.append(f"    remote: {tool.remote}")
             if tool.config:
                 lines.append(f"    config:")
                 for k, v in tool.config.items():
@@ -169,6 +171,8 @@ async def tool(ctx, identifier: str | None):
         via = f"via {t.via}" if t.via else ""
         annotation = _format_annotation(origin, via)
         click.echo(f"  {t.identifier}{marker}{annotation}")
+        if t.remote is not None:
+            click.echo(f"    remote: {t.remote}")
         for k, v in t.config.items():
             click.echo(f"    {k}: {v}")
 

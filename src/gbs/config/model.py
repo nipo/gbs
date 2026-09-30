@@ -55,6 +55,9 @@ class ToolConfig:
     config: dict[str, Any] = field(default_factory=dict)
     origin: Optional[Path] = None  # Config file this tool was loaded from
     via: Optional[str] = None      # Toolchain identifier when expanded from `toolchains:`
+    # Remote host the tool runs on: a `remote_hosts:` name or an ssh
+    # destination. Passes needing it are planned and run there.
+    remote: Optional[str] = None
 
     @property
     def identifier(self) -> str:
@@ -65,6 +68,16 @@ class ToolConfig:
         if self.version:
             result += f"@{self.version}"
         return result
+
+    def local(self) -> 'ToolConfig':
+        """This tool, for code running it on this host
+
+        Raises:
+            ToolRedirected: If the tool runs on a remote host.
+        """
+        if self.remote is not None:
+            raise ToolRedirected(self)
+        return self
 
 @dataclass
 class ToolchainSpec:
@@ -99,6 +112,21 @@ class ToolchainSpec:
 class ConfigError(Exception):
     """A configuration file is invalid"""
     pass
+
+
+class ToolRedirected(ConfigError):
+    """A tool redirected to a remote host is to run on this host
+
+    Attributes:
+        tool: The redirected tool
+    """
+
+    def __init__(self, tool: ToolConfig):
+        super().__init__(
+            f"tool {tool.identifier!r} is redirected to host {tool.remote}; "
+            f"this command runs tools locally"
+        )
+        self.tool = tool
 
 
 @dataclass
@@ -368,13 +396,16 @@ class GBSConfig:
                 logger.warning(f"Tool definition missing 'name' in {path}, skipping")
                 continue
 
-            tools.append(ToolConfig(
+            tool = ToolConfig(
                 name=tool_data['name'],
                 variant=tool_data.get('variant'),
                 version=tool_data.get('version'),
                 config=tool_data.get('config', {}),
                 origin=path.resolve(),
-            ))
+                remote=tool_data.get('remote'),
+            )
+            cls._check_tool_remote(path, tool)
+            tools.append(tool)
 
         # Parse toolchains
         toolchains = []
@@ -465,6 +496,27 @@ class GBSConfig:
             file_url_template=file_url_template,
             remote_hosts=remote_hosts,
         )
+
+    @staticmethod
+    def _check_tool_remote(path: Path, tool: ToolConfig) -> None:
+        """Check the `remote:` key of a tool entry
+
+        Raises:
+            ConfigError: If it is not a non-empty string, or the entry
+                also locates the tool on this host.
+        """
+        if tool.remote is None:
+            return
+        if not isinstance(tool.remote, str) or not tool.remote.strip():
+            raise ConfigError(
+                f"{path}: tool {tool.identifier!r}: remote must be a non-empty string"
+            )
+        local = [key for key in ("path", "executable") if key in tool.config]
+        if local:
+            raise ConfigError(
+                f"{path}: tool {tool.identifier!r} is redirected to {tool.remote} "
+                f"and cannot declare {' or '.join(local)}"
+            )
 
     @staticmethod
     def _parse_remote_hosts(path: Path, data: Any) -> dict[str, RemoteHostConfig]:

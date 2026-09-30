@@ -13,6 +13,7 @@ import pytest
 from asyncclick.testing import CliRunner
 
 from gbs.build import BuildContext
+from gbs.config.model import ToolConfig
 from gbs.build.task import BuildError, ConfigurationError, ResourceTypology
 from gbs.builtin.vivado_ip.backend import VivadoIpBackend
 from gbs.builtin.vivado_ip.check import IpCheck, IpCheckError
@@ -517,7 +518,7 @@ class FakePlannerConfig:
         self.path = path
 
     def get_tool(self, identifier):
-        return SimpleNamespace(config={"path": str(self.path)})
+        return ToolConfig(identifier, config={"path": str(self.path)})
 
     def apply_backend_overrides(self, backend_name, backend_config):
         return dict(backend_config)

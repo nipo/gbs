@@ -58,6 +58,8 @@ class BasePass:
         config: Backend-specific configuration
         project_config: Project-level configuration
         gbs_config: GBS configuration
+        redirect: Remote host a tool the pass needs is redirected to,
+            as found by probe_tool(), None if none is
     """
 
     # Class attributes (must be overridden by subclasses)
@@ -69,6 +71,8 @@ class BasePass:
     can_fork: bool = False
     priority: int = 100
     types_with_library: set[str] = {"vhdl", "verilog"}
+
+    redirect: str | None = None
 
     def __init__(self,
                  config: dict[str, Any],
@@ -118,10 +122,18 @@ class BasePass:
         LocalToolHost.tool_probe(). The CLI --tool and --tool-version
         overrides are honoured because the identifier is built by
         resolve_tool_identifier.
+
+        A tool redirected to a remote host is not usable here; the
+        host is recorded in `redirect`, for the planner to query the
+        pass there.
         """
         from ..remote.toolhost import LocalToolHost
         identifier = self.resolve_tool_identifier(default_name)
-        return LocalToolHost(self.gbs_config).tool_probe(identifier)
+        host = LocalToolHost(self.gbs_config)
+        redirect = host.tool_redirect(identifier)
+        if redirect is not None:
+            self.redirect = redirect
+        return host.tool_probe(identifier)
 
     def probe(self) -> str | None:
         """Report whether this pass is a viable candidate for the

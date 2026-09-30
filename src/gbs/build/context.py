@@ -394,13 +394,16 @@ class BuildContext(UIReporter):
 
         Raises:
             BuildError: If required=True and tool not found
+            ConfigurationError: If the tool is redirected to a remote
+                host, whether required or not
 
         Examples:
             >>> ctx.get_tool("ghdl:llvm")            # variant filter
             >>> ctx.get_tool("gcc")                  # any variant
             >>> ctx.get_tool("yosys@2026-03-24")     # version filter
         """
-        from .task import BuildError
+        from ..config.model import ToolRedirected
+        from .task import BuildError, ConfigurationError
 
         if self.gbs_config is None:
             if required:
@@ -414,7 +417,10 @@ class BuildContext(UIReporter):
                 raise BuildError(f"Tool '{identifier}' not found in configuration")
             return None
 
-        return tool.config
+        try:
+            return tool.local().config
+        except ToolRedirected as e:
+            raise ConfigurationError(str(e)) from e
 
     @property
     def progress_condition(self) -> asyncio.Condition:

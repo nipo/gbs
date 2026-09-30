@@ -44,6 +44,9 @@ class Pass(Protocol):
         config: Backend-specific configuration
         project_config: Project-level configuration
         gbs_config: GBS configuration
+        redirect: Remote host a tool the pass needs is redirected to,
+            None if none is. Set by probe(); a pass rejected with a
+            redirect is queried on that host instead.
     """
 
     name: str
@@ -55,6 +58,7 @@ class Pass(Protocol):
     config: dict[str, Any]
     project_config: dict[str, Any]
     gbs_config: GBSConfig | None
+    redirect: str | None
 
     def filter_vars(self) -> dict[str, Any]:
         """Contribute filter variables for source enumeration

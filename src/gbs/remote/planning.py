@@ -134,7 +134,11 @@ class RemotePass:
     Attributes:
         host: Name of the host the pass runs on
         descriptor: Identity of the pass on its host
+        redirect: Always None: redirections are only followed from the
+            local host
     """
+
+    redirect = None
 
     def __init__(self, host: str, contribution: PassContribution):
         self.host = host

@@ -11,6 +11,7 @@ from gbs.ui.messages import MessageSeverity
 from gbs.protocol import Dispatcher
 from gbs.base import BaseBackend
 from gbs.build import BuildContext
+from gbs.config.model import ToolConfig
 from gbs.build.task import ResourceTypology
 
 
@@ -25,7 +26,7 @@ class MockDispatcher:
 # QuartusDispatcher.get_tool_option() to resolve a tool "path"
 class FakeGBSConfig:
     def get_tool(self, identifier):
-        return SimpleNamespace(config={"path": "/opt/altera_pro/25.3.1"})
+        return ToolConfig(identifier, config={"path": "/opt/altera_pro/25.3.1"})
 
 
 def test_backend_creation():

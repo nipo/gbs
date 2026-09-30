@@ -14,10 +14,18 @@ from .group import ReMatchGroup
 from .machine_output import MachineOutput
 
 class RemoteOptions:
-    """`--remote` and `--remote-keep` options of commands that plan"""
+    """`--remote`, `--remote-keep` and `--no-remote` options of commands that plan"""
+
+    NO_REMOTE_REASON = "redirection disabled by --no-remote"
 
     @staticmethod
     def decorate(f):
+        f = click.option(
+            "--no-remote",
+            is_flag=True,
+            help="Run every tool locally: tools the configuration redirects "
+                 "to a remote host are not used.",
+        )(f)
         f = click.option(
             "--remote-keep",
             is_flag=True,
@@ -28,11 +36,16 @@ class RemoteOptions:
             metavar="DEST",
             help="Plan with the remote gbs on DEST: a host from `remote_hosts:` "
                  "in the configuration, or else an ssh destination. Passes whose "
-                 "tool the remote host can run are planned and run there.",
+                 "tool the remote host can run are planned and run there, "
+                 "unless the configuration redirects the tool to another host.",
         )(f)
 
-    @staticmethod
-    def apply(proj, remote: str | None, remote_keep: bool) -> None:
+    @classmethod
+    def apply(cls, proj, remote: str | None, remote_keep: bool, no_remote: bool) -> None:
+        if no_remote:
+            if remote is not None:
+                raise click.UsageError("--no-remote and --remote are exclusive")
+            proj.redirects_disable(cls.NO_REMOTE_REASON)
         if remote is None:
             if remote_keep:
                 raise click.UsageError("--remote-keep requires --remote")
@@ -97,7 +110,7 @@ async def _project_load(project_file, gbs_config):
 @RemoteOptions.decorate
 @click.argument("output_groups", nargs=-1, metavar="[OUTPUT_GROUP...]")
 @click.pass_context
-async def build(ctx, jobs, remote, remote_keep, output_groups):
+async def build(ctx, jobs, remote, remote_keep, no_remote, output_groups):
     """Build a project.
 
     With no OUTPUT_GROUP arguments, every output group declared in the
@@ -118,7 +131,7 @@ async def build(ctx, jobs, remote, remote_keep, output_groups):
     # Apply command-line overrides
     if jobs is not None:
         proj.set_max_parallel(jobs)
-    RemoteOptions.apply(proj, remote, remote_keep)
+    RemoteOptions.apply(proj, remote, remote_keep, no_remote)
 
     selected = list(output_groups) if output_groups else None
 
@@ -167,7 +180,7 @@ async def _project_build(proj, selected):
 )
 @RemoteOptions.decorate
 @click.pass_context
-async def clean(ctx, dry_run: bool, remote, remote_keep):
+async def clean(ctx, dry_run: bool, remote, remote_keep, no_remote):
     """Clean build artifacts
 
     Removes build directories and generated files specified in backend configurations.
@@ -178,7 +191,7 @@ async def clean(ctx, dry_run: bool, remote, remote_keep):
     gbs_config = ctx.obj.get("gbs_config")
 
     proj = await _project_load(project_file, gbs_config)
-    RemoteOptions.apply(proj, remote, remote_keep)
+    RemoteOptions.apply(proj, remote, remote_keep, no_remote)
 
     try:
         await proj.clean(dry_run)
@@ -195,7 +208,7 @@ async def clean(ctx, dry_run: bool, remote, remote_keep):
 )
 @RemoteOptions.decorate
 @click.pass_context
-async def show(ctx, diagram: Path | None, remote, remote_keep):
+async def show(ctx, diagram: Path | None, remote, remote_keep, no_remote):
     """Show project configuration"""
     logger = get_logger()
     show_pb = ctx.obj["allow_progress_bars"]
@@ -203,7 +216,7 @@ async def show(ctx, diagram: Path | None, remote, remote_keep):
     gbs_config = ctx.obj.get("gbs_config")
 
     proj = await _project_load(project_file, gbs_config)
-    RemoteOptions.apply(proj, remote, remote_keep)
+    RemoteOptions.apply(proj, remote, remote_keep, no_remote)
 
     try:
         if diagram:
@@ -220,7 +233,7 @@ async def show(ctx, diagram: Path | None, remote, remote_keep):
 @MachineOutput.format_option
 @RemoteOptions.decorate
 @click.pass_context
-async def outputs(ctx, fmt: str, remote, remote_keep):
+async def outputs(ctx, fmt: str, remote, remote_keep, no_remote):
     """List output files, types, and required backends
 
     Emits the same record schema as `gbs suite outputs`, so documents
@@ -239,7 +252,7 @@ async def outputs(ctx, fmt: str, remote, remote_keep):
         hub.divert_output(sys.stderr)
 
     proj = await _project_load(project_file, gbs_config)
-    RemoteOptions.apply(proj, remote, remote_keep)
+    RemoteOptions.apply(proj, remote, remote_keep, no_remote)
     try:
         records = await OutputInventory(proj, name=proj.model.name).records()
     except RemoteHostError as e:

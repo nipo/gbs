@@ -38,7 +38,7 @@ class _GhdlFlavorProbe:
         if gbs_config is not None:
             tool = gbs_config.get_tool(tool_id)
             if tool is not None:
-                executable = tool.config.get("executable", "ghdl")
+                executable = tool.local().config.get("executable", "ghdl")
         return str(expand_path(executable))
 
     @classmethod

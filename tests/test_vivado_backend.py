@@ -10,6 +10,7 @@ import zipfile
 from types import SimpleNamespace
 
 from gbs.build import BuildContext
+from gbs.config.model import ToolConfig
 from gbs.build.task import BuildError
 from gbs.builtin.vivado.dispatcher import VivadoDispatcher
 from gbs.builtin.vivado.passes import VivadoSynthesizePass
@@ -78,7 +79,7 @@ class FakeGBSConfig:
         self.path = path
 
     def get_tool(self, identifier):
-        return SimpleNamespace(config={"path": str(self.path)})
+        return ToolConfig(identifier, config={"path": str(self.path)})
 
 
 def context_make(tmp_path, gbs_config=None):
