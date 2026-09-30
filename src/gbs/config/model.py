@@ -96,6 +96,22 @@ class ToolchainSpec:
 
 
 @dataclass
+class RemoteHostConfig:
+    """A `remote_hosts:` config entry: how to reach a remote gbs
+
+    Attributes:
+        name: Name the host is selected by
+        ssh: ssh arguments, including the destination
+        command: Command line of gbs on the remote host
+        origin: Config file this entry was declared in
+    """
+    name: str
+    ssh: list[str]
+    command: list[str] = field(default_factory=lambda: ["gbs"])
+    origin: Optional[Path] = None
+
+
+@dataclass
 class GBSConfig:
     """Global GBS configuration from user and tree config files
 
@@ -109,6 +125,7 @@ class GBSConfig:
     - Repositories: Extend list unconditionally
     - max_parallel: Override (higher priority wins)
     - max_log_count: Override (higher priority wins)
+    - Remote hosts: Override by name
     """
     tools: list[ToolConfig] = field(default_factory=list)
     toolchains: list[ToolchainSpec] = field(default_factory=list)
@@ -117,6 +134,7 @@ class GBSConfig:
     max_log_count: Optional[int] = None  # Number of log files to keep (None = use default, 0 = keep all)
     file_url_template: str = DEFAULT_FILE_URL_TEMPLATE  # Template for OSC 8 file URLs
     loaded_files: list[Path] = field(default_factory=list)  # Config files that were loaded
+    remote_hosts: dict[str, RemoteHostConfig] = field(default_factory=dict)
     # CLI-driven overrides captured at gbs top-level. `-t/--tool` and
     # `--tool-version` pairs are (backend_substring, value); the planner
     # applies matching entries to each backend's per-output-group
@@ -424,6 +442,8 @@ class GBSConfig:
             # Not specified in config, use default
             file_url_template = DEFAULT_FILE_URL_TEMPLATE
 
+        remote_hosts = cls._parse_remote_hosts(path, data.get('remote_hosts', {}))
+
         return cls(
             tools=tools,
             toolchains=toolchains,
@@ -431,7 +451,48 @@ class GBSConfig:
             max_parallel=max_parallel,
             max_log_count=max_log_count,
             file_url_template=file_url_template,
+            remote_hosts=remote_hosts,
         )
+
+    @staticmethod
+    def _parse_remote_hosts(path: Path, data: Any) -> dict[str, RemoteHostConfig]:
+        """Parse `remote_hosts:`, a mapping of host name to ssh and command
+
+        Integers in argument lists are taken as strings, so a port
+        number needs no quoting.
+        """
+        if not isinstance(data, dict):
+            logger.warning(f"remote_hosts must be a mapping in {path}, ignoring")
+            return {}
+
+        def argv(name, key, value):
+            if (not isinstance(value, list) or not value
+                    or not all(isinstance(a, (str, int)) and not isinstance(a, bool) for a in value)):
+                logger.warning(
+                    f"remote_hosts {name!r} {key} must be a non-empty list of "
+                    f"strings in {path}, ignoring host"
+                )
+                return None
+            return [str(a) for a in value]
+
+        hosts = {}
+        for name, spec in data.items():
+            if not isinstance(name, str) or not isinstance(spec, dict):
+                logger.warning(f"Invalid remote_hosts entry {name!r} in {path}, skipping")
+                continue
+            unknown = set(spec) - {'ssh', 'command'}
+            if unknown or 'ssh' not in spec:
+                logger.warning(
+                    f"remote_hosts {name!r} in {path} must have 'ssh' and "
+                    f"optionally 'command', skipping"
+                )
+                continue
+            ssh = argv(name, 'ssh', spec['ssh'])
+            command = argv(name, 'command', spec.get('command', ['gbs']))
+            if ssh is None or command is None:
+                continue
+            hosts[name] = RemoteHostConfig(name, ssh, command, origin=path.resolve())
+        return hosts
 
     @classmethod
     def _merge_configs(cls, base: 'GBSConfig', override: 'GBSConfig') -> 'GBSConfig':
@@ -488,6 +549,8 @@ class GBSConfig:
         # loaded_files: concatenate all
         merged_loaded_files = base.loaded_files + override.loaded_files
 
+        merged_remote_hosts = {**base.remote_hosts, **override.remote_hosts}
+
         return cls(
             tools=merged_tools,
             toolchains=merged_toolchains,
@@ -496,4 +559,5 @@ class GBSConfig:
             max_log_count=merged_max_log_count,
             file_url_template=merged_file_url_template,
             loaded_files=merged_loaded_files,
+            remote_hosts=merged_remote_hosts,
         )

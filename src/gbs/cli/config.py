@@ -84,6 +84,15 @@ async def dump(ctx):
             if repo.get('name'):
                 lines.append(f"    name: {repo['name']}")
 
+    if gbs_config.remote_hosts:
+        lines.append("")
+        lines.append("remote_hosts:")
+        for host in gbs_config.remote_hosts.values():
+            origin = f"  # from {host.origin}" if host.origin else ""
+            lines.append(f"  {host.name}:{origin}")
+            lines.append(f"    ssh: {host.ssh}")
+            lines.append(f"    command: {host.command}")
+
     click.echo('\n'.join(lines))
 
 
