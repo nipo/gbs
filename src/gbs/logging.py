@@ -77,6 +77,7 @@ class GBSLogger:
         log_dir: Optional[Path] = None,
         console_level: int = logging.INFO,
         file_level: int = logging.DEBUG,
+        log_file: bool = True,
     ):
         """Initialize GBS logger
 
@@ -85,14 +86,38 @@ class GBSLogger:
             log_dir: Directory for log files (default: gbs-build/logs in current directory)
             console_level: Logging level for console output
             file_level: Logging level for file output (always more verbose)
+            log_file: Whether to log to a file in log_dir; without
+                one, nothing is written to the file system
         """
         self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.DEBUG)  # Capture everything
         self.logger.propagate = False
 
         # Clear any existing handlers
+        for handler in self.logger.handlers:
+            handler.close()
         self.logger.handlers.clear()
 
+        self.log_dir: Optional[Path] = None
+        self.log_file: Optional[Path] = None
+        if log_file:
+            self.__file_logging_setup(log_dir, file_level)
+
+        # Console handler - logs according to verbosity setting
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(console_level)
+        console_formatter = logging.Formatter(
+            "%(levelname)s: %(message)s"
+        )
+        console_handler.setFormatter(console_formatter)
+        self.logger.addHandler(console_handler)
+
+        if self.log_file is None:
+            self.logger.info("GBS logging initialized, without log file")
+        else:
+            self.logger.info(f"GBS logging initialized. Log file: {self.log_file}")
+
+    def __file_logging_setup(self, log_dir: Optional[Path], file_level: int) -> None:
         # Set up log directory
         if log_dir is None:
             log_dir = Path.cwd() / "gbs-build" / "logs"
@@ -125,17 +150,6 @@ class GBSLogger:
         )
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
-
-        # Console handler - logs according to verbosity setting
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setLevel(console_level)
-        console_formatter = logging.Formatter(
-            "%(levelname)s: %(message)s"
-        )
-        console_handler.setFormatter(console_formatter)
-        self.logger.addHandler(console_handler)
-
-        self.logger.info(f"GBS logging initialized. Log file: {log_file}")
 
     def set_console_level(self, level: int):
         """Change console logging level
@@ -177,6 +191,8 @@ class GBSLogger:
             max_log_count: Maximum number of log files to keep.
                            If 0, keep all logs (no cleanup).
         """
+        if self.log_dir is None:
+            return
         if max_log_count == 0:
             self.logger.debug("Log cleanup disabled (max_log_count=0)")
             return
@@ -213,6 +229,7 @@ def setup_logging(
     debug: bool = False,
     quiet: bool = False,
     log_dir: Optional[Path] = None,
+    log_file: bool = True,
 ) -> GBSLogger:
     """Set up global GBS logging
 
@@ -221,6 +238,7 @@ def setup_logging(
         debug: Enable debug console output (DEBUG level)
         quiet: Restrict console output to errors
         log_dir: Custom log directory
+        log_file: Whether to log to a file
 
     Returns:
         Configured GBSLogger instance
@@ -242,6 +260,7 @@ def setup_logging(
         log_dir=log_dir,
         console_level=console_level,
         file_level=logging.DEBUG,
+        log_file=log_file,
     )
 
     return _logger_instance

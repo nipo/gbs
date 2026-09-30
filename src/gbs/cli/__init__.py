@@ -102,6 +102,11 @@ def get_project_file(ctx) -> Path:
 
 DEFAULT_MAX_LOG_COUNT = 10
 
+# Command groups that run where the user's files are not: `remote
+# serve` starts wherever ssh lands on the remote host. They log to
+# standard error only, unless a log directory is given explicitly.
+NO_LOG_FILE_COMMANDS = {"remote"}
+
 
 @click.group(cls = ReMatchGroup)
 @click.version_option()
@@ -183,6 +188,7 @@ async def cli(
         debug=debug,
         quiet=quiet,
         log_dir=log_dir,
+        log_file=log_dir is not None or ctx.invoked_subcommand not in NO_LOG_FILE_COMMANDS,
     )
     logger = get_logger()
 
@@ -251,7 +257,7 @@ async def cli(
         logger.debug(f"Added FileBackend logging to {log_file_path}")
     else:
         backends = [terminal_backend]
-        logger.warning("No log file available, FileBackend disabled")
+        logger.debug("No log file, FileBackend disabled")
 
     hub = FeedbackHub(backends)
     await hub.__aenter__()
