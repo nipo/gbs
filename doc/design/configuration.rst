@@ -167,6 +167,25 @@ Tool Configuration Examples
        config:
          path: /opt/Xilinx/14.7
 
+Tools on Remote Hosts
+~~~~~~~~~~~~~~~~~~~~~
+
+A tool installed on another host is declared with ``remote:``, naming
+a ``remote_hosts`` entry or an ssh destination, instead of ``path`` or
+``executable`` (declaring both is an error):
+
+.. code-block:: yaml
+
+   tools:
+     - name: vivado
+       variant: "2024.2"
+       remote: buildsrv
+
+Backends needing the tool are then planned and run by the gbs on that
+host, with the tool as that host's configuration declares it. Locally
+the tool is reported unusable, and code running tools outside a build
+refuses it. See :doc:`../remote` and :doc:`remote`.
+
 Per-Tool Environment Variables
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -366,6 +385,26 @@ or project). Later levels override earlier ones.
       # or
       max_log_count: 0    # Keep all logs (disable cleanup)
 
+Remote Hosts
+------------
+
+``remote_hosts:`` maps host names to how a remote gbs is reached, for
+remote execution (see :doc:`../remote`):
+
+.. code-block:: yaml
+
+   remote_hosts:
+     buildsrv:
+       ssh: [nipo@buildsrv.example.com, -p, 2222]  # or a single destination
+       command: ~/.local/bin/gbs                   # default: gbs
+       check_sources: true                         # default
+
+Entries are parsed into ``RemoteHostConfig`` objects
+(``GBSConfig.remote_hosts``). An invalid entry is a ``ConfigError``
+rather than a skipped host, which would only surface later as an
+unknown ssh destination. Later configuration files override entries of
+the same name.
+
 Loaded Files Tracking
 ---------------------
 
@@ -464,6 +503,7 @@ GBS merges configuration as follows:
 
 - Scalar values: Later overrides earlier
 - Lists (tools, repositories): Concatenated (later appended)
+- Remote hosts: Override by name
 - Dictionaries: Recursively merged
 
 This allows:

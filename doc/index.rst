@@ -13,6 +13,7 @@ and pluggable backends for different toolchains.
    getting_started
    project_file
    suite
+   remote
    cli
 
 .. toctree::

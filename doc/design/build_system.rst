@@ -345,6 +345,13 @@ This allows dispatchers to:
 - React to files added by earlier dispatchers
 - Converge naturally when all transformations complete
 
+A dispatcher that must see every resource the others will ever add
+before acting implements ``process_settled()``. When a round of
+``process()`` calls leaves the pending queue unchanged, dispatchers get
+``process_settled()`` calls in registration order until one changes
+the queue; ``process()`` rounds then resume. Remote segment
+dispatchers use it (see :doc:`remote`).
+
 BuildContext
 ------------
 
@@ -454,6 +461,15 @@ Represents a file. Awaiting it waits for the file to exist:
        async def work(self):
            if not self.path.exists():
                raise BuildError(f"File {self.path} missing")
+
+A resource created with ``directory=True`` stands for a whole
+directory tree: a library directory, a generated IP tree, a tool work
+directory. A task reading a directory input may read anything below
+it, so the resource exists when the directory does, and its
+modification time is the newest one in the tree: any change below it
+makes its consumers out of date. Backends declare such directories so
+that every file a tool reads is part of the build graph, which
+:doc:`remote` relies on to send a segment everything it needs.
 
 VirtualResource
 ~~~~~~~~~~~~~~~

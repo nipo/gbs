@@ -17,6 +17,7 @@ GBS follows a layered architecture with clear separation between:
    build_system
    plugins
    suite
+   remote
 
 Design Principles
 -----------------

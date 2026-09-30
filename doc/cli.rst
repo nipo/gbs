@@ -97,6 +97,22 @@ Build a project.
     tool) at plan time as ``name[:variant]@version``. Can be
     specified multiple times.
 
+``--remote DEST``
+    Plan with the gbs on remote host ``DEST``, a host from
+    ``remote_hosts:`` in the configuration or else an ssh destination.
+    Passes the remote host accepts are planned and run there, except
+    those of tools the configuration redirects to another host. See
+    :doc:`remote`.
+
+``--remote-keep``
+    Have remote hosts keep their temporary workspace after the run.
+    Requires ``--remote``.
+
+``--no-remote``
+    Run every tool locally: tools the configuration redirects to a
+    remote host (``remote:`` in a ``tools:`` entry) are unavailable.
+    Exclusive with ``--remote``.
+
 **Examples:**
 
 .. code-block:: bash
@@ -127,6 +143,9 @@ Build a project.
 
    # Build project in another directory
    gbs -C /path/to/project project build
+
+   # Run the backends buildsrv can serve on buildsrv
+   gbs project build --remote buildsrv
 
 gbs project show
 ~~~~~~~~~~~~~~~~
@@ -168,6 +187,9 @@ Shows:
 
     Individual resource nodes have clickable hyperlinks (using configured URL template).
 
+``--remote DEST``, ``--remote-keep``, ``--no-remote``
+    As for ``gbs project build``.
+
 **Examples:**
 
 .. code-block:: bash
@@ -201,6 +223,9 @@ diagnostics go to stderr.
 
 ``--format yaml|json``
     Output format. Default: ``yaml``.
+
+``--remote DEST``, ``--remote-keep``, ``--no-remote``
+    As for ``gbs project build``.
 
 **Output schema**
 
@@ -248,6 +273,9 @@ Remove build artifacts.
 
 ``--dry-run``
     Show what would be deleted without deleting.
+
+``--remote DEST``, ``--remote-keep``, ``--no-remote``
+    As for ``gbs project build``.
 
 **Example:**
 
@@ -513,6 +541,51 @@ group is printed.
 
    # Package and check every IP of the project in the current directory
    gbs vivado ip-check --project
+
+Remote Commands
+---------------
+
+Commands of remote execution (see :doc:`remote`).
+
+gbs remote info
+~~~~~~~~~~~~~~~
+
+Connect to a remote host and show what its gbs provides: version and
+protocol, plugins compared to the local ones, and tools with the
+reason each unusable one is.
+
+.. code-block:: bash
+
+   gbs remote info DEST
+
+``DEST`` is a host from ``remote_hosts:`` in the configuration, or else
+an ssh destination. Fails with the reason when the host cannot be
+reached or runs an incompatible gbs.
+
+gbs remote serve
+~~~~~~~~~~~~~~~~
+
+Serve a local gbs delegating work to this host. This is what a local
+gbs runs through ssh; it is not meant to be run by hand.
+
+.. code-block:: bash
+
+   gbs remote serve --stdio [--keep] [--blob-store DIR]
+
+**Options:**
+
+``--stdio``
+    Serve one client over standard input and output. Required.
+
+``--keep``
+    Keep the temporary workspace when the connection ends.
+
+``--blob-store DIR``
+    Blob store directory. Default: ``$XDG_CACHE_HOME/gbs/remote-blobs``
+    (``~/.cache/gbs/remote-blobs``).
+
+``gbs remote`` commands write no log files, unless ``--log-dir`` is
+given; they log to standard error.
 
 Partition Commands
 ------------------
