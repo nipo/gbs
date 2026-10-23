@@ -8,13 +8,15 @@ from __future__ import annotations
 import asyncio
 import os
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import AsyncIterator, Generic, TypeVar
 from pathlib import Path
 
 from .. import logging
-from .task import Task, BuildError
+from .task import Task, BuildError, ToolFailure
 from ..ui.messages import MessageSeverity, ToolMessage
 from .platform import PtyProvider, ProcessControl, wrap_bat_argv
+from .subprocess import OUTPUT_TAIL_LINES
 
 __all__ = ["Session", "CommandTask"]
 
@@ -63,6 +65,7 @@ class Session(ABC, Generic[CommandT]):
         self._queue = asyncio.Queue()
         self._logger = logging.get_logger(self.__class__.__name__)
         self._lock = asyncio.Lock()
+        self._output_tail: deque[str] = deque(maxlen=OUTPUT_TAIL_LINES)
 
         # PTY-specific state (Unix)
         self._pty_master_fd: int | None = None
@@ -130,16 +133,23 @@ class Session(ABC, Generic[CommandT]):
         async for line in lines:
             yield ToolMessage(severity=MessageSeverity.ERROR, message=line)
 
-    async def _stream_liner(self, stream) -> AsyncIterator[str]:
-        """Read stream and yield lines, detecting prompt for command completion"""
+    async def _stream_liner(self, stream, stream_tag: str) -> AsyncIterator[str]:
+        """Read stream and yield lines, detecting prompt for command completion
+
+        Lines, and an un-terminated chunk left at end of stream, are
+        recorded in the output tail with their stream tag so a startup
+        failure can report what the tool printed.
+        """
         buffer = ""
         while True:
             try:
                 chunk = await stream.read(1024)
             except (OSError, IOError):
                 # PTY raises EIO when the slave side closes (process exited)
-                break
+                chunk = b""
             if not chunk:
+                if buffer:
+                    self._output_tail.append(f"{stream_tag}: {buffer}")
                 break
 
             buffer += chunk.decode('utf-8', errors='replace')
@@ -151,16 +161,18 @@ class Session(ABC, Generic[CommandT]):
                     break
                 # Strip trailing \r (carriage return) from PTY output
                 # PTYs often use \r\n line endings
-                yield line.rstrip('\r')
+                line = line.rstrip('\r')
+                self._output_tail.append(f"{stream_tag}: {line}")
+                yield line
 
             if buffer == self.prompt:
                 # Marker to say command is over
                 await self._queue.put(_eoc_marker)
                 buffer = ""
 
-    async def _stream_handler(self, stream, transformer):
+    async def _stream_handler(self, stream, transformer, stream_tag: str):
         """Read stream, transform lines, and put messages to queue"""
-        async for msg in transformer(self._stream_liner(stream)):
+        async for msg in transformer(self._stream_liner(stream, stream_tag)):
             await self._queue.put(msg)
         await self._queue.put(None)
 
@@ -180,9 +192,9 @@ class Session(ABC, Generic[CommandT]):
         self._stdin_writer = self._process.stdin
 
         self.stdout_task = asyncio.create_task(
-            self._stream_handler(self._process.stdout, self.stdout_transform))
+            self._stream_handler(self._process.stdout, self.stdout_transform, "out"))
         self.stderr_task = asyncio.create_task(
-            self._stream_handler(self._process.stderr, self.stderr_transform))
+            self._stream_handler(self._process.stderr, self.stderr_transform, "err"))
 
     async def _launch_with_pty(self, process_env):
         """Launch process with pseudo-tty for stdin/stdout"""
@@ -228,9 +240,9 @@ class Session(ABC, Generic[CommandT]):
 
         # Start stream handlers
         self.stdout_task = asyncio.create_task(
-            self._stream_handler(self._stdout_stream, self.stdout_transform))
+            self._stream_handler(self._stdout_stream, self.stdout_transform, "out"))
         self.stderr_task = asyncio.create_task(
-            self._stream_handler(self._process.stderr, self.stderr_transform))
+            self._stream_handler(self._process.stderr, self.stderr_transform, "err"))
 
     async def _launch_with_conpty(self, process_env):
         """Launch process with Windows ConPTY for stdin/stdout.
@@ -275,7 +287,7 @@ class Session(ABC, Generic[CommandT]):
         # Start stream handler — ConPTY merges stdout/stderr,
         # so only one handler for stdout; no separate stderr
         self.stdout_task = asyncio.create_task(
-            self._stream_handler(self._stdout_stream, self.stdout_transform))
+            self._stream_handler(self._stdout_stream, self.stdout_transform, "out"))
         self.stderr_task = None
 
     async def _launch(self):
@@ -317,15 +329,12 @@ class Session(ABC, Generic[CommandT]):
         Waits for initial prompt. Override to send initialization commands.
 
         Raises:
-            BuildError: If process exits before producing initial prompt
+            ToolFailure: If process exits before producing initial prompt
         """
         while True:
             # Check if process died while waiting for prompt
             if self._process.returncode is not None:
-                raise BuildError(
-                    f"Process exited with code {self._process.returncode} "
-                    f"before initialization completed"
-                )
+                raise await self._startup_failure()
 
             try:
                 # Use timeout to periodically check process health
@@ -335,6 +344,28 @@ class Session(ABC, Generic[CommandT]):
 
             if m is _eoc_marker:
                 break
+
+    async def _startup_failure(self) -> ToolFailure:
+        """Describe the process exiting before its initial prompt
+
+        Output still in flight when the process exited is collected
+        first, a bounded wait guarding against a descendant holding
+        the streams open.
+        """
+        readers = [t for t in (self.stdout_task, self.stderr_task) if t is not None]
+        if readers:
+            await asyncio.wait(readers, timeout=2.0)
+
+        return ToolFailure(
+            message=f"Process exited with code {self._process.returncode} "
+                    f"before initialization completed",
+            tool=Path(self.argv[0]).name,
+            argv=self.argv,
+            returncode=self._process.returncode,
+            cwd=self.cwd,
+            env_extra=self.env,
+            log_tail=list(self._output_tail),
+        )
 
     async def session_close(self):
         """Send commands to exit the interpreter"""
