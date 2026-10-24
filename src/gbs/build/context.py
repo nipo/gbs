@@ -623,15 +623,17 @@ class BuildContext(UIReporter):
             emit(f"{indent}Hint: Check tool configuration", fg="yellow")
             return
 
-        exc_msg = str(exc)
-        if exc_msg:
-            emit(f"{indent}Reason: {exc_msg}", fg="red")
-
-        # A failure relayed from another build carries that build's summary
+        # A failure relayed from another build carries that build's
+        # summary, which already states the reason
         from .task import BuildError
         if isinstance(exc, BuildError) and exc.report:
             for line in exc.report:
-                emit(f"{indent}  {line}" if line else "")
+                emit(f"{indent}{line}" if line else "")
+            return
+
+        exc_msg = str(exc)
+        if exc_msg:
+            emit(f"{indent}Reason: {exc_msg}", fg="red")
 
     @staticmethod
     def _failure_headline(tasks_with_messages, task_to_exc, root_causes) -> str:

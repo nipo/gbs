@@ -337,10 +337,10 @@ class TestRemoteBuild:
         text = out + err
         assert "✗ remote-segment-0" in text
         assert "rt-gen on fake" in text
-        assert "Reason: fake: rt-gen: generator refuses FAIL" in text
         assert f"{rt.output('src')}/a.src:1:error: generator refuses FAIL" in text
-        # The remote failure summary, below the local one
+        # The remote failure summary, in place of a local reason
         assert "✗ rt-gen" in text and "Reason: generation failed" in text
+        assert "Reason: fake:" not in text
         assert not (rt.project / "out.txt").exists()
         assert rt.workspaces() == []
 
