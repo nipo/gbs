@@ -131,6 +131,11 @@ class NonProjectBuild(ProjectCommand):
                 "report_route_status", "-file", str(rsrc.path)
             ]))
 
+        for rsrc in self.outputs_of_type("vivado-io-report"):
+            await self.command_run(tcl.Command([
+                "report_io", "-file", str(rsrc.path)
+            ]))
+
         for rsrc in self.outputs_of_type("vivado-timing-report"):
             await self.command_run(tcl.Command([
                 "report_timing_summary", "-file", str(rsrc.path)
@@ -395,6 +400,7 @@ class AggregatePnrReport(Task):
         "vivado-routing-report",
         "vivado-timing-report",
         "vivado-power-report",
+        "vivado-io-report",
         "vivado-drc-report",
     ]
 

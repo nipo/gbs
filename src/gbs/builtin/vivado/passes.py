@@ -55,6 +55,7 @@ class VivadoSynthesizePass(VivadoPassBase):
     }
     output_types = {
         "vivado-routing-report",
+        "vivado-io-report",
         "vivado-timing-report",
         "vivado-power-report",
         "vivado-usage-report",

@@ -39,6 +39,7 @@ OUTPUT_FILES = {
     "vivado-timing-report": "timing-report.txt",
     "vivado-power-report": "power-report.txt",
     "vivado-usage-report": "usage-report.txt",
+    "vivado-io-report": "io-report.txt",
     "vivado-netlist-edif": "pnr-netlist.edif",
     "vivado-drc-report": "drc-report.txt",
     "bitstream": "final.bit",
