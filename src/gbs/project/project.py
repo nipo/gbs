@@ -22,6 +22,7 @@ from ..repository.model import SourceFileSet, Repository
 
 # Avoid circular imports by using TYPE_CHECKING
 if TYPE_CHECKING:
+    from ..config.model import GBSConfig
     from ..planner.planner import BuildPlan
 
 logger = get_logger(__name__)
@@ -865,21 +866,34 @@ class PlanRealization:
         )
         self.build_ctx.add_pending(fp_resource)
 
+        ConfigFingerprintStep(
+            self.build_ctx,
+            self.fingerprint_data_build(self.plan, self.project.gbs_config),
+            fp_resource)
+
+    @staticmethod
+    def fingerprint_data_build(plan: 'BuildPlan',
+                               gbs_config: Optional['GBSConfig']) -> dict:
+        """Configuration a build's outputs depend on, for the config
+        fingerprint.
+
+        Backend configuration is taken from the planned passes, as
+        they received it, CLI tool overrides included.
+        """
         fingerprint_data = {
-            "output_group": self.plan.output_group.name,
-            "topcell": self.plan.output_group.topcell,
-            "filter_vars": self.plan.filter_vars,
-            "target": self.plan.output_group.target,
-            "backend_config": self.plan.output_group.backend_config,
-            "passes": [pm.pass_obj.name for pm in self.plan.passes],
+            "output_group": plan.output_group.name,
+            "topcell": plan.output_group.topcell,
+            "filter_vars": plan.filter_vars,
+            "target": plan.output_group.target,
+            "backend_config": {pm.backend_name: pm.config for pm in plan.passes},
+            "passes": [pm.pass_obj.name for pm in plan.passes],
         }
-        if self.project.gbs_config:
+        if gbs_config:
             fingerprint_data["tools"] = [
                 {"name": t.name, "variant": t.variant, "config": t.config}
-                for t in self.project.gbs_config.tools
+                for t in gbs_config.tools
             ]
-
-        ConfigFingerprintStep(self.build_ctx, fingerprint_data, fp_resource)
+        return fingerprint_data
 
     async def dispatch(self, max_iterations = DISPATCH_ITERATIONS) -> None:
         # Run dispatcher iteration
