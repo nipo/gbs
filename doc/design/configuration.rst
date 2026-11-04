@@ -405,6 +405,35 @@ rather than a skipped host, which would only surface later as an
 unknown ssh destination. Later configuration files override entries of
 the same name.
 
+Backend Precedence
+------------------
+
+When more than one plan remains viable for an output group, for
+instance because two simulators are configured, ``backend_precedence:``
+chooses between them:
+
+.. code-block:: yaml
+
+   backend_precedence:
+     yavs: 10      # substring of a backend name, as for -t
+     ghdl: 5
+
+Every backend has precedence 0 unless an entry matches it. Plans are
+compared on the backends they do not all share, and the plan holding
+the highest-precedence one is kept. When the highest precedence is held
+by several plans, including when nothing is configured, planning fails
+as ambiguous: there is no implicit default.
+
+Precedence only breaks ties between plans that ``require_*`` and
+``exclude_*`` constraints and the minimality rule left; an output group
+that needs a given tool should still use ``require_backends``.
+
+Entries of every configuration file are kept in loading order, then
+those of the ``--precedence`` command-line flag; the last entry
+matching a backend gives its precedence, so a tree ``.gbs.yaml`` or the
+command line override the user configuration. ``gbs config dump`` lists
+them in that order.
+
 Loaded Files Tracking
 ---------------------
 
@@ -504,6 +533,7 @@ GBS merges configuration as follows:
 - Scalar values: Later overrides earlier
 - Lists (tools, repositories): Concatenated (later appended)
 - Remote hosts: Override by name
+- Backend precedence: Entries kept in order, last matching one wins
 - Dictionaries: Recursively merged
 
 This allows:

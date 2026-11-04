@@ -350,13 +350,18 @@ class BuildPlanner(UIReporter):
                 "Cannot find passes",
             ))
 
+        if len(selected) > 1:
+            selected = self._precedence_select(selected)
+
         if len(selected) != 1:
             raise PlanningError(self._format_plan_failure(
                 output_group,
                 source_types,
                 output_types,
                 f"{len(selected)} viable plans remain",
-                surviving=[[p.name for p in pp.passes] for pp in selected],
+                surviving=[([p.name for p in pp.passes],
+                             {p.backend_name for p in pp.passes})
+                            for pp in selected],
             ))
 
         # Collect union of all types_with_library from all passes
@@ -372,6 +377,34 @@ class BuildPlanner(UIReporter):
             types_with_library = types_with_library,
             parent_reporter = self)
         
+    def _precedence_select(self, plans: list[PartialPlan]) -> list[PartialPlan]:
+        """Plans backend precedence keeps among viable ones
+
+        Plans are compared on the backends they do not all share: the
+        plans holding the highest-precedence such backend are kept. A
+        plan made of shared backends only leaves precedence nothing to
+        compare, and every plan is kept.
+        """
+        backend_sets = [{p.backend_name for p in pp.passes} for pp in plans]
+        common = set.intersection(*backend_sets)
+        bests = []
+        for backends in backend_sets:
+            own = backends - common
+            if not own:
+                return plans
+            bests.append(max(self.backend_precedence(b) for b in own))
+        top = max(bests)
+        kept = [pp for pp, best in zip(plans, bests) if best == top]
+        if len(kept) == 1:
+            self.debug(f"Backend precedence {top} selects "
+                       f"{' -> '.join(p.name for p in kept[0].passes)}")
+        return kept
+
+    def backend_precedence(self, backend_name: str) -> int:
+        if self.gbs_config is None:
+            return 0
+        return self.gbs_config.precedence_of(backend_name)
+
     async def _progress_to_sources(self,
                              output_group: OutputGroup,
                              source_types: set(str),
@@ -657,7 +690,7 @@ class BuildPlanner(UIReporter):
         source_types: set,
         output_types: set,
         headline: str,
-        surviving: list[list[str]] | None = None,
+        surviving: list[tuple[list[str], set[str]]] | None = None,
     ) -> str:
         """Assemble a diagnostic for the plan-failure exception.
 
@@ -674,10 +707,13 @@ class BuildPlanner(UIReporter):
 
         if surviving:
             lines.append("")
-            lines.append("Surviving plans (disambiguate with require_backends "
-                         "or require_passes):")
-            for chain in surviving:
-                lines.append(f"  - {' -> '.join(chain)}")
+            lines.append("Surviving plans (disambiguate with backend_precedence "
+                         "or --precedence, or with require_backends or "
+                         "require_passes):")
+            for chain, backends in surviving:
+                precedences = ", ".join(
+                    f"{b}={self.backend_precedence(b)}" for b in sorted(backends))
+                lines.append(f"  - {' -> '.join(chain)}  [{precedences}]")
 
         if self._considered_chains:
             lines.append("")

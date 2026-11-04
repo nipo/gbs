@@ -166,6 +166,7 @@ class GBSConfig:
     - max_parallel: Override (higher priority wins)
     - max_log_count: Override (higher priority wins)
     - Remote hosts: Override by name
+    - Backend precedence: Extend list, later entries win
     """
     tools: list[ToolConfig] = field(default_factory=list)
     toolchains: list[ToolchainSpec] = field(default_factory=list)
@@ -175,6 +176,10 @@ class GBSConfig:
     file_url_template: str = DEFAULT_FILE_URL_TEMPLATE  # Template for OSC 8 file URLs
     loaded_files: list[Path] = field(default_factory=list)  # Config files that were loaded
     remote_hosts: dict[str, RemoteHostConfig] = field(default_factory=dict)
+    # (backend substring, precedence) from `backend_precedence:` in
+    # config merge order, then from the CLI --precedence flag. The last
+    # entry matching a backend name gives its precedence.
+    backend_precedence: list[tuple[str, int]] = field(default_factory=list)
     # CLI-driven overrides captured at gbs top-level. `-t/--tool` and
     # `--tool-version` pairs are (backend_substring, value); the planner
     # applies matching entries to each backend's per-output-group
@@ -182,6 +187,14 @@ class GBSConfig:
     # through planning honours them uniformly.
     tool_overrides: list[tuple[str, str]] = field(default_factory=list)
     tool_version_overrides: list[tuple[str, str]] = field(default_factory=list)
+
+    def precedence_of(self, backend_name: str) -> int:
+        """Precedence of a backend when several plans remain, 0 by default"""
+        result = 0
+        for substring, precedence in self.backend_precedence:
+            if substring in backend_name:
+                result = precedence
+        return result
 
     def apply_backend_overrides(self, backend_name: str, backend_config: dict) -> dict:
         """Return a copy of ``backend_config`` with CLI overrides applied.
@@ -486,6 +499,8 @@ class GBSConfig:
             file_url_template = DEFAULT_FILE_URL_TEMPLATE
 
         remote_hosts = cls._parse_remote_hosts(path, data.get('remote_hosts', {}))
+        backend_precedence = cls._parse_backend_precedence(
+            path, data.get('backend_precedence', {}))
 
         return cls(
             tools=tools,
@@ -495,7 +510,29 @@ class GBSConfig:
             max_log_count=max_log_count,
             file_url_template=file_url_template,
             remote_hosts=remote_hosts,
+            backend_precedence=backend_precedence,
         )
+
+    @staticmethod
+    def _parse_backend_precedence(path: Path, data: Any) -> list[tuple[str, int]]:
+        """Parse `backend_precedence:`, a mapping of backend name
+        substring to integer precedence
+
+        Raises:
+            ConfigError: If it is not such a mapping.
+        """
+        if not isinstance(data, dict):
+            raise ConfigError(f"{path}: backend_precedence must be a mapping")
+        result = []
+        for backend, precedence in data.items():
+            if not isinstance(backend, str) or not backend:
+                raise ConfigError(f"{path}: backend_precedence key {backend!r} "
+                                  f"must be a backend name")
+            if not isinstance(precedence, int) or isinstance(precedence, bool):
+                raise ConfigError(f"{path}: backend_precedence {backend!r} "
+                                  f"must be an integer")
+            result.append((backend, precedence))
+        return result
 
     @staticmethod
     def _check_tool_remote(path: Path, tool: ToolConfig) -> None:
@@ -624,6 +661,8 @@ class GBSConfig:
 
         merged_remote_hosts = {**base.remote_hosts, **override.remote_hosts}
 
+        merged_backend_precedence = base.backend_precedence + override.backend_precedence
+
         return cls(
             tools=merged_tools,
             toolchains=merged_toolchains,
@@ -633,4 +672,5 @@ class GBSConfig:
             file_url_template=merged_file_url_template,
             loaded_files=merged_loaded_files,
             remote_hosts=merged_remote_hosts,
+            backend_precedence=merged_backend_precedence,
         )

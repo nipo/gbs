@@ -20,6 +20,7 @@ General Options
      -t, --tool BACKEND=TOOL[:VARIANT][@VERSION]
                                         Override tool identifier for a backend
      --tool-version BACKEND=VERSION     Pin a tool version for a backend
+     --precedence BACKEND=PRECEDENCE    Set a backend's precedence between viable plans
      --help                             Show help and exit
 
 ``-C, --directory DIRECTORY``
@@ -50,6 +51,16 @@ General Options
     identifier. Combined with ``--tool`` (or the backend's default
     tool) at plan time as ``name[:variant]@version``. May be given
     multiple times. Same command coverage as ``--tool``.
+
+``--precedence BACKEND=PRECEDENCE``
+    Set the precedence of the backends matching ``BACKEND`` (a
+    substring, as for ``--tool``) to an integer, overriding
+    ``backend_precedence`` from the configuration files. When several
+    plans remain viable, the one holding the highest-precedence backend
+    is built, e.g. ``gbs --precedence yavs=1 suite build`` to run a
+    suite on yavs while GHDL is also configured. May be given multiple
+    times; the last matching entry wins. See
+    :doc:`design/configuration`.
 
 Log files are written to ``gbs-build/logs/`` by default. Use ``--verbose`` or
 ``--debug`` for console output; otherwise only errors are shown.

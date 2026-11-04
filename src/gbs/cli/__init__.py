@@ -13,7 +13,8 @@ from ..ui import FeedbackHub, SimpleBackend, set_global_hub
 from ..ui.messages import MessageSeverity, LogLevel
 from .group import ReMatchGroup
 from ._tool_overrides import (
-    TOOL_SYNTAX, TOOL_VERSION_SYNTAX, parse_backend_kv, check_backend_kv,
+    TOOL_SYNTAX, TOOL_VERSION_SYNTAX, PRECEDENCE_SYNTAX,
+    parse_backend_kv, parse_backend_precedence, check_backend_kv,
 )
 
 # Try to import Rich backend
@@ -159,6 +160,14 @@ NO_LOG_FILE_COMMANDS = {"remote"}
     help="Pin a tool version for a backend (e.g. yosys=2026-03-24). "
          "May be given multiple times."
 )
+@click.option(
+    "--precedence",
+    "precedence_overrides",
+    multiple=True,
+    metavar=PRECEDENCE_SYNTAX,
+    help="Set a backend's precedence, used to choose between plans "
+         "that remain viable (e.g. yavs=10). May be given multiple times."
+)
 @click.pass_context
 async def cli(
     ctx,
@@ -170,6 +179,7 @@ async def cli(
     log_dir: Path | None,
     tool_overrides,
     tool_version_overrides,
+    precedence_overrides,
 ):
     """GBS: Gateware Build System
 
@@ -278,13 +288,21 @@ async def cli(
     gbs_config.tool_version_overrides = parse_backend_kv(
         tool_version_overrides, "--tool-version"
     )
-    if gbs_config.tool_overrides or gbs_config.tool_version_overrides:
+    precedence_config = list(gbs_config.backend_precedence)
+    precedence_cli = parse_backend_precedence(precedence_overrides)
+    gbs_config.backend_precedence = precedence_config + precedence_cli
+    if (gbs_config.tool_overrides or gbs_config.tool_version_overrides
+            or gbs_config.backend_precedence):
         from ..plugins.loader import get_plugin_registry
         backend_names = [b.name for b in get_plugin_registry().get_all_backends()]
         check_backend_kv(gbs_config.tool_overrides, "--tool",
                          TOOL_SYNTAX, backend_names)
         check_backend_kv(gbs_config.tool_version_overrides, "--tool-version",
                          TOOL_VERSION_SYNTAX, backend_names)
+        check_backend_kv(precedence_config, "backend_precedence",
+                         PRECEDENCE_SYNTAX, backend_names)
+        check_backend_kv(precedence_cli, "--precedence",
+                         PRECEDENCE_SYNTAX, backend_names)
 
     # Store in context for subcommands
     ctx.ensure_object(dict)

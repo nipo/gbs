@@ -1,11 +1,11 @@
-"""CLI parsing for -t/--tool and --tool-version.
+"""CLI parsing for -t/--tool, --tool-version and --precedence.
 
-The root ``gbs`` command declares both options once, then stashes the
+The root ``gbs`` command declares the options once, then stashes the
 parsed pairs on the loaded :class:`~gbs.config.model.GBSConfig` object
-(as ``tool_overrides`` and ``tool_version_overrides``). Every command
-that reaches the planner picks them up transparently through
-``GBSConfig.apply_backend_overrides``, so there's no per-subcommand
-threading.
+(as ``tool_overrides``, ``tool_version_overrides`` and, after the
+configuration's own entries, ``backend_precedence``). Every command
+that reaches the planner picks them up transparently, so there's no
+per-subcommand threading.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import asyncclick as click
 
 TOOL_SYNTAX = "BACKEND=TOOL[:VARIANT][@VERSION]"
 TOOL_VERSION_SYNTAX = "BACKEND=VERSION"
+PRECEDENCE_SYNTAX = "BACKEND=PRECEDENCE"
 
 
 def parse_backend_kv(
@@ -35,6 +36,20 @@ def parse_backend_kv(
             )
         backend, value = entry.split("=", 1)
         parsed.append((backend, value))
+    return parsed
+
+
+def parse_backend_precedence(entries: Iterable[str]) -> list[tuple[str, int]]:
+    """Split ``BACKEND=PRECEDENCE`` strings, the precedence an integer"""
+    parsed = []
+    for backend, value in parse_backend_kv(entries, "--precedence"):
+        try:
+            parsed.append((backend, int(value)))
+        except ValueError:
+            raise click.ClickException(
+                f"Invalid --precedence {backend}={value}: "
+                f"expected {PRECEDENCE_SYNTAX}, PRECEDENCE an integer."
+            )
     return parsed
 
 

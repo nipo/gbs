@@ -86,6 +86,12 @@ async def dump(ctx):
             if repo.get('name'):
                 lines.append(f"    name: {repo['name']}")
 
+    if gbs_config.backend_precedence:
+        lines.append("")
+        lines.append("backend_precedence:  # later entries win")
+        for backend, precedence in gbs_config.backend_precedence:
+            lines.append(f"  - {backend}: {precedence}")
+
     if gbs_config.remote_hosts:
         lines.append("")
         lines.append("remote_hosts:")
