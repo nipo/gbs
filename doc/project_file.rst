@@ -278,6 +278,35 @@ backend's config automatically.
 
 These variables are used to evaluate conditional groups in partitions.
 
+output[].simulation
+~~~~~~~~~~~~~~~~~~~
+
+Simulation run settings (optional), understood by every simulator backend
+able to run a testbench. The planner injects ``output_group.simulation``
+into each backend's config.
+
+.. code-block:: yaml
+
+   output:
+     - name: simulation
+       topcell: tb
+       simulation:
+         success_regex: "Terminating with error level: 0"
+         max_simulation_time: "10 ms"
+       outputs:
+         - type: simulation-log
+           path: simulation.log
+
+- ``success_regex``: Regular expression a message of the run must match.
+  With it, the run succeeds when a message matches, whatever the exit
+  status. Without it, the run succeeds when the simulator exits with
+  status 0.
+- ``max_simulation_time``: Simulation time the run stops at.
+
+The GHDL backend still reads both keys from ``backend_config`` under
+``gbs.builtin.ghdl``, with a deprecation warning. A key given in both
+places takes its value from ``simulation``.
+
 output[].backend_config
 ~~~~~~~~~~~~~~~~~~~~~~~
 

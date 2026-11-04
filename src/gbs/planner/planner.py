@@ -516,6 +516,8 @@ class BuildPlanner(UIReporter):
             # This makes target available to passes via self.config instead of self.project_config
             if output_group.target:
                 backend_config['target'] = output_group.target
+            if output_group.simulation:
+                backend_config['simulation'] = output_group.simulation
 
             # Apply -t/--tool and --tool-version overrides captured at
             # the top-level CLI onto this backend's config, right

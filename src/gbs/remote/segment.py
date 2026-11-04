@@ -149,13 +149,15 @@ class OutputGroupDescriptor:
     """
 
     def __init__(self, name: str, topcell: str, topcell_library: str,
-                 target: dict[str, Any], backend_config: dict[str, Any],
+                 target: dict[str, Any], simulation: dict[str, Any],
+                 backend_config: dict[str, Any],
                  exclude_dispatchers: list[str],
                  outputs: list[tuple[str, RootedPath]]):
         self.name = name
         self.topcell = topcell
         self.topcell_library = topcell_library
         self.target = target
+        self.simulation = simulation
         self.backend_config = backend_config
         self.exclude_dispatchers = exclude_dispatchers
         self.outputs = outputs
@@ -169,6 +171,7 @@ class OutputGroupDescriptor:
             topcell=output_group.topcell,
             topcell_library=topcell_library,
             target=WireFormat.json_check(output_group.target, f"{what} target"),
+            simulation=WireFormat.json_check(output_group.simulation, f"{what} simulation"),
             backend_config=WireFormat.json_check(
                 output_group.backend_config, f"{what} backend configuration"),
             exclude_dispatchers=list(output_group.exclude_dispatchers),
@@ -187,6 +190,7 @@ class OutputGroupDescriptor:
             backend_config=copy.deepcopy(self.backend_config),
             outputs=[OutputFile(type=t, path=table.path_of(loc)) for t, loc in self.outputs],
             target=copy.deepcopy(self.target),
+            simulation=copy.deepcopy(self.simulation),
             exclude_dispatchers=list(self.exclude_dispatchers),
         )
 
@@ -196,6 +200,7 @@ class OutputGroupDescriptor:
             "topcell": self.topcell,
             "topcell_library": self.topcell_library,
             "target": self.target,
+            "simulation": self.simulation,
             "backend_config": self.backend_config,
             "exclude_dispatchers": list(self.exclude_dispatchers),
             "outputs": [{"type": t, "location": loc.to_json()} for t, loc in self.outputs],
@@ -208,6 +213,7 @@ class OutputGroupDescriptor:
         topcell = reader.field("topcell", str)
         topcell_library = reader.field("topcell_library", str)
         target = reader.field("target", dict)
+        simulation = reader.field("simulation", dict)
         backend_config = reader.field("backend_config", dict)
         exclude_dispatchers = reader.string_list("exclude_dispatchers")
         outputs = []
@@ -218,8 +224,8 @@ class OutputGroupDescriptor:
             output.finish()
             outputs.append((file_type, location))
         reader.finish()
-        return cls(name, topcell, topcell_library, target, backend_config,
-                   exclude_dispatchers, outputs)
+        return cls(name, topcell, topcell_library, target, simulation,
+                   backend_config, exclude_dispatchers, outputs)
 
 
 class SegmentDescriptor:

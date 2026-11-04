@@ -26,7 +26,8 @@ output:
       gbs.builtin.ghdl:
         vhdl_standard: "1993"
         tool: "ghdl:system"
-        success_regex: "Terminating with error level: 0"
+    simulation:
+      success_regex: "Terminating with error level: 0"
     outputs:
       - type: simulation-log
         path: simulation.log

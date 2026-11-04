@@ -254,8 +254,9 @@ class RunSimulation(Task):
     async def work(self) -> None:
         simulator, = self.inputs_of_type("yavs-simulator")
 
-        max_simulation_time = self.dispatcher.config.get("max_simulation_time")
-        success_regex = self.dispatcher.config.get("success_regex")
+        simulation = self.dispatcher.config.get("simulation", {})
+        max_simulation_time = simulation.get("max_simulation_time")
+        success_regex = simulation.get("success_regex")
         success_pattern = re.compile(success_regex) if success_regex else None
         run_args = list(self.dispatcher.get_tool_option("run_args", []))
 

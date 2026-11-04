@@ -567,13 +567,41 @@ class RunSimulation(Task):
             description=f"run {dispatcher.context.project.name}"
         )
 
+    LEGACY_SIMULATION_KEYS = ("success_regex", "max_simulation_time")
+
+    @classmethod
+    def simulation_settings(cls, config: dict) -> tuple[dict, list[str]]:
+        """Output group simulation settings, completed with the keys
+        given in the GHDL backend configuration, and the warnings
+        about those
+
+        The backend keys predate the output group's simulation block,
+        which wins when both give a key.
+        """
+        simulation = dict(config.get("simulation", {}))
+        warnings = []
+        for key in cls.LEGACY_SIMULATION_KEYS:
+            if key not in config:
+                continue
+            if key in simulation:
+                warnings.append(f"gbs.builtin.ghdl {key} is overridden by simulation.{key}; "
+                                f"remove it from backend_config")
+            else:
+                warnings.append(f"gbs.builtin.ghdl {key} is deprecated; "
+                                f"move it to the output group's simulation block")
+                simulation[key] = config[key]
+        return simulation, warnings
+
     async def work(self) -> None:
         """Execute GHDL simulator and capture outputs"""
 
         simulator, = self.inputs_of_type("ghdl-simulator")
 
-        max_simulation_time = self.dispatcher.config.get("max_simulation_time")
-        success_regex = self.dispatcher.config.get("success_regex")
+        simulation, warnings = self.simulation_settings(self.dispatcher.config)
+        for warning in warnings:
+            self.warning(warning)
+        max_simulation_time = simulation.get("max_simulation_time")
+        success_regex = simulation.get("success_regex")
         success_pattern = re.compile(success_regex) if success_regex else None
         run_args = list(self.dispatcher.get_tool_option("run_args", []))
 

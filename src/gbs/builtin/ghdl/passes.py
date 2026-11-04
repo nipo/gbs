@@ -214,9 +214,12 @@ class GHDLRunPass(BasePass):
     Input types: ghdl-simulator
     Output types: waveform-vcd, waveform-ghw, waveform-fst, simulation-log
 
-    Configuration options (from backend_config):
+    Configuration options (from the output group's simulation block):
         - max_simulation_time: Maximum simulation time (e.g., "100 ms", "1 us")
         - success_regex: Optional regex pattern that must appear in logs for success
+
+    Both are still read from the GHDL backend configuration, with a
+    deprecation warning; the simulation block wins on collision.
     """
     name = "ghdl-run"
     input_types = {"ghdl-simulator"}

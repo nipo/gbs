@@ -43,7 +43,7 @@ class YavsRunPass(BasePass):
     Input types: yavs-simulator
     Output types: simulation-log, simulation-success, waveform-fst
 
-    Configuration options (from backend_config):
+    Configuration options (from the output group's simulation block):
         - max_simulation_time: stop time (e.g. "100 ms", "1 us")
         - success_regex: regex that must appear in the log for success
     """

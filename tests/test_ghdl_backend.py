@@ -287,3 +287,35 @@ class TestGhdlDeclaredInputs:
         await compile_task.work()
 
         assert f"-I{include.resolve()}" in argvs[0]
+
+
+class TestLegacySimulationSettings:
+    """GHDL still reads success_regex and max_simulation_time from its
+    backend configuration"""
+
+    @staticmethod
+    def settings(config):
+        from gbs.builtin.ghdl.task import RunSimulation
+        return RunSimulation.simulation_settings(config)
+
+    def test_simulation_block_alone(self):
+        simulation = {"success_regex": "ok", "max_simulation_time": "1 ms"}
+        assert self.settings({"simulation": simulation}) == (simulation, [])
+
+    def test_legacy_keys_are_used_with_a_warning(self):
+        simulation, warnings = self.settings(
+            {"success_regex": "ok", "max_simulation_time": "1 ms"})
+        assert simulation == {"success_regex": "ok", "max_simulation_time": "1 ms"}
+        assert len(warnings) == 2
+        assert all("deprecated" in w for w in warnings)
+
+    def test_simulation_block_wins(self):
+        simulation, warnings = self.settings({
+            "success_regex": "legacy",
+            "max_simulation_time": "1 ms",
+            "simulation": {"success_regex": "new"},
+        })
+        assert simulation == {"success_regex": "new", "max_simulation_time": "1 ms"}
+        overridden, deprecated = warnings
+        assert "overridden by simulation.success_regex" in overridden
+        assert "max_simulation_time is deprecated" in deprecated

@@ -12,8 +12,6 @@ class YavsBackend(BaseBackend):
 
     Configuration options:
         - vhdl_standard: VHDL standard ("1993", "2008" or "2019")
-        - max_simulation_time: run stop time (e.g. "100 ms")
-        - success_regex: regex the simulation log must match for success
     """
 
     RUN_OUTPUT_TYPES = {"simulation-log", "simulation-success", "waveform-fst"}

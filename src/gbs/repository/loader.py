@@ -4,6 +4,7 @@ Loads partition, library, repository, and project definitions from YAML files.
 Supports pluggable repository loaders for custom formats.
 """
 
+import re
 import yaml
 from pathlib import Path
 from typing import Any, Callable, Type
@@ -260,6 +261,23 @@ def load_project(path: Path):
             if "part" not in og_target:
                 raise LoadError(f"Output group '{og_name}': 'target' must specify 'part' (device part number)")
 
+        og_simulation = og_data.get("simulation", {})
+        if not isinstance(og_simulation, dict):
+            raise LoadError(f"Output group '{og_name}': 'simulation' must be a dictionary")
+        unknown = set(og_simulation) - {"success_regex", "max_simulation_time"}
+        if unknown:
+            raise LoadError(f"Output group '{og_name}': unknown 'simulation' keys: "
+                            f"{', '.join(sorted(unknown))}")
+        for key, value in og_simulation.items():
+            if not isinstance(value, str):
+                raise LoadError(f"Output group '{og_name}': 'simulation.{key}' must be a string")
+        if "success_regex" in og_simulation:
+            try:
+                re.compile(og_simulation["success_regex"])
+            except re.error as e:
+                raise LoadError(f"Output group '{og_name}': 'simulation.success_regex' "
+                                f"is not a valid regular expression: {e}")
+
         # Parse output files
         og_outputs = []
         outputs_data = og_data.get("outputs", [])
@@ -310,6 +328,7 @@ def load_project(path: Path):
             backend_config=og_backend_config,
             outputs=og_outputs,
             target=og_target,
+            simulation=og_simulation,
             partition=og_partition,
             require_passes=og_require_passes,
             exclude_passes=og_exclude_passes,

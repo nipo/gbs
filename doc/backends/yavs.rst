@@ -54,11 +54,10 @@ Backend Configuration
    backend_config:
      gbs.builtin.yavs:
        vhdl_standard: "2008"         # 1993 (default), 2008 or 2019
-       max_simulation_time: "10 ms"  # yavs run --stop-time
-       success_regex: "SUCCESS"      # regex the log must match
 
-Without ``success_regex``, the run succeeds when yavs exits with status 0.
-With it, the run succeeds when a message matches, whatever the exit status.
+``success_regex`` and ``max_simulation_time`` (passed as ``--stop-time``)
+come from the output group's ``simulation`` block, see
+:doc:`../project_file`.
 
 Example Project
 ---------------
@@ -66,18 +65,22 @@ Example Project
 .. code-block:: yaml
 
    name: my_simulation
-   root_library_name: work
 
-   output_groups:
+   root:
+     name: top
+     deps:
+       - library.partition
+     sources:
+       - file_type: vhdl
+         files:
+           - src/tb_top.vhd
+
+   output:
      - name: simulation
        topcell: tb_top
        outputs:
          - type: simulation-log
            path: simulation.log
-
-   root_partition_template:
-     dependencies:
-       - library.partition
 
 See Also
 --------
