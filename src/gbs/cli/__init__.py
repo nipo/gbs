@@ -12,6 +12,9 @@ from ..config.model import ConfigError, GBSConfig
 from ..ui import FeedbackHub, SimpleBackend, set_global_hub
 from ..ui.messages import MessageSeverity, LogLevel
 from .group import ReMatchGroup
+from ._tool_overrides import (
+    TOOL_SYNTAX, TOOL_VERSION_SYNTAX, parse_backend_kv, check_backend_kv,
+)
 
 # Try to import Rich backend
 try:
@@ -144,15 +147,15 @@ NO_LOG_FILE_COMMANDS = {"remote"}
     "-t", "--tool",
     "tool_overrides",
     multiple=True,
-    metavar="BACKEND=TOOL[:VARIANT]",
-    help="Override tool for a backend (e.g. quartus=quartus:prime). "
+    metavar=TOOL_SYNTAX,
+    help="Override tool for a backend (e.g. gowin=gowin:1.9.12.04). "
          "May be given multiple times."
 )
 @click.option(
     "--tool-version",
     "tool_version_overrides",
     multiple=True,
-    metavar="BACKEND=VERSION",
+    metavar=TOOL_VERSION_SYNTAX,
     help="Pin a tool version for a backend (e.g. yosys=2026-03-24). "
          "May be given multiple times."
 )
@@ -271,11 +274,17 @@ async def cli(
     # Parse the tool overrides once here and store them on the
     # gbs_config object. Every command that goes through the planner
     # picks them up transparently — no per-command threading needed.
-    from ._tool_overrides import parse_backend_kv
     gbs_config.tool_overrides = parse_backend_kv(tool_overrides, "--tool")
     gbs_config.tool_version_overrides = parse_backend_kv(
         tool_version_overrides, "--tool-version"
     )
+    if gbs_config.tool_overrides or gbs_config.tool_version_overrides:
+        from ..plugins.loader import get_plugin_registry
+        backend_names = [b.name for b in get_plugin_registry().get_all_backends()]
+        check_backend_kv(gbs_config.tool_overrides, "--tool",
+                         TOOL_SYNTAX, backend_names)
+        check_backend_kv(gbs_config.tool_version_overrides, "--tool-version",
+                         TOOL_VERSION_SYNTAX, backend_names)
 
     # Store in context for subcommands
     ctx.ensure_object(dict)

@@ -17,7 +17,8 @@ General Options
      -d, --debug                        Enable debug output (DEBUG level)
      -P, --no-progress                  Disable progress bars
      --log-dir PATH                     Custom directory for log files
-     -t, --tool BACKEND=TOOL[:VARIANT]  Override tool identifier for a backend
+     -t, --tool BACKEND=TOOL[:VARIANT][@VERSION]
+                                        Override tool identifier for a backend
      --tool-version BACKEND=VERSION     Pin a tool version for a backend
      --help                             Show help and exit
 
@@ -29,12 +30,14 @@ General Options
 ``-P, --no-progress``
     Disable progress bars in terminal output.
 
-``-t, --tool BACKEND=TOOL[:VARIANT]``
+``-t, --tool BACKEND=TOOL[:VARIANT][@VERSION]``
     Override tool identifier for a backend. ``BACKEND`` is a substring
     match against backend names (e.g. ``vivado`` matches
     ``gbs.builtin.vivado``). ``TOOL`` follows the tool identifier
     syntax ``name[:variant][@version]`` (see ``gbs config tool``
-    below). May be given multiple times.
+    below), e.g. ``gowin=gowin:1.9.12.04``. May be given multiple
+    times. An entry whose ``BACKEND`` matches no backend name is
+    rejected, as is a ``--tool-version`` one.
 
     Applies to every command that loads a project: ``project build``,
     ``project show``, ``project outputs``, ``project clean``,
@@ -85,7 +88,7 @@ Build a project.
     Maximum number of parallel tasks. Overrides ``max_parallel`` from config files.
     Must be >= 1.
 
-``-t, --tool BACKEND=TOOL[:VARIANT]``
+``-t, --tool BACKEND=TOOL[:VARIANT][@VERSION]``
     Override tool identifier for a backend. BACKEND is a substring
     match against backend names. TOOL follows the tool identifier
     syntax ``name[:variant][@version]`` (see ``gbs config tool``
@@ -135,11 +138,11 @@ Build a project.
    # Build with 8 parallel jobs
    gbs project build -j 8
 
-   # Override tool variant for quartus backends
-   gbs project build -t quartus=quartus:prime
+   # Select Gowin 1.9.12.04 for the gowin backend
+   gbs -t gowin=gowin:1.9.12.04 project build
 
    # Pin the yosys version supplied by an apio toolchain
-   gbs project build --tool-version yosys=2026-03-24
+   gbs --tool-version yosys=2026-03-24 project build
 
    # Build project in another directory
    gbs -C /path/to/project project build
