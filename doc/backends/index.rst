@@ -15,6 +15,7 @@ Simulation
    ghdl
    nvc
    questa
+   yavs
 
 FPGA Synthesis
 ~~~~~~~~~~~~~~

@@ -61,7 +61,7 @@ pipeline mixes tools (e.g. yosys synthesis feeding a vendor PnR).
     The VHDL parser/analyzer active in this build.
 
     Values (examples): ``ghdl_mcode``, ``ghdl_llvm``, ``ghdl_gcc``,
-    ``nvc``, ``lse``, ``synplify``, ``vivado``, ``ise``, ``verific``,
+    ``nvc``, ``yavs``, ``lse``, ``synplify``, ``vivado``, ``ise``, ``verific``,
     ``questa``, ``xsim``.
 
     GHDL variants encode the backend flavour directly in the value,
@@ -96,7 +96,7 @@ pipeline mixes tools (e.g. yosys synthesis feeding a vendor PnR).
     the engine value, mirroring ``vhdl_frontend``.
 
     Values (examples): ``ghdl_mcode``, ``ghdl_llvm``, ``ghdl_gcc``,
-    ``questa``, ``nvc``, ``xsim``, ``icarus``, ``verilator``.
+    ``questa``, ``nvc``, ``yavs``, ``xsim``, ``icarus``, ``verilator``.
 
 ``bitstream_engine``
     The tool that produces the final bitstream. Set only when a

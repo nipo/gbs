@@ -45,6 +45,7 @@ CANONICAL_TO_LEGACY: dict[str, tuple[str, ...]] = {
     "simulator": (
         "ghdl-simulator",
         "nvc-simulator",
+        "yavs-simulator",
     ),
 }
 
