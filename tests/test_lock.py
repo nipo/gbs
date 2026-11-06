@@ -60,10 +60,10 @@ class Holder:
 
 class Reporter:
     def __init__(self):
-        self.warnings = []
+        self.debugs = []
 
-    def warning(self, message):
-        self.warnings.append(message)
+    def debug(self, message):
+        self.debugs.append(message)
 
 
 @pytest.fixture
@@ -102,8 +102,8 @@ async def test_exclusive_blocks_exclusive(lock_path, holders):
     lock = FileLock(lock_path, exclusive=True, reporter=reporter)
 
     task = await acquire_blocks(lock)
-    assert len(reporter.warnings) == 1
-    assert f"held by pid {holder.pid}" in reporter.warnings[0]
+    assert len(reporter.debugs) == 1
+    assert f"held by pid {holder.pid}" in reporter.debugs[0]
 
     await asyncio.to_thread(holder.release)
     await asyncio.wait_for(task, timeout=5)
@@ -132,7 +132,7 @@ async def test_shared_allows_shared(lock_path, holders):
         other = holders(lock_path, exclusive=False)
         await asyncio.to_thread(other.release)
 
-    assert reporter.warnings == []
+    assert reporter.debugs == []
     await asyncio.to_thread(holder.release)
 
 
@@ -142,7 +142,7 @@ async def test_shared_blocks_exclusive(lock_path, holders):
     lock = FileLock(lock_path, exclusive=True, reporter=reporter)
 
     task = await acquire_blocks(lock)
-    assert len(reporter.warnings) == 1
+    assert len(reporter.debugs) == 1
     await asyncio.to_thread(holder.release)
     await asyncio.wait_for(task, timeout=5)
     lock.release()

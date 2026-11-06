@@ -27,8 +27,8 @@ class FileLock:
     The lock file is created on demand and never removed. Waiting does
     not block the event loop: the lock is polled with non-blocking
     attempts, so a cancelled waiter leaves nothing behind. The first
-    failed attempt is reported through the reporter so the user knows
-    why the run is stalled.
+    failed attempt is reported through the reporter, at debug level:
+    waiting for a peer run is part of normal operation.
 
     Holders write their PID into the lock file. It only serves the
     waiting message; the lock itself is the OS lock on the open file,
@@ -55,7 +55,7 @@ class FileLock:
         Args:
             path: Lock file path. Parent directories are created.
             exclusive: Exclusive lock if True, shared lock otherwise.
-            reporter: Object with a ``warning(str)`` method that receives
+            reporter: Object with a ``debug(str)`` method that receives
                 the waiting message. Defaults to this module's logger.
         """
         self.path = path
@@ -86,7 +86,7 @@ class FileLock:
             try:
                 while not FileLockPrimitive.try_lock(fd, self.exclusive):
                     if not waiting_reported:
-                        self.reporter.warning(self.__waiting_message(fd))
+                        self.reporter.debug(self.__waiting_message(fd))
                         waiting_reported = True
                     await asyncio.sleep(self.POLL_INTERVAL)
                 if self.__is_current(fd):
