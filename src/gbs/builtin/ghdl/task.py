@@ -74,21 +74,26 @@ class GhdlInvocation(MessageSubprocess):
             yield multiline
 
 class Import(Task):
-    """GHDL import task (ghdl -i + ghdl -a) filling a shared cache entry.
+    """GHDL import task (ghdl -i + ghdl -a) of one library.
 
-    The entry directory is content-addressed by the library signature,
-    which covers everything that affects the analysis output. Its
-    content is therefore either absent, partial (an interrupted or
-    failed analysis), or final. The final state is published by writing
+    The analysis lands in a shared cache entry, content-addressed by the
+    library signature, which covers everything that affects the analysis
+    output.  The signature is computed when the task runs: VHDL may join
+    the task in any dispatch round, and generated sources only exist once
+    their producers ran.  The task then mirrors the entry into its own
+    workdir, whose path does not depend on the signature.
+
+    A cache entry's content is either absent, partial (an interrupted or
+    failed analysis), or final.  The final state is published by writing
     a marker file last; once published an entry is never written again,
     so other runs may use it concurrently, including through hardlinks.
-
     Analysis runs in the entry directory itself, under an exclusive lock
     on a sibling lock file, so that concurrent runs needing the same
     entry analyse it once and never see it half-written.
     """
 
     MARKER_NAME = ".complete"
+    SIGNATURE_NAME = ".signature"
 
     def __init__(
         self,
@@ -112,51 +117,74 @@ class Import(Task):
         return workdir_out.path
 
     @property
-    def marker_path(self) -> Path:
-        return self.workdir / self.MARKER_NAME
+    def signature(self) -> str:
+        """Signature of the analysis, over the current inputs.
 
-    def is_published(self) -> bool:
-        """Whether the cache entry holds a complete analysis.
-
-        Declared outputs are checked as well as the marker because
-        cleaning a project removes task outputs, including the ones in
-        the shared cache, but not the marker.
+        Only stable once dispatching settled and every input exists, that
+        is when the task runs.
         """
-        if not self.marker_path.exists():
+        dep_signatures = {}
+        for cf in self.inputs_of_type("ghdl-cf"):
+            producer, = (d for d in cf.depends_on if isinstance(d, Import))
+            dep_signatures[producer.library_name] = producer.signature
+        return self.dispatcher.library_signature(
+            self.library_name,
+            self.inputs_of_type("vhdl"),
+            dep_signatures,
+        )
+
+    def is_published(self, entry: Path) -> bool:
+        """Whether a cache entry holds a complete analysis"""
+        if not (entry / self.MARKER_NAME).exists():
             return False
-        return all(o.exists() for o in self.outputs if isinstance(o, Resource))
+        return all((entry / o.path.name).exists()
+                   for o in self.outputs
+                   if isinstance(o, Resource) and o.path.parent == self.workdir)
 
     def is_rebuild_needed(self) -> bool:
-        """Rebuild unless the entry is published.
+        """Rebuild unless the workdir mirrors the entry of the current
+        signature.
 
-        Timestamps are irrelevant: the entry path already encodes the
-        content of the sources and dependencies.
+        Timestamps are irrelevant: the signature covers the content of the
+        sources and dependencies.
         """
-        return not self.is_published()
+        if not all(o.exists() for o in self.outputs if isinstance(o, Resource)):
+            return True
+        stamp = self.workdir / self.SIGNATURE_NAME
+        if not stamp.exists():
+            return True
+        return stamp.read_text() != self.signature
 
     async def work(self) -> None:
-        async with FileLock.beside(self.workdir, exclusive=True, reporter=self):
-            if self.is_published():
-                self.info(f"{self.workdir} published by another run")
-                return
-            if self.workdir.exists():
-                shutil.rmtree(self.workdir)
-            await self.analyse()
-            self.marker_path.touch()
+        signature = self.signature
+        entry = self.dispatcher.library_cache_workdir(self.library_name, signature)
+        async with FileLock.beside(entry, exclusive=True, reporter=self):
+            if self.is_published(entry):
+                self.info(f"{entry} already published")
+            else:
+                if entry.exists():
+                    shutil.rmtree(entry)
+                await self.analyse(entry)
+                (entry / self.MARKER_NAME).touch()
 
-    async def analyse(self) -> None:
-        """Execute GHDL import"""
+        if self.workdir.exists():
+            shutil.rmtree(self.workdir)
+        self.dispatcher.materialize_library_workdir(entry, self.workdir)
+        (self.workdir / self.SIGNATURE_NAME).write_text(signature)
+
+    async def analyse(self, workdir: Path) -> None:
+        """Execute GHDL import into workdir"""
         sources = []
         p_flags = []
         ghdl_executable = self.dispatcher._get_ghdl_executable()
         analyze_args = list(self.dispatcher.get_tool_option("analyze_args", []))
 
         diagnostics_out, = self.outputs_of_type(DIAGNOSTICS_FILE_TYPE)
+        diagnostics_path = workdir / diagnostics_out.path.name
         # Everything the analysis says about this library, kept so it can
         # be replayed from the cache by a later validation run that finds
         # the analysis up to date and therefore never re-runs GHDL.
         captured: list[ToolMessage] = []
-        workdir = self.workdir
 
         for i in self.inputs:
             if i.file_type == "vhdl":
@@ -180,13 +208,13 @@ class Import(Task):
                 await self.add_message_obj(msg)
 
             if import_process.returncode != 0:
-                DiagnosticsSidecar.write(diagnostics_out.path, captured)
+                DiagnosticsSidecar.write(diagnostics_path, captured)
                 raise import_process.failure(
                     tool="ghdl",
                     message=f"ghdl {cmd} failed for library {self.library_name}",
                 )
 
-        DiagnosticsSidecar.write(diagnostics_out.path, captured)
+        DiagnosticsSidecar.write(diagnostics_path, captured)
 
 class ValidationReportWrite(Task):
     """Aggregates analysis diagnostics into the validation report.
@@ -289,16 +317,15 @@ class CompileLink(Elaboration):
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # The root library workdir lives in the shared content cache.
-        # Materialize a per-project elaboration workdir hardlinked from it
-        # so this project's elaboration writes don't collide with another
-        # project sharing the same cached analysis.
+        # The root library workdir mirrors the shared cache through
+        # hardlinks.  Elaborate in a workdir hardlinked from it so the
+        # elaboration writes stay out of the library workdir.
         root_dir = self.root_library_dir()
         elab_workdir = self.dispatcher.library_elaboration_workdir(root_dir.path)
         self.dispatcher.materialize_library_workdir(root_dir.path, elab_workdir)
 
-        # -P for every non-root library points at its shared cache workdir;
-        # --workdir for the root library points at the per-project copy.
+        # -P for every non-root library points at its library workdir;
+        # --workdir for the root library points at the elaboration copy.
         flags = []
         for res in self.inputs_of_type("ghdl-library-dir"):
             if res.library == self.root_library:
@@ -364,16 +391,17 @@ class MakeElab(Elaboration):
         out_path = output.path
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Per-project elaboration workdir for the root library, materialized
-        # from the shared cache so that ghdl -m / -e / -r write here without
-        # interfering with another project sharing the same cached analysis.
+        # Elaboration workdir for the root library, materialized from its
+        # library workdir so that ghdl -m / -e / -r write here without
+        # touching the hardlinked cache entry.
         elab_workdir, = self.outputs_of_type("ghdl-elab-dir")
         root_dir = self.root_library_dir()
         self.dispatcher.materialize_library_workdir(root_dir.path, elab_workdir.path)
         elab_workdir_str = str(elab_workdir.path.resolve())
 
-        # -P points to shared cache for non-root libs; --workdir + an extra -P
-        # gives ghdl access to the root library at its per-project location.
+        # -P points to library workdirs for non-root libs; --workdir + an
+        # extra -P gives ghdl access to the root library at its elaboration
+        # location.
         p_flags = []
         for res in self.inputs_of_type("ghdl-library-dir"):
             if res.library == self.root_library:

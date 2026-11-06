@@ -169,7 +169,7 @@ class TestGhdlDeclaredInputs:
     """Everything GHDL reads is reachable from the declared task inputs"""
 
     @staticmethod
-    def context(tmp_path, monkeypatch, backend):
+    def context(tmp_path, monkeypatch, backend, sources_dir=None, shared_cache_root=None):
         from types import SimpleNamespace
         from gbs.builtin.ghdl import dispatcher as ghdl_dispatcher
         from gbs.repository.model import SourceFile
@@ -180,14 +180,18 @@ class TestGhdlDeclaredInputs:
                             lambda self: "ghdl")
         monkeypatch.setattr(ghdl_dispatcher, "ghdl_version", lambda exe: "GHDL test")
 
+        kwargs = {}
+        if shared_cache_root is not None:
+            kwargs["shared_cache_root"] = shared_cache_root
         ctx = BuildContext(project=SimpleNamespace(name="p", root_library_name="work"),
-                           base_output_path=tmp_path / "build")
+                           base_output_path=tmp_path / "build", **kwargs)
+        sources_dir = sources_dir or tmp_path
         ctx.set_output_group_context(topcell="top", topcell_library="work",
                                      output_group=SimpleNamespace(name="sim"))
 
         sources = {}
         for library in ("dep", "work"):
-            path = tmp_path / f"{library}.vhd"
+            path = sources_dir / f"{library}.vhd"
             path.write_text("")
             sources[f"{library}.p"] = [SourceFile(path=path, file_type="vhdl")]
         ctx.populate_pending(SimpleNamespace(
@@ -215,12 +219,96 @@ class TestGhdlDeclaredInputs:
         analyze, simulate, _ = await self.dispatch(ctx)
 
         for library in ("dep", "work"):
-            cf, import_task = analyze.library_build_get(library, None)
+            cf, import_task = analyze.library_build_get(library)
             workdir, = import_task.outputs_of_type("ghdl-library-dir")
             assert workdir.directory
             assert workdir.library == library
             assert workdir.path == cf.path.parent
             assert workdir in list(simulate._linker.inputs)
+
+    @pytest.mark.asyncio
+    async def test_vhdl_joining_a_library_late_is_analyzed(self, tmp_path, monkeypatch):
+        """VHDL a producer adds to a library in a later dispatch round is
+        an input of the library's Import task"""
+        from gbs.build.task import ResourceTypology
+
+        ctx = self.context(tmp_path, monkeypatch, "llvm")
+        analyze, _, _ = await self.dispatch(ctx)
+
+        generated = tmp_path / "generated.vhd"
+        generated.write_text("")
+        ctx.add_pending(ctx.get_resource(generated, file_type="vhdl", library="dep",
+                                         typology=ResourceTypology.INTERMEDIATE))
+        await analyze.process()
+
+        _, import_task = analyze.library_build_get("dep")
+        assert generated in [r.path for r in import_task.inputs_of_type("vhdl")]
+
+    @pytest.mark.asyncio
+    async def test_signature_follows_late_inputs(self, tmp_path, monkeypatch):
+        """The signature is computed from the inputs present when asked,
+        and covers the dependencies' signatures"""
+        from gbs.build.task import ResourceTypology
+
+        ctx = self.context(tmp_path, monkeypatch, "llvm")
+        analyze, _, _ = await self.dispatch(ctx)
+        _, dep_task = analyze.library_build_get("dep")
+        _, work_task = analyze.library_build_get("work")
+        dep_before, work_before = dep_task.signature, work_task.signature
+
+        generated = tmp_path / "generated.vhd"
+        generated.write_text("entity e is end;")
+        ctx.add_pending(ctx.get_resource(generated, file_type="vhdl", library="dep",
+                                         typology=ResourceTypology.INTERMEDIATE))
+        await analyze.process()
+
+        assert dep_task.signature != dep_before
+        assert work_task.signature != work_before
+
+    @pytest.mark.asyncio
+    async def test_cache_entry_shared_between_builds(self, tmp_path, monkeypatch):
+        """Two builds of the same library analyze it once and each get a
+        workdir mirroring the cache entry"""
+        from gbs.builtin.ghdl import task as ghdl_task
+
+        analyses = []
+
+        class FakeInvocation:
+            returncode = 0
+
+            def __init__(self, env=None, argv=None, cwd=None):
+                argv = [str(a) for a in argv]
+                analyses.append(argv)
+                workdir = Path(next(a for a in argv if a.startswith("--workdir="))
+                               .split("=", 1)[1])
+                library = next(a for a in argv if a.startswith("--work=")).split("=", 1)[1]
+                (workdir / f"{library}-obj93.cf").write_text("cf")
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        monkeypatch.setattr(ghdl_task, "GhdlInvocation", FakeInvocation)
+
+        workdirs = []
+        for build in ("a", "b"):
+            ctx = self.context(tmp_path / build, monkeypatch, "llvm",
+                               sources_dir=tmp_path,
+                               shared_cache_root=tmp_path / "cache")
+            analyze, _, _ = await self.dispatch(ctx)
+            _, dep_task = analyze.library_build_get("dep")
+            assert dep_task.is_rebuild_needed()
+            await dep_task.work()
+            assert not dep_task.is_rebuild_needed()
+            workdirs.append(dep_task.workdir)
+
+        # ghdl -i and -a, once
+        assert len(analyses) == 2
+        a, b = workdirs
+        assert a != b
+        assert (a / "dep-obj93.cf").samefile(b / "dep-obj93.cf")
 
     @pytest.mark.asyncio
     async def test_compiled_simulator_run_needs_no_library(self, tmp_path, monkeypatch):
