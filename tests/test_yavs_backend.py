@@ -1,5 +1,6 @@
 """Tests for the yavs backend"""
 
+import shlex
 from types import SimpleNamespace
 
 import pytest
@@ -109,3 +110,124 @@ async def test_library_dependencies_are_mapped(tmp_path):
     assert work_task.inputs_of_type("yavs-lib") == [dep_lib]
     assert [r.path.name for r in work_task.inputs_of_type("vhdl")] == ["work.vhd"]
     assert set(dispatcher.elaborate.inputs_of_type("yavs-lib")) == {dep_lib, work_lib}
+
+
+class TestVhpidirect:
+    """VHPIDIRECT C sources are compiled and loaded by elab and run"""
+
+    @staticmethod
+    def context(tmp_path):
+        from gbs.build.task import ResourceTypology
+
+        ctx = BuildContext(project=SimpleNamespace(name="p", root_library_name="work"),
+                           base_output_path=tmp_path / "build")
+        ctx.set_output_group_context(topcell="top", topcell_library="work",
+                                     output_group=SimpleNamespace(name="sim"))
+        path = tmp_path / "work.vhd"
+        path.write_text("")
+        sources = {"work.p": [SourceFile(path=path, file_type="vhdl")]}
+        ctx.populate_pending(SimpleNamespace(
+            partitions=list(sources),
+            sources=sources,
+            partition_deps={},
+        ), {"vhdl"})
+
+        include = tmp_path / "include"
+        include.mkdir()
+        c_path = tmp_path / "helpers.c"
+        c_path.write_text("")
+        c_source = ctx.get_resource(c_path, file_type="vhpidirect-c",
+                                    typology=ResourceTypology.SOURCE,
+                                    metadata={"include_dirs": [include]})
+        ctx.add_pending(c_source)
+        return ctx, c_source, include
+
+    @staticmethod
+    async def dispatch(ctx):
+        from gbs.builtin.yavs.dispatcher import YavsRunDispatcher
+
+        simulate = YavsDispatcher(ctx)
+        run = YavsRunDispatcher(ctx)
+        for _ in range(2):
+            await simulate.process()
+            await run.process()
+        return simulate, run
+
+    @staticmethod
+    def fake_invocation(argvs):
+        class FakeInvocation:
+            returncode = 0
+
+            def __init__(self, env=None, argv=None, cwd=None):
+                argvs.append([str(a) for a in argv])
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        return FakeInvocation
+
+    def test_simulate_pass_accepts_c_sources(self):
+        assert "vhpidirect-c" in YavsSimulatePass.input_types
+
+    @pytest.mark.asyncio
+    async def test_library_feeds_elab_and_run(self, tmp_path):
+        from gbs.builtin.vhpidirect import VHPIDirectCompile
+
+        ctx, c_source, include = self.context(tmp_path)
+        simulate, run = await self.dispatch(ctx)
+
+        compile_task, = (d for d in c_source.expected_by
+                         if isinstance(d, VHPIDirectCompile))
+        lib, = compile_task.outputs_of_type("vhpidirect-lib")
+        include_dir, = compile_task.inputs_of_type("c-include-dir")
+        assert include_dir.path == include.resolve()
+        assert c_source in compile_task.depends_on
+        assert simulate.elaborate.inputs_of_type("vhpidirect-lib") == [lib]
+        assert lib in simulate.elaborate.depends_on
+        assert run.run_task.inputs_of_type("vhpidirect-lib") == [lib]
+        assert not ctx.filter_pending(file_type="vhpidirect-c")
+
+    @pytest.mark.asyncio
+    async def test_compile_uses_include_dirs(self, tmp_path, monkeypatch):
+        from gbs.builtin import vhpidirect
+
+        ctx, c_source, include = self.context(tmp_path)
+        await self.dispatch(ctx)
+        compile_task, = (d for d in c_source.expected_by
+                         if isinstance(d, vhpidirect.VHPIDirectCompile))
+
+        argvs = []
+        monkeypatch.setattr(vhpidirect, "CCompilerInvocation", self.fake_invocation(argvs))
+        await compile_task.work()
+
+        compile_argv, link_argv = argvs
+        assert f"-I{include.resolve()}" in compile_argv
+        assert "-fPIC" in compile_argv
+        assert "-shared" in link_argv
+
+    @pytest.mark.asyncio
+    async def test_elab_and_run_load_library(self, tmp_path, monkeypatch):
+        from gbs.builtin.yavs import task as yavs_task
+
+        ctx, _, _ = self.context(tmp_path)
+        simulate, _ = await self.dispatch(ctx)
+        lib, = simulate.elaborate.inputs_of_type("vhpidirect-lib")
+        load = f"--load={lib.path.resolve()}:args=fat-pointer"
+
+        argvs = []
+        fake = self.fake_invocation(argvs)
+        fake.RELAXED = yavs_task.YavsInvocation.RELAXED
+        monkeypatch.setattr(yavs_task, "YavsInvocation", fake)
+        simulator, = simulate.elaborate.outputs
+        simulator.path.parent.mkdir(parents=True, exist_ok=True)
+        await simulate.elaborate.work()
+
+        elab_argv, = argvs
+        assert "elab" in elab_argv
+        assert elab_argv.index(load) < elab_argv.index("top")
+        script = simulator.path.read_text()
+        assert shlex.quote(load) in script
+        assert script.index(" run ") < script.index(shlex.quote(load))

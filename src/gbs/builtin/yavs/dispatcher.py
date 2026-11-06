@@ -5,6 +5,7 @@ from ...base import BaseDispatcher
 from ...build.context import BuildContext
 from ...build.task import Task, ResourceTypology
 from ...utils import expand_path
+from ..vhpidirect import VHPIDirectSources
 from . import task
 
 
@@ -71,6 +72,8 @@ class YavsDispatcher(BaseDispatcher):
         return t
 
     async def process(self) -> None:
+        VHPIDirectSources.compile_pending(self)
+
         lib_deps_graph = self.context._pending_library_dependency_graph_transitive()
 
         for lib, deps in lib_deps_graph.items():
@@ -85,7 +88,8 @@ class YavsDispatcher(BaseDispatcher):
                 self.context.get_topcell_library(),
             )
 
-        for resource in list(self.context.filter_pending(file_type=["yavs-lib"])):
+        for resource in list(self.context.filter_pending(
+                file_type=["yavs-lib", "vhpidirect-lib"])):
             self.elaborate.add_input(resource, consume=False)
 
         for library_name, library_files in self.context.get_pending_by_library_ordered():
@@ -161,7 +165,8 @@ class YavsRunDispatcher(BaseDispatcher):
             )
             self.attach_definition_dependencies(self.run_task)
 
-        for resource in list(self.context.filter_pending(file_type=["yavs-lib"])):
+        for resource in list(self.context.filter_pending(
+                file_type=["yavs-lib", "vhpidirect-lib"])):
             self.run_task.add_input(resource, consume=False)
 
         if not self.run_task.outputs_of_type(self.WAVEFORM_TYPES):

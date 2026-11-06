@@ -11,11 +11,11 @@ from .dispatcher import YavsDispatcher, YavsRunDispatcher
 class YavsSimulatePass(BasePass):
     """Analyze VHDL sources by library with yavs and elaborate the top
 
-    Input types: vhdl
+    Input types: vhdl, vhpidirect-c
     Output types: simulator, yavs-simulator
     """
     name = "yavs-simulate"
-    input_types = {"vhdl"}
+    input_types = {"vhdl", "vhpidirect-c"}
     output_types = {"simulator", "yavs-simulator"}
 
     def probe(self) -> str | None:

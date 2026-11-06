@@ -125,6 +125,20 @@ class LibraryFlags:
                       if r.library != exclude)
 
 
+class LoadFlags:
+    """``--load`` options for VHPIDIRECT libraries
+
+    The C side expects GHDL's array layout, which yavs calls
+    ``fat-pointer``.
+    """
+    ARGS_LAYOUT = "fat-pointer"
+
+    @classmethod
+    def loads(cls, resources) -> list[str]:
+        return sorted(f"--load={r.path.resolve()}:args={cls.ARGS_LAYOUT}"
+                      for r in resources)
+
+
 class Analyze(Task):
     """yavs analyze of all the sources of a library"""
 
@@ -209,11 +223,12 @@ class Elaborate(Task):
         lib_flags = [f"--work={LibraryFlags.spec(root)}"] \
             + LibraryFlags.maps(libs, exclude=self.root_library)
         std_flags = [f"--std={self.dispatcher.std_flag}", YavsInvocation.RELAXED]
+        load_flags = LoadFlags.loads(self.inputs_of_type("vhpidirect-lib"))
         executable = self.dispatcher.executable()
 
         process = YavsInvocation(env=self.dispatcher.tool_env or None, argv=[
             executable, "--message-format=short", "elab",
-        ] + std_flags + lib_flags + [self.topcell],
+        ] + std_flags + lib_flags + load_flags + [self.topcell],
             cwd=root.path.parent)
 
         async for msg in process:
@@ -227,7 +242,7 @@ class Elaborate(Task):
             )
 
         run_cmd = [executable, "--message-format=short", "run"] \
-            + std_flags + lib_flags + [self.topcell]
+            + std_flags + lib_flags + load_flags + [self.topcell]
         output.path.write_text(
             "#!/bin/sh\n"
             f"exec {' '.join(shlex.quote(a) for a in run_cmd)} \"$@\"\n")

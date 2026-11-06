@@ -15,6 +15,15 @@ written. The run pass executes that wrapper.
 
 yavs supports VHDL-1993, VHDL-2008 and VHDL-2019.
 
+VHPIDIRECT
+----------
+
+Sources of type ``vhpidirect-c`` are compiled into shared libraries
+with the C compiler, honouring the source's ``include_dirs``. Each
+library is given to both ``yavs elab`` and ``yavs run`` as
+``--load=LIB:args=fat-pointer``, the argument layout GHDL uses, so the
+same C sources serve both simulators.
+
 Supported Outputs
 -----------------
 
