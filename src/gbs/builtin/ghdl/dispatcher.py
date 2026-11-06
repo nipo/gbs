@@ -19,6 +19,7 @@ from ...validation_report import (
     DIAGNOSTICS_FILE_TYPE,
     VALIDATION_REPORT_FILE_TYPE,
 )
+from ..vhpidirect import VHPIDirectSources
 from . import task
 
 logger = get_logger(__name__)
@@ -537,7 +538,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
     async def process(self) -> None:
         """Create simulator executable from GHDL library intermediates"""
         # Step 1: Compile VHPIDIRECT C sources
-        self._compile_vhpidirect_sources()
+        VHPIDirectSources.compile_pending(self)
 
         if not self._linker:
             # Step 2: Create elaboration/link task
@@ -549,7 +550,7 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         # Ingress files to linker. These are INTERMEDIATE resources - don't
         # consume them (consume=False) so they remain available for other tasks
         for resource in list(self.context.filter_pending(
-                file_type=["ghdl-vhpidirect-lib", "ghdl-cf", "ghdl-library-dir"])):
+                file_type=["vhpidirect-lib", "ghdl-cf", "ghdl-library-dir"])):
             self._linker.add_input(resource, consume=False)
 
         self._elaboration_dir_declare()
@@ -580,56 +581,6 @@ class GHDLSimulateDispatcher(GHDLBaseDispatcher):
         )
         self._linker.add_output(elab_dir)
         self.__elab_dir_declared = True
-
-    def _compile_vhpidirect_sources(self):
-        """Compile VHPIDIRECT C sources to shared libraries"""
-        vhpidirect_count = 0
-
-        # Filter for VHPIDIRECT C files
-        for resource in list(self.context.filter_pending(file_type=["ghdl-vhpidirect-c"])):
-            self.info(f"Compiling VHPIDIRECT C source: {resource.path.name}")
-
-            # Create output .so path (stable naming: xxx.c -> xxx.so)
-            lib_path = self.context.output_path / "vhpidirect" / f"{resource.path.stem}.so"
-            lib_resource = self.context.get_resource(
-                lib_path,
-                file_type="ghdl-vhpidirect-lib",
-                library=resource.library,
-                typology=ResourceTypology.INTERMEDIATE,
-                generated_by=self.name,
-            )
-
-            # Include directories the source's repository attached to it
-            # (e.g. the VHPIDIRECT support headers a backend ships
-            # separately from GHDL), read by the compiler.
-            include_dirs = [
-                self.context.get_resource(
-                    Path(d),
-                    file_type="c-include-dir",
-                    typology=ResourceTypology.SOURCE,
-                    directory=True,
-                )
-                for d in resource.metadata.get("include_dirs", [])
-            ]
-
-            # Create compilation task
-            compile_task = task.VHPIDirectCompile(
-                self,
-                compiler="gcc",  # TODO: make configurable
-                inputs=[resource] + include_dirs,
-                outputs=[lib_resource],
-            )
-
-            # Remove C source from pending (it's consumed by the task)
-            dependents = self.context.remove_pending(resource.path)
-            for dep in dependents:
-                compile_task.dependency_add(dep)
-
-            # Add output library to pending queue
-            vhpidirect_count += 1
-
-        if vhpidirect_count:
-            self.info(f"Compiled {vhpidirect_count} VHPIDIRECT libraries")
 
     def _create_elaboration_tasks(self,
         topcell: str,
@@ -733,7 +684,7 @@ class GHDLRunDispatcher(BaseDispatcher):
         # The simulator loads the VHPIDIRECT libraries at run time. A
         # simulator elaborated into a workdir is a script running ghdl -r
         # on that workdir and on the analyzed libraries.
-        runtime_types = ["ghdl-vhpidirect-lib", "ghdl-elab-dir"]
+        runtime_types = ["vhpidirect-lib", "ghdl-elab-dir"]
         if self.context.filter_pending(file_type="ghdl-elab-dir"):
             runtime_types.append("ghdl-library-dir")
         for resource in list(self.context.filter_pending(file_type=runtime_types)):

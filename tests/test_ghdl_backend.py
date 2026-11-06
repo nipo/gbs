@@ -247,7 +247,7 @@ class TestGhdlDeclaredInputs:
 
     @pytest.mark.asyncio
     async def test_vhpidirect_include_dirs_are_directory_inputs(self, tmp_path, monkeypatch):
-        from gbs.builtin.ghdl import task as ghdl_task
+        from gbs.builtin import vhpidirect
         from gbs.builtin.ghdl.dispatcher import GHDLSimulateDispatcher
         from gbs.build.task import ResourceTypology
 
@@ -256,15 +256,15 @@ class TestGhdlDeclaredInputs:
         include.mkdir()
         c_path = tmp_path / "plugin.c"
         c_path.write_text("")
-        c_source = ctx.get_resource(c_path, file_type="ghdl-vhpidirect-c",
+        c_source = ctx.get_resource(c_path, file_type="vhpidirect-c",
                                     typology=ResourceTypology.SOURCE,
                                     metadata={"include_dirs": [include]})
         ctx.add_pending(c_source)
 
-        GHDLSimulateDispatcher(ctx)._compile_vhpidirect_sources()
+        vhpidirect.VHPIDirectSources.compile_pending(GHDLSimulateDispatcher(ctx))
 
         compile_task, = (d for d in c_source.expected_by
-                         if isinstance(d, ghdl_task.VHPIDirectCompile))
+                         if isinstance(d, vhpidirect.VHPIDirectCompile))
         include_dir, = compile_task.inputs_of_type("c-include-dir")
         assert include_dir.path == include.resolve()
         assert include_dir.directory
@@ -283,7 +283,7 @@ class TestGhdlDeclaredInputs:
             async def __anext__(self):
                 raise StopAsyncIteration
 
-        monkeypatch.setattr(ghdl_task, "GhdlInvocation", FakeInvocation)
+        monkeypatch.setattr(vhpidirect, "CCompilerInvocation", FakeInvocation)
         await compile_task.work()
 
         assert f"-I{include.resolve()}" in argvs[0]

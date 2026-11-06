@@ -227,82 +227,6 @@ class ValidationReportWrite(Task):
         report = ValidationReport(self.dispatcher.context)
         report.write(report_out.path)
 
-class VHPIDirectCompile(Task):
-    """GHDL VHPIDIRECT C compilation task"""
-
-    def __init__(
-        self,
-        dispatcher: "Dispatcher",
-        compiler: str = "gcc",
-        inputs: list = None,
-        outputs: list = None,
-    ):
-        src = inputs[0].path
-        stem = src.stem
-        super().__init__(
-            dispatcher=dispatcher,
-            name=f"vhpidirect_compile_{stem}",
-            inputs=inputs,
-            outputs=outputs,
-            description=f"Compile VHPIDIRECT {stem}"
-        )
-        self.compiler = compiler
-
-    async def work(self) -> None:
-        """Compile a C source into a shared library for VHPIDIRECT.
-
-        VHPIDIRECT C is plain C, called directly by the elaborated design and
-        linked into the simulator; it is not a VPI plugin. It must be built
-        with the C compiler alone. Routing it through ghdl --vpi-compile /
-        --vpi-link pulls in -lghdlvpi, which is both unnecessary here and
-        absent from some GHDL distributions (e.g. oss-cad-suite), so the link
-        fails with "cannot find -lghdlvpi".
-        """
-        c, = self.inputs_of_type("ghdl-vhpidirect-c")
-        so, = self.outputs_of_type("ghdl-vhpidirect-lib")
-
-        so.path.parent.mkdir(parents=True, exist_ok=True)
-        obj_path = so.path.with_suffix('.o')
-
-        include_flags = [
-            f"-I{d.path.resolve()}" for d in self.inputs_of_type("c-include-dir")
-        ]
-
-        compile_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
-            self.compiler, "-c",
-            "-fPIC",  # Position-independent code for shared library
-        ] + include_flags + [
-            str(c.path.resolve()),
-            "-o", str(obj_path)
-        ])
-
-        async for msg in compile_process:
-            await self.add_message_obj(msg)
-
-        if compile_process.returncode != 0:
-            raise compile_process.failure(
-                tool=self.compiler,
-                message=f"C compilation failed for {c.path.name}",
-            )
-
-        link_process = GhdlInvocation(env=self.dispatcher.tool_env or None, argv=[
-            self.compiler, "-shared",
-            str(obj_path),
-            "-o", str(so.path)
-        ])
-
-        async for msg in link_process:
-            await self.add_message_obj(msg)
-
-        if link_process.returncode != 0:
-            raise link_process.failure(
-                tool=self.compiler,
-                message=f"Linking failed for {c.path.name}",
-            )
-
-        # Clean up object file
-        obj_path.unlink(missing_ok=True)
-
 class Elaboration(Task):
     """Base of the tasks elaborating a topcell from analyzed libraries"""
 
@@ -384,7 +308,7 @@ class CompileLink(Elaboration):
                 flags.append(f"-P{res.path.resolve()}")
 
         # Build linker flags for VHPIDIRECT libraries
-        for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
+        for lib_res in self.inputs_of_type("vhpidirect-lib"):
             # Link the library directly (absolute path)
             lib_path = lib_res.path.resolve()
             flags.append(f"-Wl,{lib_path}")
@@ -495,7 +419,7 @@ class MakeElab(Elaboration):
 
         # Build load flags for VHPIDIRECT libraries
         load_flags = []
-        for lib_res in self.inputs_of_type("ghdl-vhpidirect-lib"):
+        for lib_res in self.inputs_of_type("vhpidirect-lib"):
             load_flags.append(f"--load={lib_res.path.resolve()}")
 
         run_cmd = [

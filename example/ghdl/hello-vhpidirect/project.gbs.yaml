@@ -8,7 +8,7 @@ root:
         - test_plugin.pkg.vhd
         - test_plugin.body.vhd
         - main.vhd
-    - file_type: ghdl-vhpidirect-c
+    - file_type: vhpidirect-c
       files:
         - test_plugin.c
 

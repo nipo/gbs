@@ -138,10 +138,10 @@ class GHDLSimulatePass(BasePass):
     Input types: ghdl-cf
     Output types: ghdl-simulator
 
-    Note: ghdl-vhpidirect-c is handled opportunistically by the dispatcher if present
+    Note: vhpidirect-c is handled opportunistically by the dispatcher if present
     """
     name = "ghdl-simulate"
-    input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
+    input_types = {"ghdl-cf", "vhpidirect-c"}
     output_types = {"simulator", "ghdl-simulator"}
 
     def probe(self) -> str | None:

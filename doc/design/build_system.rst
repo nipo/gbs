@@ -162,7 +162,7 @@ Pass Example
        """GHDL simulation pass: VHDL → simulator executable"""
 
        name = "ghdl-simulate"
-       input_types = {"ghdl-cf", "ghdl-vhpidirect-c"}
+       input_types = {"ghdl-cf", "vhpidirect-c"}
        output_types = {"simulator", "ghdl-simulator"}
 
        def probe(self) -> str | None:
